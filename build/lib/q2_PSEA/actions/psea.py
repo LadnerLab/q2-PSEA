@@ -302,7 +302,7 @@ def make_psea_table(
 
     print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
 
-    return scatter_plot, volcano_plot,ae_plot
+    return scatter_plot, volcano_plot, ae_plot
 
 
 def create_fgsea_table_for_pair(
