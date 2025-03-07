@@ -43,6 +43,7 @@ plugin.pipelines.register_function(
         "iter_tables_dir": Str,
         "max_workers": Int,
         "summary_tables_dir": Str,
+        "vis_outputs_dir": Str,
         "seed": Int
     },
     parameter_descriptions={
@@ -76,12 +77,14 @@ plugin.pipelines.register_function(
         "table_dir": "Directory where resulting PSEA tables will be stored.",
         "pepsirf_binary": "Path to pepsirf binary.",
         "iterative_analysis": "Boolean value, whether or not to use iterative approach"
-                    " to filter cross-reactive peptides from less significant species."
-                    " GMT peptide_sets_file recommended.",
+            " to filter cross-reactive peptides from less significant species."
+            " GMT peptide_sets_file recommended.",
         "iter_tables_dir": "Directory name to output iteration tables to. Only generates if name is provided.",
         "max_workers": "Maximum number of processes to run at a time. If none set,"
-                    " defaults to the number of processors on the machine.",
+            " defaults to the number of processors on the machine.",
         "summary_tables_dir": "Directory to save antibody event summary tables.",
+        "vis_outputs_dir": "Directory to save visualizations (not as a qiime2 artifact)."
+            " They will not be output here if this option is not provided.",
         "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
     },
     outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization)],

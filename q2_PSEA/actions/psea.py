@@ -43,6 +43,7 @@ def make_psea_table(
         iter_tables_dir="",
         max_workers=None,
         summary_tables_dir="./psea_ae_summary_tables",
+        vis_outputs_dir=None,
         seed=149
 ):    
     start_time = time.perf_counter()
@@ -63,9 +64,12 @@ def make_psea_table(
     if max_workers != None:
         assert max_workers <= multiprocessing.cpu_count(), \
             f"Max workers excedes {multiprocessing.cpu_count()}, the number of CPUs on your machine."
+    if vis_outputs_dir != None:
+        assert not os.path.exists(vis_outputs_dir), \
+            f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
+        os.mkdir(vis_outputs_dir)
 
     os.mkdir(table_dir)
-
     os.mkdir(summary_tables_dir)
 
     pairs = list()
@@ -276,7 +280,8 @@ def make_psea_table(
                 taxa_access=taxa_access,
                 highlight_data=table_dir,
                 highlight_threshold=p_val_thresh,
-                colors_file=species_color_file
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
             )
 
             volcano_plot, = volcano(
@@ -287,7 +292,8 @@ def make_psea_table(
                 y_threshold=p_val_thresh,
                 xy_labels=["Enrichment score", "Adjusted p-values"],
                 pairs_file=pairs_file,
-                colors_file=species_color_file
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
             )
 
             ae_plot, = aeplots( 
@@ -295,7 +301,8 @@ def make_psea_table(
                 neg_nes_ae_file=os.path.join(summary_tables_dir, "Negative_NES_AE.tsv"),
                 xy_access=["Events", "Species"],
                 xy_labels=["Number of AEs in cohort", "Species"],
-                colors_file=species_color_file
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
             )
 
     end_time = time.perf_counter()
