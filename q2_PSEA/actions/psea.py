@@ -9,6 +9,7 @@ import tempfile
 
 import time
 import concurrent.futures
+import multiprocessing
 
 from math import isnan, log, pow
 from rpy2.robjects import pandas2ri
@@ -27,8 +28,9 @@ def make_psea_table(
         peptide_sets_file,
         threshold,
         p_val_thresh=0.05,
-        es_thresh=0.4,
+        nes_thresh=1,
         species_taxa_file="",
+        species_color_file="",
         min_size=15,
         max_size=2000,
         permutation_num=10000,  # as per original PSEA code
@@ -37,30 +39,54 @@ def make_psea_table(
         dof=None,
         table_dir="./psea_table_outdir",
         pepsirf_binary="pepsirf",
-        iterative_analysis=False,
-        iter_tables_dir="./psea_iter_tables_outdir",
-        get_iter_tables=False
+        iterative_analysis=True,
+        iter_tables_dir="",
+        max_workers=None,
+        summary_tables_dir="./psea_ae_summary_tables",
+        vis_outputs_dir=None,
+        seed=149
 ):    
     start_time = time.perf_counter()
 
     volcano = ctx.get_action("ps-plot", "volcano")
     zscatter = ctx.get_action("ps-plot", "zscatter")
+    aeplots = ctx.get_action("ps-plot", "aeplots")
 
     assert spline_type in splines.SPLINE_TYPES, \
         f"'{spline_type}' is not a valid spline method!"
     assert not os.path.exists(table_dir), \
         f"'{table_dir}' already exists! Please move or remove this directory."
+    assert not os.path.exists(summary_tables_dir), \
+        f"'{summary_tables_dir}' already exists! Please move or remove this directory."
     if iterative_analysis:
         assert ".gmt" in peptide_sets_file.lower(), \
             "You are running iterative analysis without a GMT peptide sets file."
+    if max_workers != None:
+        assert max_workers <= multiprocessing.cpu_count(), \
+            f"Max workers excedes {multiprocessing.cpu_count()}, the number of CPUs on your machine."
+    if vis_outputs_dir != None:
+        assert not os.path.exists(vis_outputs_dir), \
+            f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
+        os.mkdir(vis_outputs_dir)
 
     os.mkdir(table_dir)
+    os.mkdir(summary_tables_dir)
 
+    pairs = list()
+    pair_2_title = dict()
     with open(pairs_file, "r") as fh:
-        pairs = [
-            tuple(line.replace("\n", "").split("\t"))
-            for line in fh.readlines()
-        ]
+        # skip header line
+        fh.readline()
+        for line in fh.readlines():
+            line_tup = tuple(line.replace("\n", "").split("\t"))
+            pair = line_tup[0:2]
+            pairs.append(pair)
+
+            if( len(line_tup) > 2):
+                pair_2_title[pair] = line_tup[2]
+            else:
+                pair_2_title[pair] = ""
+
     scores = pd.read_csv(scores_file, sep="\t", index_col=0)
     processed_scores = process_scores(scores, pairs)
 
@@ -73,7 +99,7 @@ def make_psea_table(
     # temporary directory to hold iterative analysis tables
     with tempfile.TemporaryDirectory() as temp_peptide_sets_dir:
         if iterative_analysis:
-            if get_iter_tables:
+            if iter_tables_dir:
                 if not os.path.exists(iter_tables_dir):
                     os.mkdir(iter_tables_dir)
                 else:
@@ -96,21 +122,29 @@ def make_psea_table(
                 degree=degree,
                 dof=dof,
                 p_val_thresh=p_val_thresh,
-                es_thresh=es_thresh,
+                nes_thresh=nes_thresh,
                 peptide_sets_out_dir = temp_peptide_sets_dir,
                 iter_tables_dir=iter_tables_dir,
-                get_iter_tables=get_iter_tables
+                max_workers=max_workers,
+                seed=seed
             )
         else:
             # each pair will have the same gmt file
             pair_pep_sets_file_dict = dict.fromkeys(pairs, peptide_sets_file)
 
         with tempfile.TemporaryDirectory() as tempdir:
+            pos_nes_event_matrix = dict()
+            neg_nes_event_matrix = dict()
+            zero_nes_event_matrix = dict()
+            empty_pair_row = [0] * len(pairs)
+            pos_nes_count_dict = dict()
+            neg_nes_count_dict = dict()
+            zero_nes_count_dict = dict()
+
             processed_scores.to_csv(processed_scores_file, sep="\t")
 
-            titles = []
             taxa_access = "species_name"
-            used_pairs = []
+            # used_pairs = []
             pair_spline_dict = { "x": list(), "y": list(), "pair": list() }
 
 
@@ -119,7 +153,7 @@ def make_psea_table(
             if not species_taxa_file:
                 taxa_access = "ID"
             
-            with concurrent.futures.ProcessPoolExecutor() as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 pair_futures = [executor.submit(create_fgsea_table_for_pair,
                                 pair,
                                 processed_scores,
@@ -133,8 +167,9 @@ def make_psea_table(
                                 degree,
                                 dof,
                                 p_val_thresh,
-                                es_thresh,
+                                nes_thresh,
                                 False,
+                                seed,
                                 table_dir
                                 ) for pair in pairs]
 
@@ -148,16 +183,84 @@ def make_psea_table(
                     pair_spline_dict["x"].extend(x.tolist())
                     pair_spline_dict["y"].extend(yfit.tolist())
                     pair_spline_dict["pair"].extend([table_prefix] * len(x))
-                    used_pairs.append(pair)
+                    # used_pairs.append((pair[0], pair[1], pair_2_title[pair]))
 
-                    # taxa = table.loc[:, taxa_access].to_list()
+                    # populate event matrix with species that are significant this pair
+                    tableDf = pd.read_csv(f"{table_dir}/{table_prefix}_psea_table.tsv", sep="\t")
+                    for i, row in tableDf.iterrows():
+                        taxa = row[taxa_access]
 
-                    titles.append(table_prefix)
+                        if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh:
+                            if row["NES"] > 0:
+                                if taxa not in pos_nes_event_matrix.keys():
+                                    pos_nes_event_matrix[taxa] = empty_pair_row.copy()
+                                pos_nes_event_matrix[taxa][pairs.index(pair)] = 1
 
+                                if taxa not in pos_nes_count_dict.keys():
+                                    pos_nes_count_dict[taxa] = 0
+                                pos_nes_count_dict[taxa] += 1
+
+                            elif row["NES"] < 0:
+                                if taxa not in neg_nes_event_matrix.keys():
+                                    neg_nes_event_matrix[taxa] = empty_pair_row.copy()
+                                neg_nes_event_matrix[taxa][pairs.index(pair)] = 1
+
+                                if taxa not in neg_nes_count_dict.keys():
+                                    neg_nes_count_dict[taxa] = 0
+                                neg_nes_count_dict[taxa] += 1
+
+                            # output message if nes is 0
+                            else:
+                                if taxa not in zero_nes_event_matrix.keys():
+                                    zero_nes_event_matrix[taxa] = empty_pair_row.copy()
+                                zero_nes_event_matrix[taxa][pairs.index(pair)] = 1
+
+                                if taxa not in zero_nes_count_dict.keys():
+                                    zero_nes_count_dict[taxa] = 0
+                                zero_nes_count_dict[taxa] += 1
+
+            pos_nes_event_matrix_df = pd.DataFrame.from_dict(pos_nes_event_matrix)
+            pos_nes_event_matrix_df.index = [f"{pair[0]}~{pair[1]}" for pair in pairs]
+            pos_nes_event_matrix_df.sort_index(inplace=True)
+            pos_nes_event_matrix_df = pos_nes_event_matrix_df[sorted(pos_nes_event_matrix_df.columns.tolist(), key=lambda col: pos_nes_event_matrix_df[col].sum(), reverse=True)]
+            pos_nes_event_matrix_df.to_csv(os.path.join(summary_tables_dir, "Positive_NES_taxa_matrix.tsv"), sep="\t")
+
+            neg_nes_event_matrix_df = pd.DataFrame.from_dict(neg_nes_event_matrix)
+            neg_nes_event_matrix_df.index = [f"{pair[0]}~{pair[1]}" for pair in pairs]
+            neg_nes_event_matrix_df.sort_index(inplace=True)
+            neg_nes_event_matrix_df = neg_nes_event_matrix_df[sorted(neg_nes_event_matrix_df.columns.tolist(), key=lambda col: neg_nes_event_matrix_df[col].sum(), reverse=True)]
+            neg_nes_event_matrix_df.to_csv(os.path.join(summary_tables_dir, "Negative_NES_taxa_matrix.tsv"), sep="\t")
+
+            pos_nes_count_dict = {k:v for k, v in sorted(pos_nes_count_dict.items(), key=lambda item: item[1], reverse=True)}
+            neg_nes_count_dict = {k:v for k, v in sorted(neg_nes_count_dict.items(), key=lambda item: item[1], reverse=True)
+            }
+
+            # create column sums for positive and negative NES
+            with open(os.path.join(summary_tables_dir, "Positive_NES_AE.tsv"), "w") as pos_file:
+                pos_file.write(f"Species\tEvents\n")
+                for taxa in pos_nes_count_dict.keys():
+                    pos_file.write(f"{taxa}\t{pos_nes_count_dict[taxa]}\n")
+            with open(os.path.join( summary_tables_dir, "Negative_NES_AE.tsv"), "w") as neg_file:
+                neg_file.write(f"Species\tEvents\n")
+                for taxa in neg_nes_count_dict.keys():
+                    neg_file.write(f"{taxa}\t{neg_nes_count_dict[taxa]}\n")
+            if len(zero_nes_count_dict) > 0:
+                print("\n")
+                for taxa in zero_nes_count_dict.keys():
+                    if zero_nes_count_dict[taxa] > 1:
+                        print(f"{zero_nes_count_dict[taxa]} events for {taxa}, which has an NES of 0")
+                    else:
+                        print(f"{zero_nes_count_dict[taxa]} event for {taxa}, which has an NES of 0")
+                    print("The pairs which this occurred are: ")
+                    for pair_index in range(len(zero_nes_event_matrix[taxa])):
+                        if zero_nes_event_matrix[taxa][pair_index] == 1:
+                            print(f"{pairs[pair_index][0]}~{pairs[pair_index][1]}")
+            '''
             pd.DataFrame(used_pairs).to_csv(
                 f"{tempdir}/used_pairs.tsv", sep="\t",
                 header=False, index=False
             )
+            '''
             pd.DataFrame(pair_spline_dict).to_csv(
                 f"{tempdir}/spline_data.tsv", sep="\t", index=False
             )
@@ -170,30 +273,43 @@ def make_psea_table(
         
             scatter_plot, = zscatter(
                 zscores=processed_scores_art,
-                pairs_file=f"{tempdir}/used_pairs.tsv",
+                pairs_file=pairs_file,
                 spline_file=f"{tempdir}/spline_data.tsv",
                 p_val_access="p.adjust",
                 le_peps_access="core_enrichment",
                 taxa_access=taxa_access,
                 highlight_data=table_dir,
-                highlight_threshold=p_val_thresh
+                highlight_threshold=p_val_thresh,
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
             )
 
             volcano_plot, = volcano(
                 xy_dir=table_dir,
                 xy_access=["NES", "p.adjust"],
                 taxa_access=taxa_access,
-                x_threshold=es_thresh,
+                x_threshold=nes_thresh,
                 y_threshold=p_val_thresh,
                 xy_labels=["Enrichment score", "Adjusted p-values"],
-                titles=titles
+                pairs_file=pairs_file,
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
+            )
+
+            ae_plot, = aeplots( 
+                pos_nes_ae_file=os.path.join(summary_tables_dir, "Positive_NES_AE.tsv"),
+                neg_nes_ae_file=os.path.join(summary_tables_dir, "Negative_NES_AE.tsv"),
+                xy_access=["Events", "Species"],
+                xy_labels=["Number of AEs in cohort", "Species"],
+                colors_file=species_color_file,
+                vis_outputs_dir=vis_outputs_dir
             )
 
     end_time = time.perf_counter()
 
-    print(f"Finished in {round(end_time-start_time, 2)} seconds")
-    
-    return scatter_plot, volcano_plot
+    print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
+
+    return scatter_plot, volcano_plot, ae_plot
 
 
 def create_fgsea_table_for_pair(
@@ -209,8 +325,9 @@ def create_fgsea_table_for_pair(
     degree,
     dof,
     p_val_thresh,
-    es_thresh,
+    nes_thresh,
     iteration,
+    seed,
     table_dir=""
     ):
     print(f"Working on pair ({pair[0]}, {pair[1]})...")
@@ -255,7 +372,8 @@ def create_fgsea_table_for_pair(
         threshold,
         permutation_num,
         min_size,
-        max_size
+        max_size,
+        seed
     )
     with (ro.default_converter + pandas2ri.converter).context():
         table = ro.conversion.get_conversion().rpy2py(table)
@@ -312,10 +430,11 @@ def run_iterative_peptide_analysis(
     degree,
     dof,
     p_val_thresh,
-    es_thresh,
+    nes_thresh,
     peptide_sets_out_dir,
     iter_tables_dir,
-    get_iter_tables
+    max_workers,
+    seed
     ) -> dict:
 
     iteration_num = 1
@@ -348,14 +467,16 @@ def run_iterative_peptide_analysis(
 
         print("\nIteration:", iteration_num)
 
-        if get_iter_tables:
+        if iter_tables_dir:
             iter_out_dir = f"{iter_tables_dir}/Iteration_{iteration_num}"
             if not os.path.exists(iter_out_dir):
                 os.mkdir(iter_out_dir)
+        else:
+            iter_out_dir = ""
 
         # -------------------------------
         # note: rpy2 is not compatible with multithreading, only multiprocessing
-        with concurrent.futures.ProcessPoolExecutor() as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             pair_futures = [executor.submit(run_iterative_process_single_pair,
                             pair, 
                             tested_species_dict[pair], 
@@ -370,10 +491,10 @@ def run_iterative_peptide_analysis(
                             degree,
                             dof,
                             p_val_thresh,
-                            es_thresh,
+                            nes_thresh,
                             peptide_sets_out_dir,
-                            get_iter_tables,
-                            iter_out_dir
+                            iter_out_dir,
+                            seed
                             ) for pair in pairs if sig_species_found_dict[pair]]
 
             # concurrent.futures.wait(pair_futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
@@ -389,7 +510,7 @@ def run_iterative_peptide_analysis(
 
         iteration_num += 1
 
-    print("End of Iterative Peptide Analysis\n")
+    print("\nEnd of Iterative Peptide Analysis\n")
     return pair_sets_filename_dict
 
 
@@ -407,10 +528,10 @@ def run_iterative_process_single_pair(
     degree,
     dof,
     p_val_thresh,
-    es_thresh,
+    nes_thresh,
     peptide_sets_out_dir,
-    get_iter_tables,
-    iter_out_dir
+    iter_out_dir,
+    seed
     ):
     if not dof:
         dof = ro.NULL
@@ -435,21 +556,22 @@ def run_iterative_process_single_pair(
                                         degree=degree,
                                         dof=dof,
                                         p_val_thresh=p_val_thresh,
-                                        es_thresh=es_thresh,
-                                        iteration = True
+                                        nes_thresh=nes_thresh,
+                                        iteration = True,
+                                        seed=seed
                                         )
 
     # sort the table by ascending p-value (lowest on top)
-    table.sort_values(by=["pvalue"], ascending=True)
+    table.sort_values(by=["p.adjust"], ascending=True)
 
-    if get_iter_tables:
+    if iter_out_dir:
         table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
 
     # iterate through each row
     for index, row in table.iterrows():
 
         # test for significant species that has not already been used for this pair
-        if row["pvalue"] < p_val_thresh and np.absolute(row["enrichmentScore"]) > es_thresh \
+        if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh \
                                     and row["ID"] not in tested_species:
 
             print(f"Found {row['species_name']} in {pair} to be significant")

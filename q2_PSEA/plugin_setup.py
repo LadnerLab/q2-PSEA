@@ -27,9 +27,10 @@ plugin.pipelines.register_function(
         "pairs_file": Str,
         "peptide_sets_file": Str,
         "species_taxa_file": Str,
+        "species_color_file": Str,
         "threshold": Float,
         "p_val_thresh": Float,
-        "es_thresh": Float,
+        "nes_thresh": Float,
         "min_size": Int,
         "max_size": Int,
         "permutation_num": Int,
@@ -40,7 +41,10 @@ plugin.pipelines.register_function(
         "pepsirf_binary": Str,
         "iterative_analysis": Bool,
         "iter_tables_dir": Str,
-        "get_iter_tables": Bool
+        "max_workers": Int,
+        "summary_tables_dir": Str,
+        "vis_outputs_dir": Str,
+        "seed": Int
     },
     parameter_descriptions={
         "scores_file": "Name of Z score matrix file.",
@@ -52,11 +56,13 @@ plugin.pipelines.register_function(
             " format.",
         "species_taxa_file": "Name of tab-delimited file containing species"
             " name and taxanomy ID associations.",
+        "species_color_file": "Name of tab-delimited file containing species"
+            " name and HEX color code for that species to appear on the output charts.",
         "threshold": "Minimum Z score a peptide must maintain to be"
             " considered in Gene Set Enrichment Analysis.",
         "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
             " considered for highlighting in volcano and scatter plots.",
-        "es_thresh": "Specifies the value ",
+        "nes_thresh": "Specifies the value ",
         "min_size": "Minimum allowed number of peptides from peptide set also"
             " the data set.",
         "max_size": "Maximum allowed number of peptides from peptide set also"
@@ -71,19 +77,25 @@ plugin.pipelines.register_function(
         "table_dir": "Directory where resulting PSEA tables will be stored.",
         "pepsirf_binary": "Path to pepsirf binary.",
         "iterative_analysis": "Boolean value, whether or not to use iterative approach"
-                    " to filter cross-reactive peptides from less significant species."
-                    " GMT peptide_sets_file recommended.",
-        "iter_tables_dir": "Directory name to output iteration tables to.",
-        "get_iter_tables": "Boolean value, whether or not iteration tables should be outputted."
+            " to filter cross-reactive peptides from less significant species."
+            " GMT peptide_sets_file recommended.",
+        "iter_tables_dir": "Directory name to output iteration tables to. Only generates if name is provided.",
+        "max_workers": "Maximum number of processes to run at a time. If none set,"
+            " defaults to the number of processors on the machine.",
+        "summary_tables_dir": "Directory to save antibody event summary tables.",
+        "vis_outputs_dir": "Directory to save visualizations (not as a qiime2 artifact)."
+            " They will not be output here if this option is not provided.",
+        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
     },
-    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization)],
+    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization)],
     output_descriptions={
         "scatter_plot": "Name of plot file visualization comparison between"
             " two samples. This plot includes the smooth spline fit to the"
             " given data and highlights the leading edge peptides for all"
             " significant taxa.",
         "volcano_plot": "Name of plot file visualization comparison between"
-            " enrichment scores (ES) and p-values."
+            " enrichment scores (ES) and p-values.",
+        "ae_plots": "Name of plot of visualization for event summary, if created."
     },
     name="Make PSEA Table",
     description="Qiime2 plug-in which provides a Python wrapper around R"

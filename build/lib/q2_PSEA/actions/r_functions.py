@@ -1,16 +1,6 @@
 from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 
 r_functions = """
-delta_by_spline <- function(timepoint1, timepoint2)
-{
-    SS <- smooth.spline(timepoint1, timepoint2)
-    deltaZ <- timepoint2 - predict(SS, timepoint1)$y
-
-    names(deltaZ) <- rownames(deltaZ)
-
-    return(deltaZ)
-}
-
 psea <- function(
         maxZ,
         deltaZ,
@@ -21,10 +11,10 @@ psea <- function(
         # code
         permutation_num = 10000,
         min_size,
-        max_size
+        max_size,
+        seed
 ) {
     library(clusterProfiler)
-    # peptide_sets = read.csv(file=peptide_sets_file, head=T)
     peptide_sets <- peptide_sets[order(peptide_sets$gene), , drop=FALSE]
     gene_list <- sort(
         deltaZ[intersect(which(maxZ > threshold), which(deltaZ != 0))],
@@ -32,6 +22,7 @@ psea <- function(
     )
 
     term_to_gene <- peptide_sets[, c("term", "gene")]
+    set.seed(seed)
     out=GSEA(
         geneList=gene_list,
         TERM2GENE=term_to_gene,
@@ -63,7 +54,7 @@ psea <- function(
 
     if (species_file != "")
     {
-        species <- read.csv(file=species_file, sep="\t", head=T)
+        species <- read.csv(file=species_file, sep="\t", header=FALSE)
         species_name <- species[match(outtable[, "ID"], species[, 2]), 1]
         outtable <- cbind(outtable, species_name)
     }
