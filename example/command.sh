@@ -1,4 +1,5 @@
-qiime psea make-psea-table --p-scores-file example/IM0031_PV2T_25nt_raw_2mm_i1mm_Z-HDI75.tsv \
+qiime psea make-psea-table \
+--p-scores-file example/IM0031_PV2T_25nt_raw_2mm_i1mm_Z-HDI75.tsv \
 --p-pairs-file example/pairs.tsv \
 --p-peptide-sets-file example/input.gmt \
 --p-species-taxa-file example/species_taxa.tsv \
