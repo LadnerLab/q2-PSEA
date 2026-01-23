@@ -5,7 +5,7 @@ import q2_PSEA
 
 from q2_PSEA.actions.psea import make_psea_table
 from qiime2.plugin import (
-    Bool, Float, Int, Plugin, Str, Visualization
+    Bool, Float, Int, Plugin, Str, Visualization, Choices
 )
 
 
@@ -34,7 +34,7 @@ plugin.pipelines.register_function(
         "min_size": Int,
         "max_size": Int,
         "permutation_num": Int,
-        "spline_type": Str,
+        "spline_type": Str % Choices(q2_PSEA.actions.splines.SPLINE_TYPES),
         "degree": Int,
         "dof": Int,
         "table_dir": Str,

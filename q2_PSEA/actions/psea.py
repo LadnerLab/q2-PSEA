@@ -45,15 +45,13 @@ def make_psea_table(
         summary_tables_dir="./psea_ae_summary_tables",
         vis_outputs_dir=None,
         seed=149
-):    
+):
     start_time = time.perf_counter()
 
     volcano = ctx.get_action("ps-plot", "volcano")
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
 
-    assert spline_type in splines.SPLINE_TYPES, \
-        f"'{spline_type}' is not a valid spline method!"
     assert not os.path.exists(table_dir), \
         f"'{table_dir}' already exists! Please move or remove this directory."
     assert not os.path.exists(summary_tables_dir), \
@@ -152,7 +150,7 @@ def make_psea_table(
                 dof = ro.NULL
             if not species_taxa_file:
                 taxa_access = "ID"
-            
+
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 pair_futures = [executor.submit(create_fgsea_table_for_pair,
                                 pair,
@@ -270,7 +268,7 @@ def make_psea_table(
                 view=processed_scores_file,
                 view_type=PepsirfContingencyTSVFormat
             )
-        
+
             scatter_plot, = zscatter(
                 zscores=processed_scores_art,
                 pairs_file=pairs_file,
@@ -296,7 +294,7 @@ def make_psea_table(
                 vis_outputs_dir=vis_outputs_dir
             )
 
-            ae_plot, = aeplots( 
+            ae_plot, = aeplots(
                 pos_nes_ae_file=os.path.join(summary_tables_dir, "Positive_NES_AE.tsv"),
                 neg_nes_ae_file=os.path.join(summary_tables_dir, "Negative_NES_AE.tsv"),
                 xy_access=["Events", "Species"],
@@ -438,7 +436,7 @@ def run_iterative_peptide_analysis(
     ) -> dict:
 
     iteration_num = 1
-    
+
     # initialize gmt dict
     gmt_dict = dict()
     with open(og_peptide_sets_file, "r") as file:
@@ -478,9 +476,9 @@ def run_iterative_peptide_analysis(
         # note: rpy2 is not compatible with multithreading, only multiprocessing
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             pair_futures = [executor.submit(run_iterative_process_single_pair,
-                            pair, 
-                            tested_species_dict[pair], 
-                            pair_gmt_dict[pair], 
+                            pair,
+                            tested_species_dict[pair],
+                            pair_gmt_dict[pair],
                             processed_scores,
                             species_taxa_file,
                             threshold,
@@ -505,7 +503,7 @@ def run_iterative_peptide_analysis(
                 sig_species_found_dict[pair] = res_tup[0]
                 pair_sets_filename_dict[pair] = res_tup[1]
                 tested_species_dict[pair] = res_tup[2]
-                pair_gmt_dict[pair]= res_tup[3]        
+                pair_gmt_dict[pair]= res_tup[3]
         # -------------------------------
 
         iteration_num += 1
@@ -515,9 +513,9 @@ def run_iterative_peptide_analysis(
 
 
 def run_iterative_process_single_pair(
-    pair, 
-    tested_species, 
-    gmt_dict, 
+    pair,
+    tested_species,
+    gmt_dict,
     processed_scores,
     species_taxa_file,
     threshold,
