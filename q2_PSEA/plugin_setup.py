@@ -1,11 +1,14 @@
 #! /usr/bin/env python
+from q2_types.feature_data import FeatureData
+from q2_pepsirf.format_types import PSEAScores
+
 
 import q2_PSEA
 
 
 from q2_PSEA.actions.psea import make_psea_table
 from qiime2.plugin import (
-    Bool, Float, Int, Plugin, Str, Visualization, Choices
+    Bool, Float, Int, Plugin, Str, Visualization, Choices, Collection
 )
 
 
@@ -87,7 +90,7 @@ plugin.pipelines.register_function(
             " They will not be output here if this option is not provided.",
         "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
     },
-    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization)],
+    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization), ("psea_tables", Collection[FeatureData[PSEAScores]])],
     output_descriptions={
         "scatter_plot": "Name of plot file visualization comparison between"
             " two samples. This plot includes the smooth spline fit to the"

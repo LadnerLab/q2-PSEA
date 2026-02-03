@@ -307,7 +307,13 @@ def make_psea_table(
 
     print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
 
-    return scatter_plot, volcano_plot, ae_plot
+    PSEAScores = []
+    for fp in os.listdir(table_dir):
+        df = pd.read_csv(os.path.join(table_dir, fp), sep='\t')
+        art = ctx.make_artifact('FeatureData[PSEAScores]', df)
+        PSEAScores.append(art)
+
+    return scatter_plot, volcano_plot, ae_plot, PSEAScores
 
 
 def create_fgsea_table_for_pair(
