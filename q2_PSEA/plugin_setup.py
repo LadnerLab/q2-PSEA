@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 from q2_types.feature_data import FeatureData
-from q2_pepsirf.format_types import PSEAScores
+from q2_pepsirf.format_types import PSEAScores, MappedEpitope
 
 
 import q2_PSEA
@@ -23,8 +23,13 @@ plugin = Plugin(
 # register make_psea_table function
 plugin.pipelines.register_function(
     function=make_psea_table,
-    inputs={},
-    input_descriptions=None,
+    inputs={
+        "epitope_map": FeatureData[MappedEpitope],
+    },
+    input_descriptions={
+        "epitope_map": "Artifact mapping peptides to their corresponding"
+            " epitope",
+    },
     parameters={
         "scores_file": Str,
         "pairs_file": Str,

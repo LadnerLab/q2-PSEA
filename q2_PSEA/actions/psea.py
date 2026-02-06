@@ -1,3 +1,4 @@
+import ast
 import numpy as np
 import os
 import pandas as pd
@@ -27,6 +28,7 @@ def make_psea_table(
         pairs_file,
         peptide_sets_file,
         threshold,
+        epitope_map=None,
         p_val_thresh=0.05,
         nes_thresh=1,
         species_taxa_file="",
@@ -47,6 +49,9 @@ def make_psea_table(
         seed=149
 ):
     start_time = time.perf_counter()
+
+    if epitope_map is not None:
+        epitope_map = epitope_map.view(pd.DataFrame)
 
     volcano = ctx.get_action("ps-plot", "volcano")
     zscatter = ctx.get_action("ps-plot", "zscatter")
@@ -108,6 +113,7 @@ def make_psea_table(
 
             # run iterative peptide analysis, writes to temp_peptide_sets_dir files
             pair_pep_sets_file_dict = run_iterative_peptide_analysis(
+                epitope_map=epitope_map,
                 pairs=pairs,
                 processed_scores=processed_scores,
                 og_peptide_sets_file=peptide_sets_file,
@@ -153,6 +159,7 @@ def make_psea_table(
 
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 pair_futures = [executor.submit(create_fgsea_table_for_pair,
+                                epitope_map,
                                 pair,
                                 processed_scores,
                                 pair_pep_sets_file_dict[ pair ],
@@ -317,6 +324,7 @@ def make_psea_table(
 
 
 def create_fgsea_table_for_pair(
+    epitope_map,
     pair,
     processed_scores,
     pep_sets_file,
@@ -364,9 +372,16 @@ def create_fgsea_table_for_pair(
         data=[num for elem in maxZ for num in elem],
         index=data_sorted.index
     )
+
     deltaZ = pd.Series(
         data=y - yfit, index=data_sorted.index
     )
+
+    # TODO: We are losing data in here somewhere I believe. I do not think the
+    # epitopes are being propogated forwards correctly. Some file here that
+    # needs to know about them doesn't. Figure out which
+    if epitope_map is not None:
+        deltaZ = _collapse_residuals_to_epitope(deltaZ, epitope_map)
 
     table = INTERNAL.psea(
         maxZ,
@@ -422,6 +437,7 @@ def process_scores(scores, pairs) -> pd.DataFrame:
 
 
 def run_iterative_peptide_analysis(
+    epitope_map,
     pairs,
     processed_scores,
     og_peptide_sets_file,
@@ -482,6 +498,7 @@ def run_iterative_peptide_analysis(
         # note: rpy2 is not compatible with multithreading, only multiprocessing
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             pair_futures = [executor.submit(run_iterative_process_single_pair,
+                            epitope_map,
                             pair,
                             tested_species_dict[pair],
                             pair_gmt_dict[pair],
@@ -519,6 +536,7 @@ def run_iterative_peptide_analysis(
 
 
 def run_iterative_process_single_pair(
+    epitope_map,
     pair,
     tested_species,
     gmt_dict,
@@ -548,6 +566,7 @@ def run_iterative_process_single_pair(
     write_gmt_from_dict(pair_sets_filename, gmt_dict)
 
     table = create_fgsea_table_for_pair(
+                                        epitope_map=epitope_map,
                                         pair=pair,
                                         processed_scores=processed_scores,
                                         pep_sets_file=pair_sets_filename,
@@ -606,3 +625,20 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
                 gmt_file.write(f"{peptide}\t")
 
             gmt_file.write("\n")
+
+
+def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
+        epitope_residuals = {}
+
+        for peptide, residual in peptide_residuals.items():
+            epitope = epitope_map[epitope_map['CodeName'].apply(lambda x: peptide in x)].index[0]
+
+            if epitope not in epitope_residuals:
+                epitope_residuals[epitope] = residual
+            else:
+                epitope_residuals[epitope] = max(
+                    abs(residual), abs(epitope_residuals[epitope])
+                )
+
+        return pd.Series(epitope_residuals)
+
