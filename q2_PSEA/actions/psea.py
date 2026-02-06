@@ -381,6 +381,8 @@ def create_fgsea_table_for_pair(
     # epitopes are being propogated forwards correctly. Some file here that
     # needs to know about them doesn't. Figure out which
     if epitope_map is not None:
+        # TODO: Do we need to map maxZ?
+        maxZ = _collapse_residuals_to_epitope(maxZ, epitope_map)
         deltaZ = _collapse_residuals_to_epitope(deltaZ, epitope_map)
 
     table = INTERNAL.psea(
@@ -631,7 +633,14 @@ def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
         epitope_residuals = {}
 
         for peptide, residual in peptide_residuals.items():
-            epitope = epitope_map[epitope_map['CodeName'].apply(lambda x: peptide in x)].index[0]
+            mapped_epitope = epitope_map[epitope_map['CodeName'].apply(lambda x: peptide in x)]
+            if len(mapped_epitope.index) == 0:
+                # This is already an epitope otherwise we would have found it
+                epitope = peptide
+            elif len(mapped_epitope.index) > 1:
+                raise ValueError(f"The peptide {peptide} mapped to more than one epitope {mapped_epitope}")
+            else:
+                epitope = mapped_epitope.index[0]
 
             if epitope not in epitope_residuals:
                 epitope_residuals[epitope] = residual
