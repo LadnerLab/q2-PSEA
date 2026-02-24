@@ -308,9 +308,34 @@ def make_psea_table(
     end_time = time.perf_counter()
 
     print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
+    
+    PSEAScores = []
+    for fp in os.listdir(table_dir):
+        df = pd.read_csv(os.path.join(table_dir, fp), sep='\t')
+        art = ctx.make_artifact('FeatureData[PSEAScores]', df)
+        PSEAScores.append(art)
 
-    return scatter_plot, volcano_plot, ae_plot
+    return scatter_plot, volcano_plot, ae_plot, PSEAScores
 
+def _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree, dof):
+    data_sorted = processed_scores.loc[:, pair].sort_values(by=pair[0])
+    x = data_sorted.loc[:, pair[0]].to_numpy()
+    y = data_sorted.loc[:, pair[1]].to_numpy()
+
+    if spline_type == "py-smooth":
+        yfit = splines.smooth_spline(x, y)
+    elif spline_type == "py-LinearGAM":
+        yfit = splines.smooth_gam(x, y)
+    elif spline_type == "cubic":
+        yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
+    else:
+        yfit = splines.R_SPLINES.smooth_spline(x, y)
+
+    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
+    maxZ = pd.Series([num for elem in maxZ for num in elem], index=data_sorted.index)
+    deltaZ = pd.Series(y - yfit, index=data_sorted.index)
+
+    return x, yfit, maxZ, deltaZ
 
 def create_fgsea_table_for_pair(
     pair,
@@ -328,41 +353,25 @@ def create_fgsea_table_for_pair(
     nes_thresh,
     iteration,
     seed,
-    table_dir=""
-    ):
+    table_dir="",
+    pair_fit_cache=None,   # NEW
+):
     print(f"Working on pair ({pair[0]}, {pair[1]})...")
 
     table_prefix = f"{pair[0]}~{pair[1]}"
 
     # each pair has a different peptide set file
-    processed_scores, peptide_sets = utils.remove_peptides(
-        processed_scores, pep_sets_file
-    )
+    processed_scores, peptide_sets = utils.remove_peptides(processed_scores, pep_sets_file)
 
-    data_sorted = processed_scores.loc[:, pair].sort_values(by=pair[0])
-    x = data_sorted.loc[:, pair[0]].to_numpy()
-    y = data_sorted.loc[:, pair[1]].to_numpy()
-
-    # TODO: optimize with a dictionary, if possible
-    if spline_type == "py-smooth":
-        yfit = splines.smooth_spline(x, y)
-    elif spline_type == "cubic":
-        yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
+    if pair_fit_cache is None:
+        x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
+            processed_scores, pair, spline_type, degree, dof
+        )
     else:
-        yfit = splines.R_SPLINES.smooth_spline(x, y)
-
-    maxZ = np.apply_over_axes(
-        np.max,
-        data_sorted.loc[:, pair],
-        1
-    )
-    maxZ = pd.Series(
-        data=[num for elem in maxZ for num in elem],
-        index=data_sorted.index
-    )
-    deltaZ = pd.Series(
-        data=y - yfit, index=data_sorted.index
-    )
+        x, yfit, maxZ_all, deltaZ_all = pair_fit_cache
+        idx = processed_scores.index
+        maxZ = maxZ_all.reindex(idx)
+        deltaZ = deltaZ_all.reindex(idx)
 
     table = INTERNAL.psea(
         maxZ,
@@ -381,11 +390,7 @@ def create_fgsea_table_for_pair(
     if iteration:
         return table
 
-    # Note: I had to write table here instead of main because of error with rpy2
-    table.to_csv(
-        f"{table_dir}/{table_prefix}_psea_table.tsv",
-        sep="\t", index=False
-                    )
+    table.to_csv(f"{table_dir}/{table_prefix}_psea_table.tsv", sep="\t", index=False)
     return x, yfit, table_prefix, pair
 
 
@@ -455,12 +460,20 @@ def run_iterative_peptide_analysis(
     # keep a dict for each pair and it's tested species
     tested_species_dict = dict()
     for pair in pairs:
-        pair_gmt_dict[ pair ] = gmt_dict.copy()
+        pair_gmt_dict[pair] = {k: set(v) for k, v in gmt_dict.items()}
         sig_species_found_dict[ pair ] = True
         tested_species_dict[ pair ] = set()
 
     # keep a dict for the output gmt file of each pair
     pair_sets_filename_dict = dict()
+    
+    if not dof:
+        dof = ro.NULL
+    
+    pair_fit_cache = {
+    pair: _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree, dof)
+    for pair in pairs
+	}
 
     # loop until no other significant peptides were found
     while any(sig_species_found_dict.values()):
@@ -477,25 +490,27 @@ def run_iterative_peptide_analysis(
         # -------------------------------
         # note: rpy2 is not compatible with multithreading, only multiprocessing
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            pair_futures = [executor.submit(run_iterative_process_single_pair,
-                            pair, 
-                            tested_species_dict[pair], 
-                            pair_gmt_dict[pair], 
-                            processed_scores,
-                            species_taxa_file,
-                            threshold,
-                            permutation_num,
-                            min_size,
-                            max_size,
-                            spline_type,
-                            degree,
-                            dof,
-                            p_val_thresh,
-                            nes_thresh,
-                            peptide_sets_out_dir,
-                            iter_out_dir,
-                            seed
-                            ) for pair in pairs if sig_species_found_dict[pair]]
+            pair_futures = [executor.submit(
+    						run_iterative_process_single_pair,
+						    pair,
+						    tested_species_dict[pair],
+						    pair_gmt_dict[pair],
+						    processed_scores,
+						    species_taxa_file,
+						    threshold,
+						    permutation_num,
+						    min_size,
+						    max_size,
+						    spline_type,
+						    degree,
+						    dof,
+						    p_val_thresh,
+						    nes_thresh,
+						    peptide_sets_out_dir,
+						    iter_out_dir,
+						    seed,
+						    pair_fit_cache[pair],   # NEW
+							) for pair in pairs if sig_species_found_dict[pair]]
 
             # concurrent.futures.wait(pair_futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
 
@@ -531,10 +546,9 @@ def run_iterative_process_single_pair(
     nes_thresh,
     peptide_sets_out_dir,
     iter_out_dir,
-    seed
-    ):
-    if not dof:
-        dof = ro.NULL
+    seed,
+    pair_fit_cache,   # NEW
+	):
 
     sig_species_found = False
 
@@ -544,25 +558,25 @@ def run_iterative_process_single_pair(
     write_gmt_from_dict(pair_sets_filename, gmt_dict)
 
     table = create_fgsea_table_for_pair(
-                                        pair=pair,
-                                        processed_scores=processed_scores,
-                                        pep_sets_file=pair_sets_filename,
-                                        species_taxa_file=species_taxa_file,
-                                        threshold=threshold,
-                                        permutation_num=permutation_num,
-                                        min_size=min_size,
-                                        max_size=max_size,
-                                        spline_type=spline_type,
-                                        degree=degree,
-                                        dof=dof,
-                                        p_val_thresh=p_val_thresh,
-                                        nes_thresh=nes_thresh,
-                                        iteration = True,
-                                        seed=seed
-                                        )
-
+        pair=pair,
+        processed_scores=processed_scores,
+        pep_sets_file=pair_sets_filename,
+        species_taxa_file=species_taxa_file,
+        threshold=threshold,
+        permutation_num=permutation_num,
+        min_size=min_size,
+        max_size=max_size,
+        spline_type=spline_type,
+        degree=degree,
+        dof=dof,
+        p_val_thresh=p_val_thresh,
+        nes_thresh=nes_thresh,
+        iteration=True,
+        seed=seed,
+        pair_fit_cache=pair_fit_cache,   # NEW
+    )
     # sort the table by ascending p-value (lowest on top)
-    table.sort_values(by=["p.adjust"], ascending=True)
+    table = table.sort_values(by=["p.adjust"], ascending=True)
 
     if iter_out_dir:
         table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
