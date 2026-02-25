@@ -1,21 +1,17 @@
-import ast
 import numpy as np
 import os
 import pandas as pd
 import rpy2.robjects as ro
 import q2_PSEA.actions.splines as splines
-import qiime2
 import q2_PSEA.utils as utils
 import tempfile
-import biom
 
 import time
 import concurrent.futures
 import multiprocessing
 
-from math import isnan, log, pow
+from math import log, pow
 from rpy2.robjects import pandas2ri
-from rpy2.robjects.packages import importr
 from q2_pepsirf.format_types import PepsirfContingencyTSVFormat
 from q2_PSEA.actions.r_functions import INTERNAL
 
@@ -42,7 +38,6 @@ def make_psea_table(
         degree=3,
         dof=None,
         table_dir="./psea_table_outdir",
-        pepsirf_binary="pepsirf",
         iterative_analysis=True,
         iter_tables_dir="",
         max_workers=None,
@@ -91,7 +86,6 @@ def make_psea_table(
     os.mkdir(summary_tables_dir)
 
     pairs = list()
-    pair_2_title = dict()
     with open(pairs_file, "r") as fh:
         # skip header line
         fh.readline()
@@ -99,11 +93,6 @@ def make_psea_table(
             line_tup = tuple(line.replace("\n", "").split("\t"))
             pair = line_tup[0:2]
             pairs.append(pair)
-
-            if( len(line_tup) > 2):
-                pair_2_title[pair] = line_tup[2]
-            else:
-                pair_2_title[pair] = ""
 
     scores = pd.read_csv(scores_file, sep="\t", index_col=0)
     processed_scores = process_scores(scores, pairs)
@@ -203,7 +192,6 @@ def make_psea_table(
                     pair_spline_dict["x"].extend(x.tolist())
                     pair_spline_dict["y"].extend(yfit.tolist())
                     pair_spline_dict["pair"].extend([table_prefix] * len(x))
-                    # used_pairs.append((pair[0], pair[1], pair_2_title[pair]))
 
                     # populate event matrix with species that are significant this pair
                     tableDf = pd.read_csv(f"{table_dir}/{table_prefix}_psea_table.tsv", sep="\t")
@@ -370,8 +358,6 @@ def create_fgsea_table_for_pair(
     spline_type,
     degree,
     dof,
-    p_val_thresh,
-    nes_thresh,
     iteration,
     seed,
     table_dir="",
@@ -615,7 +601,7 @@ def run_iterative_process_single_pair(
         table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
 
     # iterate through each row
-    for index, row in table.iterrows():
+    for _, row in table.iterrows():
 
         # test for significant species that has not already been used for this pair
         if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh \

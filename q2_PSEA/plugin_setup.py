@@ -49,7 +49,6 @@ plugin.pipelines.register_function(
         "degree": Int,
         "dof": Int,
         "table_dir": Str,
-        "pepsirf_binary": Str,
         "iterative_analysis": Bool,
         "iter_tables_dir": Str,
         "max_workers": Int,
@@ -90,7 +89,6 @@ plugin.pipelines.register_function(
         "dof": "Degree of freedom to use when fitting the spline. Note: at the"
             " moment, this will only affect the `cubic` spline approach.",
         "table_dir": "Directory where resulting PSEA tables will be stored.",
-        "pepsirf_binary": "Path to pepsirf binary.",
         "iterative_analysis": "Boolean value, whether or not to use iterative approach"
             " to filter cross-reactive peptides from less significant species."
             " GMT peptide_sets_file recommended.",
