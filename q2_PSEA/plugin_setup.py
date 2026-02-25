@@ -1,10 +1,9 @@
 #! /usr/bin/env python
 from q2_types.feature_data import FeatureData
-from q2_pepsirf.format_types import PSEAScores, Epitope
+from q2_pepsirf.format_types import PSEAScores
 
 
 import q2_PSEA
-
 
 from q2_PSEA.actions.psea import make_psea_table
 from qiime2.plugin import (
@@ -23,15 +22,7 @@ plugin = Plugin(
 # register make_psea_table function
 plugin.pipelines.register_function(
     function=make_psea_table,
-    inputs={
-        "epitope": FeatureData[Epitope],
-    },
-    input_descriptions={
-        "epitope": "Artifact containing information relating peptides to"
-            " epitopes and species/subtype. If this argument is passed in the"
-            " peptide level residuals will be calculated then collapsed to"
-            " epitope level prior to further analysis."
-    },
+    inputs={},
     parameters={
         "scores_file": Str,
         "pairs_file": Str,
@@ -39,6 +30,7 @@ plugin.pipelines.register_function(
         "species_taxa_file": Str,
         "species_color_file": Str,
         "threshold": Float,
+        "epitope_file": Str,
         "collapse": Str % Choices(['Bacterial', 'Viral', 'Both']),
         "p_val_thresh": Float,
         "nes_thresh": Float,
@@ -72,6 +64,10 @@ plugin.pipelines.register_function(
             " name and HEX color code for that species to appear on the output charts.",
         "threshold": "Minimum Z score a peptide must maintain to be"
             " considered in Gene Set Enrichment Analysis.",
+        "epitope_file": "File containing information relating peptides to"
+            " epitopes and species/subtype. If this argument is passed in the"
+            " peptide level residuals will be calculated then collapsed to"
+            " epitope level prior to further analysis.",
         "collapse": "Which Category we should collapse to epitope level. Note that"
                     " this parameter means nothing if the epitope input isn't used.",
         "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
@@ -100,7 +96,11 @@ plugin.pipelines.register_function(
             " They will not be output here if this option is not provided.",
         "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
     },
-    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization), ("psea_tables", Collection[FeatureData[PSEAScores]])],
+    outputs=[
+        ("scatter_plot", Visualization), ("volcano_plot", Visualization),
+        ("ae_plots", Visualization),
+        ("psea_tables", Collection[FeatureData[PSEAScores]])
+    ],
     output_descriptions={
         "scatter_plot": "Name of plot file visualization comparison between"
             " two samples. This plot includes the smooth spline fit to the"

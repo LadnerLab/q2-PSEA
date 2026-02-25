@@ -25,7 +25,7 @@ def make_psea_table(
         pairs_file,
         peptide_sets_file,
         threshold,
-        epitope=None,
+        epitope_file=None,
         collapse="Viral",
         p_val_thresh=0.05,
         nes_thresh=1,
@@ -51,13 +51,16 @@ def make_psea_table(
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
 
-    scores_df = pd.read_csv(str(scores_file), sep="\t", index_col=0)
+    scores_df = pd.read_csv(scores_file, sep="\t", index_col=0)
     zscores = ctx.make_artifact('FeatureTable[Zscore]', scores_df)
 
     peptide_sets_df = create_df_from_gmt(peptide_sets_file)
     gmt = ctx.make_artifact('GMT', peptide_sets_df)
 
-    if epitope is not None:
+    if epitope_file is not None:
+        epitope_df = pd.read_csv(epitope_file, sep="\t", low_memory=False)
+        epitope = ctx.make_artifact('FeatureData[Epitope]', epitope_df)
+
         create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
         mapped_epitope, = create_epitope_map(epitope, collapse)
 
@@ -175,8 +178,6 @@ def make_psea_table(
                                 spline_type,
                                 degree,
                                 dof,
-                                p_val_thresh,
-                                nes_thresh,
                                 False,
                                 seed,
                                 table_dir
@@ -587,8 +588,6 @@ def run_iterative_process_single_pair(
         spline_type=spline_type,
         degree=degree,
         dof=dof,
-        p_val_thresh=p_val_thresh,
-        nes_thresh=nes_thresh,
         iteration=True,
         seed=seed,
         pair_fit_cache=pair_fit_cache,   # NEW
