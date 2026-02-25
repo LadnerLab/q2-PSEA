@@ -7,6 +7,7 @@ import q2_PSEA.actions.splines as splines
 import qiime2
 import q2_PSEA.utils as utils
 import tempfile
+import biom
 
 import time
 import concurrent.futures
@@ -28,7 +29,8 @@ def make_psea_table(
         pairs_file,
         peptide_sets_file,
         threshold,
-        epitope_map=None,
+        epitope=None,
+        collapse="Viral",
         p_val_thresh=0.05,
         nes_thresh=1,
         species_taxa_file="",
@@ -50,12 +52,25 @@ def make_psea_table(
 ):
     start_time = time.perf_counter()
 
-    if epitope_map is not None:
-        epitope_map = epitope_map.view(pd.DataFrame)
-
     volcano = ctx.get_action("ps-plot", "volcano")
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
+
+    scores_df = pd.read_csv(str(scores_file), sep="\t", index_col=0)
+    zscores = ctx.make_artifact('FeatureTable[Zscore]', scores_df)
+
+    peptide_sets_df = create_df_from_gmt(peptide_sets_file)
+    gmt = ctx.make_artifact('GMT', peptide_sets_df)
+
+    if epitope is not None:
+        create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
+        mapped_epitope, = create_epitope_map(epitope, collapse)
+
+        create_epitope_zscore = ctx.get_action("epitope", "epitope_zscore")
+        epitope_zscore, = create_epitope_zscore(zscores, mapped_epitope)
+
+        create_epitope_gmt = ctx.get_action("epitope", "taxa_to_epitope")
+        epitope_gmt, = create_epitope_gmt(epitope, collapse)
 
     assert not os.path.exists(table_dir), \
         f"'{table_dir}' already exists! Please move or remove this directory."
@@ -113,7 +128,7 @@ def make_psea_table(
 
             # run iterative peptide analysis, writes to temp_peptide_sets_dir files
             pair_pep_sets_file_dict = run_iterative_peptide_analysis(
-                epitope_map=epitope_map,
+                epitope=epitope,
                 pairs=pairs,
                 processed_scores=processed_scores,
                 og_peptide_sets_file=peptide_sets_file,
@@ -159,7 +174,7 @@ def make_psea_table(
 
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 pair_futures = [executor.submit(create_fgsea_table_for_pair,
-                                epitope_map,
+                                epitope,
                                 pair,
                                 processed_scores,
                                 pair_pep_sets_file_dict[ pair ],
@@ -343,7 +358,7 @@ def _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree,
     return x, yfit, maxZ, deltaZ
 
 def create_fgsea_table_for_pair(
-    epitope_map,
+    epitope,
     pair,
     processed_scores,
     pep_sets_file,
@@ -382,10 +397,10 @@ def create_fgsea_table_for_pair(
     # TODO: We are losing data in here somewhere I believe. I do not think the
     # epitopes are being propogated forwards correctly. Some file here that
     # needs to know about them doesn't. Figure out which
-    if epitope_map is not None:
+    if epitope is not None:
         # TODO: Do we need to map maxZ?
-        maxZ = _collapse_residuals_to_epitope(maxZ, epitope_map)
-        deltaZ = _collapse_residuals_to_epitope(deltaZ, epitope_map)
+        maxZ = _collapse_residuals_to_epitope(maxZ, epitope)
+        deltaZ = _collapse_residuals_to_epitope(deltaZ, epitope)
 
     table = INTERNAL.psea(
         maxZ,
@@ -411,7 +426,7 @@ def create_fgsea_table_for_pair(
 def process_scores(scores, pairs) -> pd.DataFrame:
     """Grabs replicates specified `pairs` from scores matrix and processes
     those remaining scores
-
+processed_scores_file
     Returns a Pandas DataFrame of processed Z scores
     """
     base = 2
@@ -437,7 +452,7 @@ def process_scores(scores, pairs) -> pd.DataFrame:
 
 
 def run_iterative_peptide_analysis(
-    epitope_map,
+    epitope,
     pairs,
     processed_scores,
     og_peptide_sets_file,
@@ -507,7 +522,7 @@ def run_iterative_peptide_analysis(
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             pair_futures = [executor.submit(
                             run_iterative_process_single_pair,
-                            epitope_map,
+                            epitope,
                             pair,
                             tested_species_dict[pair],
                             pair_gmt_dict[pair],
@@ -545,7 +560,7 @@ def run_iterative_peptide_analysis(
 
 
 def run_iterative_process_single_pair(
-    epitope_map,
+    epitope,
     pair,
     tested_species,
     gmt_dict,
@@ -574,7 +589,7 @@ def run_iterative_process_single_pair(
     write_gmt_from_dict(pair_sets_filename, gmt_dict)
 
     table = create_fgsea_table_for_pair(
-        epitope_map=epitope_map,
+        epitope=epitope,
         pair=pair,
         processed_scores=processed_scores,
         pep_sets_file=pair_sets_filename,
@@ -636,11 +651,24 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
             gmt_file.write("\n")
 
 
-def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
+def create_df_from_gmt(gmt_file_path):
+     result = pd.DataFrame(columns=['EpitopeID'])
+
+     with open(gmt_file_path) as fh:
+         for line in fh.readlines():
+             speciesID, epitopeID = line.split('\t\t')
+             epitopeID = epitopeID.split('\t')
+             result.loc[speciesID] = [epitopeID]
+
+     result.index.name = 'SpeciesID'
+     return result
+
+
+def _collapse_residuals_to_epitope(peptide_residuals, epitope):
         epitope_residuals = {}
 
         for peptide, residual in peptide_residuals.items():
-            mapped_epitope = epitope_map[epitope_map['CodeName'].apply(lambda x: peptide in x)]
+            mapped_epitope = epitope[epitope['CodeName'].apply(lambda x: peptide in x)]
             if len(mapped_epitope.index) == 0:
                 # This is already an epitope otherwise we would have found it
                 epitope = peptide

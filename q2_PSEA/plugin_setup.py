@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 from q2_types.feature_data import FeatureData
-from q2_pepsirf.format_types import PSEAScores, MappedEpitope
+from q2_pepsirf.format_types import PSEAScores, Epitope
 
 
 import q2_PSEA
@@ -24,11 +24,13 @@ plugin = Plugin(
 plugin.pipelines.register_function(
     function=make_psea_table,
     inputs={
-        "epitope_map": FeatureData[MappedEpitope],
+        "epitope": FeatureData[Epitope],
     },
     input_descriptions={
-        "epitope_map": "Artifact mapping peptides to their corresponding"
-            " epitope",
+        "epitope": "Artifact containing information relating peptides to"
+            " epitopes and species/subtype. If this argument is passed in the"
+            " peptide level residuals will be calculated then collapsed to"
+            " epitope level prior to further analysis."
     },
     parameters={
         "scores_file": Str,
@@ -37,6 +39,7 @@ plugin.pipelines.register_function(
         "species_taxa_file": Str,
         "species_color_file": Str,
         "threshold": Float,
+        "collapse": Str % Choices(['Bacterial', 'Viral', 'Both']),
         "p_val_thresh": Float,
         "nes_thresh": Float,
         "min_size": Int,
@@ -55,19 +58,23 @@ plugin.pipelines.register_function(
         "seed": Int
     },
     parameter_descriptions={
-        "scores_file": "Name of Z score matrix file.",
+        "scores_file": "Name of Z score matrix file. Will be collapsed to"
+            " epitope level if epitope is passed.",
         "pairs_file": "Name of tab-delimited file containing pairs of"
             " sample names.",
         "peptide_sets_file": "Name of GMT file containing information about"
             " species and the peptides which are linked to them. Please refer"
             " to 'input.gmt' in the 'examples' directory for an example of GMT"
-            " format.",
+            " format. Will be collapsed to epitope level if epitope is"
+            " passed.",
         "species_taxa_file": "Name of tab-delimited file containing species"
             " name and taxanomy ID associations.",
         "species_color_file": "Name of tab-delimited file containing species"
             " name and HEX color code for that species to appear on the output charts.",
         "threshold": "Minimum Z score a peptide must maintain to be"
             " considered in Gene Set Enrichment Analysis.",
+        "collapse": "Which Category we should collapse to epitope level. Note that"
+                    " this parameter means nothing if the epitope input isn't used.",
         "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
             " considered for highlighting in volcano and scatter plots.",
         "nes_thresh": "Specifies the value ",
