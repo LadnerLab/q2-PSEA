@@ -113,14 +113,28 @@ def remove_peptides_in_tsv_format(scores, peptide_sets_file) -> pd.DataFrame:
     return scores.drop(index=pep_list), peptide_sets
 
 
+def remove_peptides_in_df_format(scores, peptide_sets) -> pd.DataFrame:
+    """Removes peptide not present in df formatted sets from a matrix of Z
+    scores
+
+    Returns
+    -------
+    pd.DataFrame
+        Contains remaining peptides which were found in the peptide sets file
+    """
+    pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
+    return scores.drop(index=pep_list), peptide_sets
+
+
 REMOVE_PEPTIDES_SWITCH = {
     "csv": remove_peptides_in_csv_format,
     "gmt": remove_peptides_in_gmt_format,
     "tsv": remove_peptides_in_tsv_format,
+    "df": remove_peptides_in_df_format,
 }
 
 
-def remove_peptides(scores, peptide_sets_file) -> (pd.DataFrame, pd.DataFrame):
+def remove_peptides(scores, peptide_sets) -> (pd.DataFrame, pd.DataFrame):
     """Provides an interface to abstract support for TSV, CSV, and GMT file
     formats
 
@@ -128,13 +142,16 @@ def remove_peptides(scores, peptide_sets_file) -> (pd.DataFrame, pd.DataFrame):
     -----
     * TSV and CSV file formats are basically the same but use tabs and commas,
       respectively
-    
+
     Returns
     -------
     pd.DataFrame
         DataFrame from processing
     """
-    format = peptide_sets_file.split(".")[1]
+    if isinstance(peptide_sets, pd.DataFrame):
+        format = "df"
+    else:
+        format = peptide_sets.split(".")[1]
     assert format in list(REMOVE_PEPTIDES_SWITCH), \
         f"'{format}' is not a supported format for the peptide sets file!"
-    return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets_file)
+    return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets)
