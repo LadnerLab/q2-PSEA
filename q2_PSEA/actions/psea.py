@@ -169,7 +169,10 @@ def make_psea_table(
             neg_nes_count_dict = dict()
             zero_nes_count_dict = dict()
 
-            processed_scores.to_csv(processed_scores_file, sep="\t")
+            if epitope_file is not None:
+                mapped_processed_scores.to_csv(processed_scores_file, sep="\t")
+            else:
+                processed_scores.to_csv(processed_scores_file, sep="\t")
 
             taxa_access = "species_name"
             pair_spline_dict = { "x": list(), "y": list(), "pair": list() }
@@ -386,21 +389,24 @@ def create_fgsea_table_for_pair(
 
     table_prefix = f"{pair[0]}~{pair[1]}"
 
-    # each pair has a different peptide set file
-    processed_scores, peptide_sets = utils.remove_peptides(processed_scores, pep_sets_file)
-
     if pair_fit_cache is None:
-        x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
+        x, yfit, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
             processed_scores, pair, spline_type, degree, dof, epitope_map=epitope_map
         )
-        if epitope_map is not None:
-            processed_scores, peptide_sets = \
-                utils.remove_peptides(mapped_processed_scores, mapped_peptide_sets)
     else:
         x, yfit, maxZ_all, deltaZ_all = pair_fit_cache
-        idx = processed_scores.index
-        maxZ = maxZ_all.reindex(idx)
-        deltaZ = deltaZ_all.reindex(idx)
+
+    # each pair has a different peptide set file
+    if epitope_map is not None:
+        processed_scores, peptide_sets = \
+            utils.remove_peptides(mapped_processed_scores, mapped_peptide_sets)
+    else:
+        processed_scores, peptide_sets = utils.remove_peptides(processed_scores, pep_sets_file)
+
+    # Reindex based on what was removed
+    idx = processed_scores.index
+    maxZ = maxZ_all.reindex(idx)
+    deltaZ = deltaZ_all.reindex(idx)
 
     table = INTERNAL.psea(
         maxZ,
@@ -484,8 +490,11 @@ def run_iterative_peptide_analysis(
 
     if mapped_peptide_sets is not None:
         # NOTE: Mimic prior API at least for time being
-        gmt_dict = mapped_peptide_sets.to_dict()
-        gmt_dict = {k: set(v) for k, v in zip(mapped_peptide_sets.index, mapped_peptide_sets['EpitopeID'])}
+        gmt_dict = mapped_peptide_sets.groupby(['term'])
+        gmt_dict = gmt_dict['gene'].unique()
+        gmt_dict = gmt_dict.reset_index()
+        gmt_dict = gmt_dict.set_index('term')
+        gmt_dict = gmt_dict.to_dict()
     else:
         # initialize gmt dict
         gmt_dict = dict()
@@ -570,7 +579,7 @@ def run_iterative_peptide_analysis(
 
 
 def run_iterative_process_single_pair(
-    epitope,
+    epitope_map,
     pair,
     tested_species,
     gmt_dict,
@@ -601,7 +610,7 @@ def run_iterative_process_single_pair(
     write_gmt_from_dict(pair_sets_filename, gmt_dict)
 
     table = create_fgsea_table_for_pair(
-        epitope_map=epitope,
+        epitope_map=epitope_map,
         pair=pair,
         processed_scores=processed_scores,
         pep_sets_file=pair_sets_filename,
@@ -628,7 +637,6 @@ def run_iterative_process_single_pair(
 
     # iterate through each row
     for _, row in table.iterrows():
-
         # test for significant species that has not already been used for this pair
         if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh \
                                     and row["ID"] not in tested_species:
@@ -676,24 +684,28 @@ def create_df_from_gmt(gmt_file_path):
      return result
 
 
-# TODO: This works but it is unacceptably slow
 def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
-        epitope_residuals = {}
+        # Create reverse lookup table
+        peptide_to_epitopes = {}
+        for epitope, peptides in epitope_map["CodeName"].items():
+            for peptide in peptides:
+                if peptide not in peptide_to_epitopes:
+                    peptide_to_epitopes[peptide] = []
 
+                peptide_to_epitopes[peptide].append(epitope)
+
+        epitope_residuals = {}
         for peptide, residual in peptide_residuals.items():
-            mapped_epitopes = epitope_map[epitope_map['CodeName'] == peptide]
-            if len(mapped_epitopes.index) == 0:
-                # This is already an epitope otherwise we would have found it
-                mapped_epitopes = [peptide]
-            else:
-                mapped_epitopes = mapped_epitopes.index
+            mapped_epitopes = peptide_to_epitopes.get(peptide)
+
+            if not mapped_epitopes:
+                # We already were an epitope
+                mapped_epitopes = (peptide,)
 
             for epitope in mapped_epitopes:
                 if epitope not in epitope_residuals:
                     epitope_residuals[epitope] = residual
-                else:
-                    epitope_residuals[epitope] = max(
-                        abs(residual), abs(epitope_residuals[epitope])
-                    )
+                elif abs(residual) > abs(epitope_residuals[epitope]):
+                    epitope_residuals[epitope] = residual
 
         return pd.Series(epitope_residuals)
