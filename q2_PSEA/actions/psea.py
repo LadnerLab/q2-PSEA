@@ -7,341 +7,617 @@ import q2_PSEA.utils as utils
 import tempfile
 
 import time
-import concurrent.futures
-import multiprocessing
 
 from math import log, pow
 from rpy2.robjects import pandas2ri
-from q2_pepsirf.format_types import PepsirfContingencyTSVFormat
 from q2_PSEA.actions.r_functions import INTERNAL
+from q2_PSEA.format_types import (
+    PSEAPairsDirFmt,
+    PSEASpeciesTaxaDirFmt,
+    PSEASpeciesColorsDirFmt,
+)
 
 
 pandas2ri.activate()
 
 
-def make_psea_table(
-        ctx,
-        scores_file,
-        pairs_file,
-        peptide_sets_file,
-        threshold,
-        epitope_file=None,
-        collapse="Viral",
-        p_val_thresh=0.05,
-        nes_thresh=1,
-        species_taxa_file="",
-        species_color_file="",
-        min_size=15,
-        max_size=2000,
-        permutation_num=10000,  # as per original PSEA code
-        spline_type="r-smooth",
-        degree=3,
-        dof=None,
-        table_dir="./psea_table_outdir",
-        iterative_analysis=True,
-        iter_tables_dir="",
-        max_workers=None,
-        summary_tables_dir="./psea_ae_summary_tables",
-        vis_outputs_dir=None,
-        seed=149
-):
-    start_time = time.perf_counter()
+def create_fgsea_table_for_pair(
+    processed_scores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    sample_a: str,
+    sample_b: str,
+    threshold: float,
+    permutation_num: int,
+    min_size: int,
+    max_size: int,
+    spline_type: str,
+    degree: int,
+    seed: int,
+    dof: int = None,
+    species_taxa: PSEASpeciesTaxaDirFmt = None,
+    epitope_map: pd.DataFrame = None,
+    mapped_processed_scores: pd.DataFrame = None,
+    mapped_peptide_sets: pd.DataFrame = None,
+) -> pd.DataFrame:
+    """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
-    volcano = ctx.get_action("ps-plot", "volcano")
-    zscatter = ctx.get_action("ps-plot", "zscatter")
-    aeplots = ctx.get_action("ps-plot", "aeplots")
+    Parameters
+    ----------
+    processed_scores : pd.DataFrame
+        Log-scaled Z-score matrix (from FeatureTable[Zscore]).
+    peptide_sets : pd.DataFrame
+        GMT peptide-set table with columns 'term' and 'gene' (from GMT).
+    sample_a, sample_b : str
+        Names of the two samples forming the pair.
+    species_taxa : PSEASpeciesTaxaDirFmt, optional
+        Directory format containing species-taxa.tsv; passed as a file path
+        to the underlying R function.
+    epitope_map : pd.DataFrame, optional
+        Mapped-epitope table (from FeatureData[MappedEpitope]).
+    mapped_processed_scores : pd.DataFrame, optional
+        Epitope-level processed scores (from FeatureTable[Zscore]).
+    mapped_peptide_sets : pd.DataFrame, optional
+        Epitope-level GMT table (from GMT).
 
-    scores = pd.read_csv(scores_file, sep="\t", index_col=0)
-    zscores = ctx.make_artifact('FeatureTable[Zscore]', scores)
+    Returns
+    -------
+    pd.DataFrame
+        PSEA result table for this pair (stored as FeatureData[PSEAScores]).
+    """
+    print(f"Working on pair ({sample_a}, {sample_b})...")
 
-    if epitope_file is not None:
-        epitope_df = pd.read_csv(epitope_file, sep="\t", index_col=0, low_memory=False)
-        epitope = ctx.make_artifact('FeatureData[Epitope]', epitope_df)
+    # Manual: AAAAAAHAHHHHHHHHHHHHHHHHH
+    processed_scores = processed_scores.transpose()
 
-        create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
-        mapped_epitope, = create_epitope_map(epitope, collapse)
+    pair = (sample_a, sample_b)
 
-        create_epitope_zscore = ctx.get_action("epitope", "epitope_zscore")
-        epitope_zscore, = create_epitope_zscore(zscores, mapped_epitope)
-
-        create_epitope_gmt = ctx.get_action("epitope", "taxa_to_epitope")
-        epitope_gmt, = create_epitope_gmt(epitope, collapse)
-
-        mapped_epitope_df = mapped_epitope.view(pd.DataFrame)
-        epitope_zscore_df = epitope_zscore.view(pd.DataFrame)
-        epitope_zscore_df = epitope_zscore_df.transpose()
-        epitope_gmt_df = epitope_gmt.view(pd.DataFrame)
-    else:
-        epitope_df = None
-        mapped_epitope_df = None
-        epitope_zscore_df = None
-        epitope_gmt_df = None
-
-    assert not os.path.exists(table_dir), \
-        f"'{table_dir}' already exists! Please move or remove this directory."
-    assert not os.path.exists(summary_tables_dir), \
-        f"'{summary_tables_dir}' already exists! Please move or remove this directory."
-    if iterative_analysis:
-        assert ".gmt" in peptide_sets_file.lower(), \
-            "You are running iterative analysis without a GMT peptide sets file."
-    if max_workers != None:
-        assert max_workers <= multiprocessing.cpu_count(), \
-            f"Max workers excedes {multiprocessing.cpu_count()}, the number of CPUs on your machine."
-    if vis_outputs_dir != None:
-        assert not os.path.exists(vis_outputs_dir), \
-            f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
-        os.mkdir(vis_outputs_dir)
-
-    os.mkdir(table_dir)
-    os.mkdir(summary_tables_dir)
-
-    if not dof:
+    if dof is None:
         dof = ro.NULL
-    if not species_taxa_file:
-        taxa_access = "ID"
 
-    pairs = list()
-    with open(pairs_file, "r") as fh:
-        # skip header line
-        fh.readline()
-        for line in fh.readlines():
-            line_tup = tuple(line.replace("\n", "").split("\t"))
-            pair = line_tup[0:2]
-            pairs.append(pair)
-
-    processed_scores = process_scores(scores, pairs)
-    if epitope_file:
-        mapped_processed_scores = process_scores(epitope_zscore_df, pairs)
+    if species_taxa is not None:
+        species_taxa_file = str(species_taxa.path / "species-taxa.tsv")
     else:
-        mapped_processed_scores = None
+        species_taxa_file = ""
 
-    scores_file_split = scores_file.rsplit("/", 1)
-    if len(scores_file_split) > 1:
-        processed_scores_file = f"transformed_{scores_file_split[1]}"
+    x, yfit, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
+        processed_scores, pair, spline_type, degree, dof,
+        epitope_map=epitope_map,
+    )
+
+    if epitope_map is not None:
+        filtered_scores, peptide_sets_for_analysis = \
+            utils.remove_peptides(mapped_processed_scores, mapped_peptide_sets)
     else:
-        processed_scores_file = f"transformed_{scores_file_split[0]}"
+        filtered_scores, peptide_sets_for_analysis = \
+            utils.remove_peptides(processed_scores, peptide_sets)
 
-    # temporary directory to hold iterative analysis tables
-    with tempfile.TemporaryDirectory() as temp_peptide_sets_dir:
-        if iterative_analysis:
-            if iter_tables_dir:
-                if not os.path.exists(iter_tables_dir):
-                    os.mkdir(iter_tables_dir)
-                else:
-                    print(
-                        f"\nWarning: the directory '{iter_tables_dir}' already exists; files may"
-                        " be overwritten!"
-                    )
+    idx = filtered_scores.index
+    maxZ = maxZ_all.reindex(idx)
+    deltaZ = deltaZ_all.reindex(idx)
 
-            # run iterative peptide analysis, writes to temp_peptide_sets_dir files
-            pair_pep_sets_file_dict = run_iterative_peptide_analysis(
-                epitope_map=mapped_epitope_df,
-                pairs=pairs,
+    table = INTERNAL.psea(
+        maxZ,
+        deltaZ,
+        peptide_sets_for_analysis,
+        species_taxa_file,
+        threshold,
+        permutation_num,
+        min_size,
+        max_size,
+        seed,
+    )
+    with (ro.default_converter + pandas2ri.converter).context():
+        table = ro.conversion.get_conversion().rpy2py(table)
+
+    return table
+
+
+def run_iterative_process_single_pair(
+    ctx,
+    processed_scores,
+    peptide_sets,
+    sample_a,
+    sample_b,
+    threshold,
+    permutation_num,
+    min_size,
+    max_size,
+    spline_type,
+    degree,
+    seed,
+    p_val_thresh,
+    nes_thresh,
+    tested_species=None,
+    dof=None,
+    species_taxa=None,
+    epitope_map=None,
+    mapped_processed_scores=None,
+    mapped_peptide_sets=None,
+):
+    """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
+    single sample pair.
+
+    Calls the registered ``create_fgsea_table_for_pair`` method, finds the
+    most significant species not yet in *tested_species*, removes its leading-
+    edge peptides from all other species in the GMT, and returns the updated
+    peptide sets alongside the PSEA table for this iteration.
+
+    Returns
+    -------
+    psea_table : FeatureData[PSEAScores]
+    updated_peptide_sets : GMT
+    """
+    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
+
+    psea_table, = create_fgsea_table(
+        processed_scores=processed_scores,
+        peptide_sets=peptide_sets,
+        sample_a=sample_a,
+        sample_b=sample_b,
+        threshold=threshold,
+        permutation_num=permutation_num,
+        min_size=min_size,
+        max_size=max_size,
+        spline_type=spline_type,
+        degree=degree,
+        seed=seed,
+        dof=dof,
+        species_taxa=species_taxa,
+        epitope_map=epitope_map,
+        mapped_processed_scores=mapped_processed_scores,
+        mapped_peptide_sets=mapped_peptide_sets,
+    )
+
+    if tested_species is None:
+        tested_species = []
+
+    table_df = psea_table.view(pd.DataFrame)
+    table_df_sorted = table_df.sort_values(by=["p.adjust"], ascending=True)
+
+    gmt_df = peptide_sets.view(pd.DataFrame)
+
+    for _, row in table_df_sorted.iterrows():
+        row_id = str(row["ID"])
+        if (
+            row["p.adjust"] < p_val_thresh
+            and abs(row["NES"]) > nes_thresh
+            and row_id not in [str(s) for s in tested_species]
+        ):
+            print(
+                f"Found {row['species_name']} in ({sample_a}, {sample_b})"
+                " to be significant"
+            )
+            all_tested_peps = set(row["all_tested_peptides"].split("/"))
+            mask = (
+                (gmt_df["term"].astype(str) != row_id)
+                & gmt_df["gene"].isin(all_tested_peps)
+            )
+            gmt_df = gmt_df[~mask].copy()
+            break
+
+    updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
+    return psea_table, updated_peptide_sets
+
+
+def run_iterative_peptide_analysis(
+    ctx,
+    processed_scores,
+    pairs,
+    peptide_sets,
+    threshold,
+    permutation_num,
+    min_size,
+    max_size,
+    spline_type,
+    degree,
+    seed,
+    p_val_thresh,
+    nes_thresh,
+    dof=None,
+    species_taxa=None,
+    epitope_map=None,
+    mapped_processed_scores=None,
+    mapped_peptide_sets=None,
+):
+    """QIIME 2 pipeline: iteratively filter cross-reactive peptides for every
+    sample pair.
+
+    Calls the registered ``run_iterative_process_single_pair`` pipeline once
+    per pair per iteration until no new significant species are discovered.
+
+    Returns
+    -------
+    filtered_peptide_sets : Collection[GMT]
+        One final filtered GMT artifact per pair, in the same order as the
+        rows of the pairs file.
+    """
+    run_single_pair = ctx.get_action(
+        "psea", "run_iterative_process_single_pair"
+    )
+
+    pairs_dirfmt = pairs.view(PSEAPairsDirFmt)
+    pairs_df = pd.read_csv(
+        str(pairs_dirfmt.path / "pairs.tsv"), sep="\t", header=0
+    )
+    pairs_list = [
+        (str(row.iloc[0]), str(row.iloc[1]))
+        for _, row in pairs_df.iterrows()
+    ]
+
+    pair_gmt_dict = {pair: peptide_sets for pair in pairs_list}
+    sig_species_found_dict = {pair: True for pair in pairs_list}
+    tested_species_dict = {pair: [] for pair in pairs_list}
+
+    iteration_num = 1
+
+    while any(sig_species_found_dict.values()):
+        print(f"\nIteration: {iteration_num}")
+
+        for pair in pairs_list:
+            if not sig_species_found_dict[pair]:
+                continue
+
+            sample_a, sample_b = pair
+
+            iter_psea_table, updated_gmt = run_single_pair(
                 processed_scores=processed_scores,
-                og_peptide_sets_file=peptide_sets_file,
-                species_taxa_file=species_taxa_file,
+                peptide_sets=pair_gmt_dict[pair],
+                sample_a=sample_a,
+                sample_b=sample_b,
                 threshold=threshold,
                 permutation_num=permutation_num,
                 min_size=min_size,
                 max_size=max_size,
                 spline_type=spline_type,
                 degree=degree,
-                dof=dof,
+                seed=seed,
                 p_val_thresh=p_val_thresh,
                 nes_thresh=nes_thresh,
-                peptide_sets_out_dir = temp_peptide_sets_dir,
-                iter_tables_dir=iter_tables_dir,
-                max_workers=max_workers,
-                seed=seed,
+                # Manual: QIIME 2 won't accept [] for List[Str]
+                tested_species=tested_species_dict[pair] if tested_species_dict[pair] != [] else None,
+                dof=dof,
+                species_taxa=species_taxa,
+                epitope_map=epitope_map,
                 mapped_processed_scores=mapped_processed_scores,
-                mapped_peptide_sets=epitope_gmt_df
+                mapped_peptide_sets=mapped_peptide_sets,
             )
-        else:
-            # each pair will have the same gmt file
-            pair_pep_sets_file_dict = dict.fromkeys(pairs, peptide_sets_file)
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            pos_nes_event_matrix = dict()
-            neg_nes_event_matrix = dict()
-            zero_nes_event_matrix = dict()
-            empty_pair_row = [0] * len(pairs)
-            pos_nes_count_dict = dict()
-            neg_nes_count_dict = dict()
-            zero_nes_count_dict = dict()
+            table_df = iter_psea_table.view(pd.DataFrame)
+            table_df_sorted = table_df.sort_values(
+                by=["p.adjust"], ascending=True
+            )
 
-            if epitope_file is not None:
-                mapped_processed_scores.to_csv(processed_scores_file, sep="\t")
-            else:
-                processed_scores.to_csv(processed_scores_file, sep="\t")
+            sig_found = False
+            for _, row in table_df_sorted.iterrows():
+                row_id = str(row["ID"])
+                if (
+                    row["p.adjust"] < p_val_thresh
+                    and abs(row["NES"]) > nes_thresh
+                    and row_id
+                    not in [str(s) for s in tested_species_dict[pair]]
+                ):
+                    sig_found = True
+                    tested_species_dict[pair].append(row_id)
+                    break
 
-            taxa_access = "species_name"
-            pair_spline_dict = { "x": list(), "y": list(), "pair": list() }
+            sig_species_found_dict[pair] = sig_found
+            pair_gmt_dict[pair] = updated_gmt
 
-            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                pair_futures = [executor.submit(create_fgsea_table_for_pair,
-                                mapped_epitope_df,
-                                pair,
-                                processed_scores,
-                                pair_pep_sets_file_dict[ pair ],
-                                species_taxa_file,
-                                threshold,
-                                permutation_num,
-                                min_size,
-                                max_size,
-                                spline_type,
-                                degree,
-                                dof,
-                                False,
-                                seed,
-                                table_dir,
-                                mapped_processed_scores=mapped_processed_scores,
-                                mapped_peptide_sets=epitope_gmt_df
-                                ) for pair in pairs]
+        iteration_num += 1
 
-                for future in concurrent.futures.as_completed(pair_futures):
-                    result = future.result()
-                    x = result[0]
-                    yfit = result[1]
-                    table_prefix = result[2]
-                    pair = result[3]
+    print("\nEnd of Iterative Peptide Analysis\n")
+    return list(pair_gmt_dict.values())
 
-                    pair_spline_dict["x"].extend(x.tolist())
-                    pair_spline_dict["y"].extend(yfit.tolist())
-                    pair_spline_dict["pair"].extend([table_prefix] * len(x))
 
-                    # populate event matrix with species that are significant this pair
-                    tableDf = pd.read_csv(f"{table_dir}/{table_prefix}_psea_table.tsv", sep="\t")
-                    for i, row in tableDf.iterrows():
-                        taxa = row[taxa_access]
+def make_psea_table(
+    ctx,
+    scores,
+    pairs,
+    peptide_sets,
+    threshold,
+    species_taxa=None,
+    species_colors=None,
+    epitope=None,
+    collapse="Viral",
+    p_val_thresh=0.05,
+    nes_thresh=1,
+    min_size=15,
+    max_size=2000,
+    permutation_num=10000,
+    spline_type="r-smooth",
+    degree=3,
+    dof=None,
+    iterative_analysis=True,
+    seed=149,
+):
+    start_time = time.perf_counter()
 
-                        if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh:
-                            if row["NES"] > 0:
-                                if taxa not in pos_nes_event_matrix.keys():
-                                    pos_nes_event_matrix[taxa] = empty_pair_row.copy()
-                                pos_nes_event_matrix[taxa][pairs.index(pair)] = 1
+    volcano = ctx.get_action("ps-plot", "volcano")
+    zscatter = ctx.get_action("ps-plot", "zscatter")
+    aeplots = ctx.get_action("ps-plot", "aeplots")
+    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
 
-                                if taxa not in pos_nes_count_dict.keys():
-                                    pos_nes_count_dict[taxa] = 0
-                                pos_nes_count_dict[taxa] += 1
+    # ------------------------------------------------------------------
+    # Extract file paths needed by legacy ps-plot actions (which take Str)
+    # ------------------------------------------------------------------
+    pairs_dirfmt = pairs.view(PSEAPairsDirFmt)
+    pairs_file_path = str(pairs_dirfmt.path / "pairs.tsv")
 
-                            elif row["NES"] < 0:
-                                if taxa not in neg_nes_event_matrix.keys():
-                                    neg_nes_event_matrix[taxa] = empty_pair_row.copy()
-                                neg_nes_event_matrix[taxa][pairs.index(pair)] = 1
+    colors_file_path = ""
+    if species_colors is not None:
+        colors_dirfmt = species_colors.view(PSEASpeciesColorsDirFmt)
+        colors_file_path = str(colors_dirfmt.path / "species-colors.tsv")
 
-                                if taxa not in neg_nes_count_dict.keys():
-                                    neg_nes_count_dict[taxa] = 0
-                                neg_nes_count_dict[taxa] += 1
+    taxa_access = "species_name" if species_taxa is not None else "ID"
 
-                            # output message if nes is 0
-                            else:
-                                if taxa not in zero_nes_event_matrix.keys():
-                                    zero_nes_event_matrix[taxa] = empty_pair_row.copy()
-                                zero_nes_event_matrix[taxa][pairs.index(pair)] = 1
+    # ------------------------------------------------------------------
+    # Parse pairs list
+    # ------------------------------------------------------------------
+    pairs_df = pd.read_csv(pairs_file_path, sep="\t", header=0)
+    pairs_list = [
+        (str(row.iloc[0]), str(row.iloc[1]))
+        for _, row in pairs_df.iterrows()
+    ]
 
-                                if taxa not in zero_nes_count_dict.keys():
-                                    zero_nes_count_dict[taxa] = 0
-                                zero_nes_count_dict[taxa] += 1
+    # ------------------------------------------------------------------
+    # Handle epitope collapsing
+    # ------------------------------------------------------------------
+    mapped_epitope = None
+    epitope_zscore = None
+    epitope_gmt = None
 
-            pos_nes_event_matrix_df = pd.DataFrame.from_dict(pos_nes_event_matrix)
-            pos_nes_event_matrix_df.index = [f"{pair[0]}~{pair[1]}" for pair in pairs]
-            pos_nes_event_matrix_df.sort_index(inplace=True)
-            pos_nes_event_matrix_df = pos_nes_event_matrix_df[sorted(pos_nes_event_matrix_df.columns.tolist(), key=lambda col: pos_nes_event_matrix_df[col].sum(), reverse=True)]
-            pos_nes_event_matrix_df.to_csv(os.path.join(summary_tables_dir, "Positive_NES_taxa_matrix.tsv"), sep="\t")
+    if epitope is not None:
+        create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
+        mapped_epitope, = create_epitope_map(epitope, collapse)
 
-            neg_nes_event_matrix_df = pd.DataFrame.from_dict(neg_nes_event_matrix)
-            neg_nes_event_matrix_df.index = [f"{pair[0]}~{pair[1]}" for pair in pairs]
-            neg_nes_event_matrix_df.sort_index(inplace=True)
-            neg_nes_event_matrix_df = neg_nes_event_matrix_df[sorted(neg_nes_event_matrix_df.columns.tolist(), key=lambda col: neg_nes_event_matrix_df[col].sum(), reverse=True)]
-            neg_nes_event_matrix_df.to_csv(os.path.join(summary_tables_dir, "Negative_NES_taxa_matrix.tsv"), sep="\t")
+        create_epitope_zscore = ctx.get_action("epitope", "epitope_zscore")
+        epitope_zscore, = create_epitope_zscore(scores, mapped_epitope)
 
-            pos_nes_count_dict = {k:v for k, v in sorted(pos_nes_count_dict.items(), key=lambda item: item[1], reverse=True)}
-            neg_nes_count_dict = {k:v for k, v in sorted(neg_nes_count_dict.items(), key=lambda item: item[1], reverse=True)
-            }
+        create_epitope_gmt = ctx.get_action("epitope", "taxa_to_epitope")
+        epitope_gmt, = create_epitope_gmt(epitope, collapse)
 
-            # create column sums for positive and negative NES
-            with open(os.path.join(summary_tables_dir, "Positive_NES_AE.tsv"), "w") as pos_file:
-                pos_file.write(f"Species\tEvents\n")
-                for taxa in pos_nes_count_dict.keys():
-                    pos_file.write(f"{taxa}\t{pos_nes_count_dict[taxa]}\n")
-            with open(os.path.join( summary_tables_dir, "Negative_NES_AE.tsv"), "w") as neg_file:
-                neg_file.write(f"Species\tEvents\n")
-                for taxa in neg_nes_count_dict.keys():
-                    neg_file.write(f"{taxa}\t{neg_nes_count_dict[taxa]}\n")
-            if len(zero_nes_count_dict) > 0:
-                print("\n")
-                for taxa in zero_nes_count_dict.keys():
-                    if zero_nes_count_dict[taxa] > 1:
-                        print(f"{zero_nes_count_dict[taxa]} events for {taxa}, which has an NES of 0")
+    # ------------------------------------------------------------------
+    # Process (log-scale) scores
+    # ------------------------------------------------------------------
+    scores_df = scores.view(pd.DataFrame)
+    # Manual: This df needs to be transposed. This transformer transposes the
+    # matrix, and we don't want that, so we need to transpose it back.
+    scores_df = scores_df.transpose()
+
+    processed_scores_df = process_scores(scores_df, pairs_list)
+    processed_scores_art = ctx.make_artifact(
+        "FeatureTable[Zscore]", processed_scores_df
+    )
+
+    mapped_processed_scores_art = None
+    if epitope is not None:
+        epitope_zscore_df = epitope_zscore.view(pd.DataFrame).transpose()
+        mapped_processed_scores_df = process_scores(
+            epitope_zscore_df, pairs_list
+        )
+        mapped_processed_scores_art = ctx.make_artifact(
+            "FeatureTable[Zscore]", mapped_processed_scores_df
+        )
+
+    # ------------------------------------------------------------------
+    # Determine per-pair peptide sets (iterative or flat)
+    # ------------------------------------------------------------------
+    if iterative_analysis:
+        run_iterative = ctx.get_action(
+            "psea", "run_iterative_peptide_analysis"
+        )
+        filtered_gmts, = run_iterative(
+            processed_scores=processed_scores_art,
+            pairs=pairs,
+            peptide_sets=peptide_sets,
+            threshold=threshold,
+            permutation_num=permutation_num,
+            min_size=min_size,
+            max_size=max_size,
+            spline_type=spline_type,
+            degree=degree,
+            seed=seed,
+            p_val_thresh=p_val_thresh,
+            nes_thresh=nes_thresh,
+            dof=dof,
+            species_taxa=species_taxa,
+            epitope_map=mapped_epitope,
+            mapped_processed_scores=mapped_processed_scores_art,
+            mapped_peptide_sets=epitope_gmt,
+        )
+        # Manual: Needed to call .values on this dict
+        pair_pep_sets_dict = {
+            pair: gmt for pair, gmt in zip(pairs_list, filtered_gmts.values())
+        }
+    else:
+        pair_pep_sets_dict = {pair: peptide_sets for pair in pairs_list}
+
+    # ------------------------------------------------------------------
+    # Final per-pair PSEA analysis
+    # ------------------------------------------------------------------
+    pos_nes_event_matrix = dict()
+    neg_nes_event_matrix = dict()
+    zero_nes_event_matrix = dict()
+    empty_pair_row = [0] * len(pairs_list)
+    pos_nes_count_dict = dict()
+    neg_nes_count_dict = dict()
+    zero_nes_count_dict = dict()
+
+    pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
+    psea_tables = []
+
+    mapped_epitope_df = mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
+    dof_r = ro.NULL if dof is None else dof
+
+    with tempfile.TemporaryDirectory() as table_tempdir:
+        for pair in pairs_list:
+            sample_a, sample_b = pair
+            table_prefix = f"{sample_a}~{sample_b}"
+
+            psea_table, = create_fgsea_table(
+                processed_scores=processed_scores_art,
+                peptide_sets=pair_pep_sets_dict[pair],
+                sample_a=sample_a,
+                sample_b=sample_b,
+                threshold=threshold,
+                permutation_num=permutation_num,
+                min_size=min_size,
+                max_size=max_size,
+                spline_type=spline_type,
+                degree=degree,
+                seed=seed,
+                dof=dof,
+                species_taxa=species_taxa,
+                epitope_map=mapped_epitope,
+                mapped_processed_scores=mapped_processed_scores_art,
+                mapped_peptide_sets=epitope_gmt,
+            )
+            psea_tables.append(psea_table)
+
+            table_df = psea_table.view(pd.DataFrame)
+            table_df.to_csv(
+                os.path.join(table_tempdir, f"{table_prefix}_psea_table.tsv"),
+                sep="\t",
+                index=False,
+            )
+
+            # Spline data for scatter plot
+            x, yfit, _, _ = _compute_pair_fit_and_residuals(
+                processed_scores_df,
+                pair,
+                spline_type,
+                degree,
+                dof_r,
+                epitope_map=mapped_epitope_df,
+            )
+            pair_spline_dict["x"].extend(x.tolist())
+            pair_spline_dict["y"].extend(yfit.tolist())
+            pair_spline_dict["pair"].extend([table_prefix] * len(x))
+
+            # Populate event matrices
+            for _, row in table_df.iterrows():
+                taxa = row[taxa_access]
+                if (
+                    row["p.adjust"] < p_val_thresh
+                    and abs(row["NES"]) > nes_thresh
+                ):
+                    if row["NES"] > 0:
+                        if taxa not in pos_nes_event_matrix:
+                            pos_nes_event_matrix[taxa] = empty_pair_row.copy()
+                        pos_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
+                        pos_nes_count_dict[taxa] = (
+                            pos_nes_count_dict.get(taxa, 0) + 1
+                        )
+                    elif row["NES"] < 0:
+                        if taxa not in neg_nes_event_matrix:
+                            neg_nes_event_matrix[taxa] = empty_pair_row.copy()
+                        neg_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
+                        neg_nes_count_dict[taxa] = (
+                            neg_nes_count_dict.get(taxa, 0) + 1
+                        )
                     else:
-                        print(f"{zero_nes_count_dict[taxa]} event for {taxa}, which has an NES of 0")
-                    print("The pairs which this occurred are: ")
-                    for pair_index in range(len(zero_nes_event_matrix[taxa])):
-                        if zero_nes_event_matrix[taxa][pair_index] == 1:
-                            print(f"{pairs[pair_index][0]}~{pairs[pair_index][1]}")
-            '''
-            pd.DataFrame(used_pairs).to_csv(
-                f"{tempdir}/used_pairs.tsv", sep="\t",
-                header=False, index=False
+                        if taxa not in zero_nes_event_matrix:
+                            zero_nes_event_matrix[taxa] = (
+                                empty_pair_row.copy()
+                            )
+                        zero_nes_event_matrix[taxa][
+                            pairs_list.index(pair)
+                        ] = 1
+                        zero_nes_count_dict[taxa] = (
+                            zero_nes_count_dict.get(taxa, 0) + 1
+                        )
+
+        # ------------------------------------------------------------------
+        # Build summary files and visualizations
+        # ------------------------------------------------------------------
+        with tempfile.TemporaryDirectory() as summary_tempdir:
+            pos_nes_count_dict = dict(
+                sorted(
+                    pos_nes_count_dict.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
             )
-            '''
-            pd.DataFrame(pair_spline_dict).to_csv(
-                f"{tempdir}/spline_data.tsv", sep="\t", index=False
+            neg_nes_count_dict = dict(
+                sorted(
+                    neg_nes_count_dict.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
             )
 
-            processed_scores_art = ctx.make_artifact(
-                type="FeatureTable[Zscore]",
-                view=processed_scores_file,
-                view_type=PepsirfContingencyTSVFormat
-            )
+            pos_ae_file = os.path.join(summary_tempdir, "Positive_NES_AE.tsv")
+            neg_ae_file = os.path.join(summary_tempdir, "Negative_NES_AE.tsv")
 
-            scatter_plot, = zscatter(
-                zscores=processed_scores_art,
-                pairs_file=pairs_file,
-                spline_file=f"{tempdir}/spline_data.tsv",
-                p_val_access="p.adjust",
-                le_peps_access="core_enrichment",
-                taxa_access=taxa_access,
-                highlight_data=table_dir,
-                highlight_threshold=p_val_thresh,
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
-            )
+            with open(pos_ae_file, "w") as fh:
+                fh.write("Species\tEvents\n")
+                for taxa, count in pos_nes_count_dict.items():
+                    fh.write(f"{taxa}\t{count}\n")
 
-            volcano_plot, = volcano(
-                xy_dir=table_dir,
-                xy_access=["NES", "p.adjust"],
-                taxa_access=taxa_access,
-                x_threshold=nes_thresh,
-                y_threshold=p_val_thresh,
-                xy_labels=["Enrichment score", "Adjusted p-values"],
-                pairs_file=pairs_file,
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
-            )
+            with open(neg_ae_file, "w") as fh:
+                fh.write("Species\tEvents\n")
+                for taxa, count in neg_nes_count_dict.items():
+                    fh.write(f"{taxa}\t{count}\n")
 
-            ae_plot, = aeplots(
-                pos_nes_ae_file=os.path.join(summary_tables_dir, "Positive_NES_AE.tsv"),
-                neg_nes_ae_file=os.path.join(summary_tables_dir, "Negative_NES_AE.tsv"),
-                xy_access=["Events", "Species"],
-                xy_labels=["Number of AEs in cohort", "Species"],
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
-            )
+            if zero_nes_count_dict:
+                print("\n")
+                for taxa, count in zero_nes_count_dict.items():
+                    event_word = "events" if count > 1 else "event"
+                    print(
+                        f"{count} {event_word} for {taxa}, which has an NES"
+                        " of 0"
+                    )
+
+            with tempfile.TemporaryDirectory() as spline_tempdir:
+                spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
+                pd.DataFrame(pair_spline_dict).to_csv(
+                    spline_file, sep="\t", index=False
+                )
+
+                scatter_plot, = zscatter(
+                    zscores=processed_scores_art,
+                    pairs_file=pairs_file_path,
+                    spline_file=spline_file,
+                    p_val_access="p.adjust",
+                    le_peps_access="core_enrichment",
+                    taxa_access=taxa_access,
+                    highlight_data=table_tempdir,
+                    highlight_threshold=p_val_thresh,
+                    colors_file=colors_file_path,
+                )
+
+                volcano_plot, = volcano(
+                    xy_dir=table_tempdir,
+                    xy_access=["NES", "p.adjust"],
+                    taxa_access=taxa_access,
+                    x_threshold=nes_thresh,
+                    y_threshold=p_val_thresh,
+                    xy_labels=["Enrichment score", "Adjusted p-values"],
+                    pairs_file=pairs_file_path,
+                    colors_file=colors_file_path,
+                )
+
+                ae_plot, = aeplots(
+                    pos_nes_ae_file=pos_ae_file,
+                    neg_nes_ae_file=neg_ae_file,
+                    xy_access=["Events", "Species"],
+                    xy_labels=["Number of AEs in cohort", "Species"],
+                    colors_file=colors_file_path,
+                )
 
     end_time = time.perf_counter()
+    print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
-    print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
+    return scatter_plot, volcano_plot, ae_plot, psea_tables
 
-    PSEAScores = []
-    for fp in os.listdir(table_dir):
-        df = pd.read_csv(os.path.join(table_dir, fp), sep='\t')
-        art = ctx.make_artifact('FeatureData[PSEAScores]', df)
-        PSEAScores.append(art)
 
-    return scatter_plot, volcano_plot, ae_plot, PSEAScores
+# ---------------------------------------------------------------------------
+# Internal helpers (not registered as QIIME 2 actions)
+# ---------------------------------------------------------------------------
 
-def _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree, dof, epitope_map=None):
+def _compute_pair_fit_and_residuals(
+    processed_scores, pair, spline_type, degree, dof, epitope_map=None
+):
     data_sorted = processed_scores.loc[:, pair].sort_values(by=pair[0])
     x = data_sorted.loc[:, pair[0]].to_numpy()
     y = data_sorted.loc[:, pair[1]].to_numpy()
@@ -356,7 +632,9 @@ def _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree,
         yfit = splines.R_SPLINES.smooth_spline(x, y)
 
     maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
-    maxZ = pd.Series([num for elem in maxZ for num in elem], index=data_sorted.index)
+    maxZ = pd.Series(
+        [num for elem in maxZ for num in elem], index=data_sorted.index
+    )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
     if epitope_map is not None:
@@ -365,347 +643,69 @@ def _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree,
 
     return x, yfit, maxZ, deltaZ
 
-def create_fgsea_table_for_pair(
-    epitope_map,
-    pair,
-    processed_scores,
-    pep_sets_file,
-    species_taxa_file,
-    threshold,
-    permutation_num,
-    min_size,
-    max_size,
-    spline_type,
-    degree,
-    dof,
-    iteration,
-    seed,
-    table_dir="",
-    pair_fit_cache=None,
-    mapped_processed_scores=None,
-    mapped_peptide_sets=None
-):
-    print(f"Working on pair ({pair[0]}, {pair[1]})...")
-
-    table_prefix = f"{pair[0]}~{pair[1]}"
-
-    if pair_fit_cache is None:
-        x, yfit, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
-            processed_scores, pair, spline_type, degree, dof, epitope_map=epitope_map
-        )
-    else:
-        x, yfit, maxZ_all, deltaZ_all = pair_fit_cache
-
-    # each pair has a different peptide set file
-    if epitope_map is not None:
-        processed_scores, peptide_sets = \
-            utils.remove_peptides(mapped_processed_scores, mapped_peptide_sets)
-    else:
-        processed_scores, peptide_sets = utils.remove_peptides(processed_scores, pep_sets_file)
-
-    # Reindex based on what was removed
-    idx = processed_scores.index
-    maxZ = maxZ_all.reindex(idx)
-    deltaZ = deltaZ_all.reindex(idx)
-
-    table = INTERNAL.psea(
-        maxZ,
-        deltaZ,
-        peptide_sets,
-        species_taxa_file,
-        threshold,
-        permutation_num,
-        min_size,
-        max_size,
-        seed
-    )
-    with (ro.default_converter + pandas2ri.converter).context():
-        table = ro.conversion.get_conversion().rpy2py(table)
-
-    if iteration:
-        return table
-
-    table.to_csv(f"{table_dir}/{table_prefix}_psea_table.tsv", sep="\t", index=False)
-    return x, yfit, table_prefix, pair
-
 
 def process_scores(scores, pairs) -> pd.DataFrame:
     """Grabs replicates specified `pairs` from scores matrix and processes
-    those remaining scores
-    Returns a Pandas DataFrame of processed Z scores
+    those remaining scores.
+    Returns a Pandas DataFrame of processed Z scores.
     """
     base = 2
     offset = 3
     power = pow(base, offset)
-    # collect unique replicates from pairs
     reps_list = []
     for pair in pairs:
         for rep in pair:
             reps_list.append(rep)
     reps_list = list(np.unique(reps_list))
-    # exclude unused replicates
     processed_scores = scores.loc[:, reps_list]
 
     processed_scores = processed_scores.apply(lambda row: power + row, axis=0)
     processed_scores = processed_scores.apply(
         lambda row: row.apply(lambda val: 1 if val < 1 else val),
-        axis=0
+        axis=0,
     )
     return processed_scores.apply(
         lambda row: row.apply(lambda val: log(val, base) - offset)
     )
 
 
-def run_iterative_peptide_analysis(
-    epitope_map,
-    pairs,
-    processed_scores,
-    og_peptide_sets_file,
-    species_taxa_file,
-    threshold,
-    permutation_num,
-    min_size,
-    max_size,
-    spline_type,
-    degree,
-    dof,
-    p_val_thresh,
-    nes_thresh,
-    peptide_sets_out_dir,
-    iter_tables_dir,
-    max_workers,
-    seed,
-    mapped_processed_scores=None,
-    mapped_peptide_sets=None
-    ) -> dict:
-
-    iteration_num = 1
-
-    if any(lambda x: x is not None for x in [epitope_map, mapped_processed_scores, mapped_peptide_sets]) and \
-            not all(lambda x: x is not None for x in [epitope_map, mapped_processed_scores, mapped_peptide_sets]):
-        raise ValueError(
-            "Either all of epitope, mapped_processed_scores, and"
-            " mapped_peptide_sets must be set or none must be set"
-        )
-
-    if mapped_peptide_sets is not None:
-        # NOTE: Mimic prior API at least for time being
-        gmt_dict = mapped_peptide_sets.groupby(['term'])
-        gmt_dict = gmt_dict['gene'].unique()
-        gmt_dict = gmt_dict.reset_index()
-        gmt_dict = gmt_dict.set_index('term')
-        gmt_dict = gmt_dict.to_dict()
-    else:
-        # initialize gmt dict
-        gmt_dict = dict()
-        with open(og_peptide_sets_file, "r") as file:
-            lines = file.readlines()
-            for line in lines:
-                line = line.strip().split("\t")
-                # species : set of peptides
-                gmt_dict[ line[0] ] = set( line[2:] )
-
-    # each pair should have its own gmt
-    pair_gmt_dict = dict()
-    # keep track of which pairs are fully processed
-    sig_species_found_dict = dict()
-    # keep a dict for each pair and it's tested species
-    tested_species_dict = dict()
-    for pair in pairs:
-        pair_gmt_dict[pair] = {k: set(v) for k, v in gmt_dict.items()}
-        sig_species_found_dict[ pair ] = True
-        tested_species_dict[ pair ] = set()
-
-    # keep a dict for the output gmt file of each pair
-    pair_sets_filename_dict = dict()
-    pair_fit_cache = {
-    pair: _compute_pair_fit_and_residuals(processed_scores, pair, spline_type, degree, dof, epitope_map=epitope_map)
-    for pair in pairs
-    }
-
-    # loop until no other significant peptides were found
-    while any(sig_species_found_dict.values()):
-
-        print("\nIteration:", iteration_num)
-
-        if iter_tables_dir:
-            iter_out_dir = f"{iter_tables_dir}/Iteration_{iteration_num}"
-            if not os.path.exists(iter_out_dir):
-                os.mkdir(iter_out_dir)
-        else:
-            iter_out_dir = ""
-
-        # -------------------------------
-        # note: rpy2 is not compatible with multithreading, only multiprocessing
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            pair_futures = [executor.submit(
-                            run_iterative_process_single_pair,
-                            epitope_map,
-                            pair,
-                            tested_species_dict[pair],
-                            pair_gmt_dict[pair],
-                            processed_scores,
-                            species_taxa_file,
-                            threshold,
-                            permutation_num,
-                            min_size,
-                            max_size,
-                            spline_type,
-                            degree,
-                            dof,
-                            p_val_thresh,
-                            nes_thresh,
-                            peptide_sets_out_dir,
-                            iter_out_dir,
-                            seed,
-                            pair_fit_cache[pair],
-                            mapped_processed_scores=mapped_processed_scores,
-                            mapped_peptide_sets=mapped_peptide_sets
-                            ) for pair in pairs if sig_species_found_dict[pair]]
-
-            for future in concurrent.futures.as_completed(pair_futures):
-                res_tup = future.result()
-                pair = res_tup[4]
-                sig_species_found_dict[pair] = res_tup[0]
-                pair_sets_filename_dict[pair] = res_tup[1]
-                tested_species_dict[pair] = res_tup[2]
-                pair_gmt_dict[pair]= res_tup[3]
-        # -------------------------------
-
-        iteration_num += 1
-
-    print("\nEnd of Iterative Peptide Analysis\n")
-    return pair_sets_filename_dict
-
-
-def run_iterative_process_single_pair(
-    epitope_map,
-    pair,
-    tested_species,
-    gmt_dict,
-    processed_scores,
-    species_taxa_file,
-    threshold,
-    permutation_num,
-    min_size,
-    max_size,
-    spline_type,
-    degree,
-    dof,
-    p_val_thresh,
-    nes_thresh,
-    peptide_sets_out_dir,
-    iter_out_dir,
-    seed,
-    pair_fit_cache,
-    mapped_processed_scores=None,
-    mapped_peptide_sets=None
-    ):
-
-    sig_species_found = False
-
-    # create gmt file for this pair (filtered gmt from prev iteration)
-    pair_sets_filename = f"{peptide_sets_out_dir}/{pair[0]}_{pair[1]}".replace(".","-") + ".gmt"
-
-    write_gmt_from_dict(pair_sets_filename, gmt_dict)
-
-    table = create_fgsea_table_for_pair(
-        epitope_map=epitope_map,
-        pair=pair,
-        processed_scores=processed_scores,
-        pep_sets_file=pair_sets_filename,
-        species_taxa_file=species_taxa_file,
-        threshold=threshold,
-        permutation_num=permutation_num,
-        min_size=min_size,
-        max_size=max_size,
-        spline_type=spline_type,
-        degree=degree,
-        dof=dof,
-        iteration=True,
-        seed=seed,
-        pair_fit_cache=pair_fit_cache,
-        mapped_processed_scores=mapped_processed_scores,
-        mapped_peptide_sets=mapped_peptide_sets
-    )
-
-    # sort the table by ascending p-value (lowest on top)
-    table = table.sort_values(by=["p.adjust"], ascending=True)
-
-    if iter_out_dir:
-        table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
-
-    # iterate through each row
-    for _, row in table.iterrows():
-        # test for significant species that has not already been used for this pair
-        if row["p.adjust"] < p_val_thresh and np.absolute(row["NES"]) > nes_thresh \
-                                    and row["ID"] not in tested_species:
-
-            print(f"Found {row['species_name']} in {pair} to be significant")
-
-            # set sig species found to true for this pair
-            sig_species_found = True
-
-            tested_species.add(row["ID"])
-
-            # take out all tested peptides from peptide set in gmt for all other species in the gmt
-            all_tested_peps = set(row["all_tested_peptides"].split("/"))
-            for gmt_species in gmt_dict.keys():
-                if gmt_species != row['ID']:
-                    gmt_dict[ gmt_species ] = gmt_dict[ gmt_species ] - all_tested_peps
-
-            # only get top significant species
-            break
-
-    return (sig_species_found, pair_sets_filename, tested_species, gmt_dict, pair)
-
-
-def write_gmt_from_dict(outfile_name, gmt_dict)->None:
-    with open( outfile_name, "w" ) as gmt_file:
+def write_gmt_from_dict(outfile_name, gmt_dict) -> None:
+    with open(outfile_name, "w") as gmt_file:
         for species in gmt_dict.keys():
             gmt_file.write(f"{species}\t\t")
-
-            for peptide in gmt_dict[ species ]:
+            for peptide in gmt_dict[species]:
                 gmt_file.write(f"{peptide}\t")
-
             gmt_file.write("\n")
 
 
 def create_df_from_gmt(gmt_file_path):
-     result = pd.DataFrame(columns=['EpitopeID'])
-
-     with open(gmt_file_path) as fh:
-         for line in fh.readlines():
-             speciesID, epitopeID = line.split('\t\t')
-             epitopeID = epitopeID.split('\t')
-             result.loc[speciesID] = [epitopeID]
-
-     result.index.name = 'SpeciesID'
-     return result
+    result = pd.DataFrame(columns=["EpitopeID"])
+    with open(gmt_file_path) as fh:
+        for line in fh.readlines():
+            speciesID, epitopeID = line.split("\t\t")
+            epitopeID = epitopeID.split("\t")
+            result.loc[speciesID] = [epitopeID]
+    result.index.name = "SpeciesID"
+    return result
 
 
 def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
-        # Create reverse lookup table
-        peptide_to_epitopes = {}
-        for epitope, peptides in epitope_map["CodeName"].items():
-            for peptide in peptides:
-                if peptide not in peptide_to_epitopes:
-                    peptide_to_epitopes[peptide] = []
+    peptide_to_epitopes = {}
+    for epitope, peptides in epitope_map["CodeName"].items():
+        for peptide in peptides:
+            if peptide not in peptide_to_epitopes:
+                peptide_to_epitopes[peptide] = []
+            peptide_to_epitopes[peptide].append(epitope)
 
-                peptide_to_epitopes[peptide].append(epitope)
+    epitope_residuals = {}
+    for peptide, residual in peptide_residuals.items():
+        mapped_epitopes = peptide_to_epitopes.get(peptide)
+        if not mapped_epitopes:
+            mapped_epitopes = (peptide,)
+        for epitope in mapped_epitopes:
+            if epitope not in epitope_residuals:
+                epitope_residuals[epitope] = residual
+            elif abs(residual) > abs(epitope_residuals[epitope]):
+                epitope_residuals[epitope] = residual
 
-        epitope_residuals = {}
-        for peptide, residual in peptide_residuals.items():
-            mapped_epitopes = peptide_to_epitopes.get(peptide)
-
-            if not mapped_epitopes:
-                # We already were an epitope
-                mapped_epitopes = (peptide,)
-
-            for epitope in mapped_epitopes:
-                if epitope not in epitope_residuals:
-                    epitope_residuals[epitope] = residual
-                elif abs(residual) > abs(epitope_residuals[epitope]):
-                    epitope_residuals[epitope] = residual
-
-        return pd.Series(epitope_residuals)
+    return pd.Series(epitope_residuals)
