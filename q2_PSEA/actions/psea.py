@@ -68,6 +68,8 @@ def create_fgsea_table_for_pair(
 
     # Manual: AAAAAAHAHHHHHHHHHHHHHHHHH
     processed_scores = processed_scores.transpose()
+    if mapped_processed_scores is not None:
+        mapped_processed_scores = mapped_processed_scores.transpose()
 
     pair = (sample_a, sample_b)
 
@@ -184,8 +186,8 @@ def run_iterative_process_single_pair(
             and row_id not in [str(s) for s in tested_species]
         ):
             print(
-                f"Found {row['species_name']} in ({sample_a}, {sample_b})"
-                " to be significant"
+                f"Found {row.get('species_name', row['ID'])} in"
+                f" ({sample_a}, {sample_b}) to be significant"
             )
             all_tested_peps = set(row["all_tested_peptides"].split("/"))
             mask = (
