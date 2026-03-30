@@ -121,6 +121,7 @@ plugin.methods.register_function(
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
+        "precomputed_fit": FeatureData[PSEAScores],
     },
     parameters={
         "sample_a": Str,
@@ -175,6 +176,11 @@ plugin.methods.register_function(
             "Optional epitope-level processed Z-score matrix."
         ),
         "mapped_peptide_sets": "Optional epitope-level GMT peptide sets.",
+        "precomputed_fit": (
+            "Optional precomputed maxZ/deltaZ from a prior call, stored as a"
+            " two-column table (maxZ, deltaZ). When provided, spline fitting"
+            " is skipped."
+        ),
     },
     outputs=[("psea_table", FeatureData[PSEAScores])],
     output_descriptions={
@@ -204,6 +210,7 @@ plugin.pipelines.register_function(
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
+        "precomputed_fit": FeatureData[PSEAScores],
     },
     parameters={
         "sample_a": Str,
@@ -249,6 +256,10 @@ plugin.pipelines.register_function(
         "epitope_map": "Optional mapped-epitope table.",
         "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
         "mapped_peptide_sets": "Optional epitope-level GMT.",
+        "precomputed_fit": (
+            "Optional precomputed maxZ/deltaZ from a prior call. When"
+            " provided, spline fitting is skipped."
+        ),
     },
     outputs=[
         ("psea_table", FeatureData[PSEAScores]),

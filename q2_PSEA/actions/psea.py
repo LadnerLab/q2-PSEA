@@ -38,6 +38,7 @@ def create_fgsea_table_for_pair(
     epitope_map: pd.DataFrame = None,
     mapped_processed_scores: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
+    precomputed_fit: pd.DataFrame = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -81,10 +82,14 @@ def create_fgsea_table_for_pair(
     else:
         species_taxa_file = ""
 
-    x, yfit, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
-        processed_scores, pair, spline_type, degree, dof,
-        epitope_map=epitope_map,
-    )
+    if precomputed_fit is not None:
+        maxZ_all = precomputed_fit["maxZ"]
+        deltaZ_all = precomputed_fit["deltaZ"]
+    else:
+        _, _, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
+            processed_scores, pair, spline_type, degree, dof,
+            epitope_map=epitope_map,
+        )
 
     if epitope_map is not None:
         filtered_scores, peptide_sets_for_analysis = \
@@ -135,6 +140,7 @@ def run_iterative_process_single_pair(
     epitope_map=None,
     mapped_processed_scores=None,
     mapped_peptide_sets=None,
+    precomputed_fit=None,
 ):
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
@@ -168,6 +174,7 @@ def run_iterative_process_single_pair(
         epitope_map=epitope_map,
         mapped_processed_scores=mapped_processed_scores,
         mapped_peptide_sets=mapped_peptide_sets,
+        precomputed_fit=precomputed_fit,
     )
 
     if tested_species is None:
@@ -250,6 +257,19 @@ def run_iterative_peptide_analysis(
     sig_species_found_dict = {pair: True for pair in pairs_list}
     tested_species_dict = {pair: [] for pair in pairs_list}
 
+    # Compute spline fit and residuals once per pair before iterating
+    scores_df = processed_scores.view(pd.DataFrame).transpose()
+    dof_r = ro.NULL if dof is None else dof
+    epitope_map_df = epitope_map.view(pd.DataFrame) if epitope_map is not None else None
+    pair_fit_artifact = {}
+    for pair in pairs_list:
+        _, _, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
+            scores_df, pair, spline_type, degree, dof_r,
+            epitope_map=epitope_map_df,
+        )
+        fit_df = pd.DataFrame({"maxZ": maxZ_all, "deltaZ": deltaZ_all})
+        pair_fit_artifact[pair] = ctx.make_artifact("FeatureData[PSEAScores]", fit_df)
+
     iteration_num = 1
 
     while any(sig_species_found_dict.values()):
@@ -282,6 +302,7 @@ def run_iterative_peptide_analysis(
                 epitope_map=epitope_map,
                 mapped_processed_scores=mapped_processed_scores,
                 mapped_peptide_sets=mapped_peptide_sets,
+                precomputed_fit=pair_fit_artifact[pair],
             )
 
             table_df = iter_psea_table.view(pd.DataFrame)
