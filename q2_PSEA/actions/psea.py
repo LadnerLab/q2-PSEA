@@ -598,7 +598,7 @@ def make_psea_table(
                 )
 
                 scatter_plot, = zscatter(
-                    zscores=processed_scores_art,
+                    zscores=mapped_processed_scores_art if epitope is not None else processed_scores_art,
                     pairs_file=pairs_file_path,
                     spline_file=spline_file,
                     p_val_access="p.adjust",
