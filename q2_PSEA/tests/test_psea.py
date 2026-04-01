@@ -673,9 +673,11 @@ class TestRunIterativePeptideAnalysis:
         """Result list length should equal the number of pairs."""
         gmt_df = _make_gmt_df()
         table_df = _make_psea_table_df(sig=False)
-        # Two pairs
+        # Two distinct pairs — identical tuples would collapse to one dict key
         ctx = self._build_ctx(table_df, gmt_df)
-        fake_dirfmt = _make_pairs_dirfmt("sA\tsB\nsA\tsB\n")
+        fake_dirfmt = _make_pairs_dirfmt(
+            "timepoint1_sample\ttimepoint2_sample\nsA\tsB\nsC\tsD\n"
+        )
 
         scores_df = _make_scores_df(n=30)
         scores_transposed = scores_df.T
@@ -714,8 +716,10 @@ class TestRunIterativePeptideAnalysis:
         gmt_df = _make_gmt_df()
         table_df = _make_psea_table_df(sig=False)
         ctx = self._build_ctx(table_df, gmt_df)
-        # Two distinct pairs
-        fake_dirfmt = _make_pairs_dirfmt("sA\tsB\nsA\tsB\n")
+        # Two distinct pairs — identical tuples would collapse to one dict key
+        fake_dirfmt = _make_pairs_dirfmt(
+            "timepoint1_sample\ttimepoint2_sample\nsA\tsB\nsC\tsD\n"
+        )
 
         scores_df = _make_scores_df(n=30)
         scores_transposed = scores_df.T
