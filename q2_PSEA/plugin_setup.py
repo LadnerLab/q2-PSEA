@@ -20,15 +20,8 @@ from q2_PSEA.actions.psea import (
     run_iterative_peptide_analysis,
     make_psea_table,
 )
-from q2_PSEA.format_types import (
-    PSEAPairsTSVFormat,
-    PSEASpeciesTaxaTSVFormat,
-    PSEASpeciesColorsTSVFormat,
-    PSEAPairsDirFmt,
-    PSEASpeciesTaxaDirFmt,
-    PSEASpeciesColorsDirFmt,
-)
-from q2_PSEA.types import PSEAPairs, PSEASpeciesTaxa, PSEASpeciesColors
+from q2_PSEA.format_types import PSEAPairsTSVFormat, PSEAPairsDirFmt
+from q2_PSEA.types import PSEAPairs
 from qiime2.plugin import (
     Bool,
     Collection,
@@ -57,30 +50,19 @@ plugin = Plugin(
 # Register formats
 # ---------------------------------------------------------------------------
 
-plugin.register_formats(
-    PSEAPairsTSVFormat,
-    PSEASpeciesTaxaTSVFormat,
-    PSEASpeciesColorsTSVFormat,
-    PSEAPairsDirFmt,
-    PSEASpeciesTaxaDirFmt,
-    PSEASpeciesColorsDirFmt,
-)
+plugin.register_formats(PSEAPairsTSVFormat, PSEAPairsDirFmt)
 
 # ---------------------------------------------------------------------------
 # Register semantic types
 # ---------------------------------------------------------------------------
 
-plugin.register_semantic_types(PSEAPairs, PSEASpeciesTaxa, PSEASpeciesColors)
+plugin.register_semantic_types(PSEAPairs)
 
 # ---------------------------------------------------------------------------
 # Map semantic types -> directory formats
 # ---------------------------------------------------------------------------
 
 plugin.register_semantic_type_to_format(PSEAPairs, PSEAPairsDirFmt)
-plugin.register_semantic_type_to_format(PSEASpeciesTaxa, PSEASpeciesTaxaDirFmt)
-plugin.register_semantic_type_to_format(
-    PSEASpeciesColors, PSEASpeciesColorsDirFmt
-)
 
 # ---------------------------------------------------------------------------
 # Transformers
@@ -99,26 +81,16 @@ def _df_to_psea_pairs_tsv(df: pd.DataFrame) -> PSEAPairsTSVFormat:
     return result
 
 
-@plugin.register_transformer
-def _psea_species_taxa_tsv_to_str(ff: PSEASpeciesTaxaTSVFormat) -> str:
-    return str(ff)
-
-
-@plugin.register_transformer
-def _psea_species_colors_tsv_to_str(ff: PSEASpeciesColorsTSVFormat) -> str:
-    return str(ff)
-
-
 # ---------------------------------------------------------------------------
 # Register create_fgsea_table_for_pair as a method
 # ---------------------------------------------------------------------------
+
 
 plugin.methods.register_function(
     function=create_fgsea_table_for_pair,
     inputs={
         "processed_scores": FeatureTable[Zscore],
         "peptide_sets": GMT,
-        "species_taxa": PSEASpeciesTaxa,
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
@@ -135,6 +107,7 @@ plugin.methods.register_function(
         "degree": Int,
         "seed": Int,
         "dof": Int,
+        "species_taxa": Str,
     },
     parameter_descriptions={
         "sample_a": "Name of the first sample in the pair.",
@@ -161,15 +134,16 @@ plugin.methods.register_function(
         "dof": (
             "Degrees of freedom for spline fitting (affects 'cubic' only)."
         ),
+        "species_taxa": (
+            "Optional path to a TSV file mapping species names to taxonomy"
+            " IDs."
+        ),
     },
     input_descriptions={
         "processed_scores": (
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
         ),
         "peptide_sets": "GMT peptide-set file mapping species to peptides.",
-        "species_taxa": (
-            "Optional TSV file mapping species names to taxonomy IDs."
-        ),
         "epitope_map": (
             "Optional mapped-epitope table for epitope-level collapsing."
         ),
@@ -207,7 +181,6 @@ plugin.pipelines.register_function(
     inputs={
         "processed_scores": FeatureTable[Zscore],
         "peptide_sets": GMT,
-        "species_taxa": PSEASpeciesTaxa,
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
@@ -227,6 +200,7 @@ plugin.pipelines.register_function(
         "nes_thresh": Float,
         "tested_species": List[Str],
         "dof": Int,
+        "species_taxa": Str,
     },
     parameter_descriptions={
         "sample_a": "Name of the first sample in the pair.",
@@ -249,11 +223,12 @@ plugin.pipelines.register_function(
             " re-testing the same species."
         ),
         "dof": "Degrees of freedom for spline fitting.",
+        "species_taxa": "Optional path to a TSV file mapping species names"
+        " to taxonomy IDs.",
     },
     input_descriptions={
         "processed_scores": "Log-scaled Z-score matrix.",
         "peptide_sets": "Current (possibly filtered) GMT for this pair.",
-        "species_taxa": "Optional species-to-taxon-ID mapping file.",
         "epitope_map": "Optional mapped-epitope table.",
         "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
         "mapped_peptide_sets": "Optional epitope-level GMT.",
@@ -295,7 +270,6 @@ plugin.pipelines.register_function(
         "processed_scores": FeatureTable[Zscore],
         "pairs": PSEAPairs,
         "peptide_sets": GMT,
-        "species_taxa": PSEASpeciesTaxa,
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
@@ -311,6 +285,7 @@ plugin.pipelines.register_function(
         "p_val_thresh": Float,
         "nes_thresh": Float,
         "dof": Int,
+        "species_taxa": Str,
     },
     parameter_descriptions={
         "threshold": "Minimum Z-score for GSEA inclusion.",
@@ -323,12 +298,13 @@ plugin.pipelines.register_function(
         "p_val_thresh": "Adjusted p-value threshold for significance.",
         "nes_thresh": "Absolute NES threshold for significance.",
         "dof": "Degrees of freedom for spline fitting.",
+        "species_taxa": "Optional path to a TSV file mapping species names to"
+        " taxonomy IDs.",
     },
     input_descriptions={
         "processed_scores": "Log-scaled Z-score matrix for all samples.",
         "pairs": "TSV file listing sample pairs (one per row).",
         "peptide_sets": "Initial GMT peptide sets.",
-        "species_taxa": "Optional species-to-taxon-ID mapping file.",
         "epitope_map": "Optional mapped-epitope table.",
         "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
         "mapped_peptide_sets": "Optional epitope-level GMT.",
@@ -358,8 +334,6 @@ plugin.pipelines.register_function(
         "scores": FeatureTable[Zscore],
         "pairs": PSEAPairs,
         "peptide_sets": GMT,
-        "species_taxa": PSEASpeciesTaxa,
-        "species_colors": PSEASpeciesColors,
         "epitope": FeatureData[Epitope],
     },
     parameters={
@@ -375,6 +349,8 @@ plugin.pipelines.register_function(
         "dof": Int,
         "iterative_analysis": Bool,
         "seed": Int,
+        "species_taxa": Str,
+        "species_colors": Str,
     },
     parameter_descriptions={
         "threshold": (
@@ -408,6 +384,15 @@ plugin.pipelines.register_function(
             " Requires a GMT peptide_sets input."
         ),
         "seed": "Random seed for GSEA permutations.",
+        "species_taxa": (
+            "Optional path to a TSV file mapping species names to taxonomy"
+            " IDs. When provided, enrichment results are annotated with"
+            " species names."
+        ),
+        "species_colors": (
+            "Optional path to a TSV file mapping species names to HEX color"
+            " codes used in output visualizations."
+        ),
     },
     input_descriptions={
         "scores": (
@@ -421,14 +406,6 @@ plugin.pipelines.register_function(
         "peptide_sets": (
             "GMT file mapping species identifiers to the peptides linked to"
             " them. Collapsed to epitope level if epitope is provided."
-        ),
-        "species_taxa": (
-            "Optional TSV file mapping species names to taxonomy IDs. When"
-            " provided, enrichment results are annotated with species names."
-        ),
-        "species_colors": (
-            "Optional TSV file mapping species names to HEX color codes used"
-            " in output visualizations."
         ),
         "epitope": (
             "Optional epitope table. When provided, peptide-level residuals"

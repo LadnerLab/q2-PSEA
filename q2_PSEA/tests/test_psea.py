@@ -359,17 +359,10 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         self.assertEqual(species_arg, "")
 
     def test_species_taxa_passes_file_path_to_r(self):
-        tmpdir = tempfile.mkdtemp()
-
-        class FakeTaxaDirFmt:
-            path = pathlib.Path(tmpdir)
-
-        taxa_file = pathlib.Path(tmpdir) / "species-taxa.tsv"
-        taxa_file.write_text("InfluenzaA\t11520\n")
-
-        _, mock_internal = self._call(species_taxa=FakeTaxaDirFmt())
+        taxa_path = self.get_data_path("species-taxa.tsv")
+        _, mock_internal = self._call(species_taxa=taxa_path)
         species_arg = mock_internal.psea.call_args.args[3]
-        self.assertEqual(species_arg, str(taxa_file))
+        self.assertEqual(species_arg, taxa_path)
 
 
 # ---------------------------------------------------------------------------

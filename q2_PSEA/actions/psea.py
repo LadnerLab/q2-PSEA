@@ -11,11 +11,7 @@ import time
 from math import log, pow
 from rpy2.robjects import pandas2ri
 from q2_PSEA.actions.r_functions import INTERNAL
-from q2_PSEA.format_types import (
-    PSEAPairsDirFmt,
-    PSEASpeciesTaxaDirFmt,
-    PSEASpeciesColorsDirFmt,
-)
+from q2_PSEA.format_types import PSEAPairsDirFmt
 
 
 pandas2ri.activate()
@@ -34,7 +30,7 @@ def create_fgsea_table_for_pair(
     degree: int,
     seed: int,
     dof: int = None,
-    species_taxa: PSEASpeciesTaxaDirFmt = None,
+    species_taxa: str = None,
     epitope_map: pd.DataFrame = None,
     mapped_processed_scores: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
@@ -76,10 +72,7 @@ def create_fgsea_table_for_pair(
     if dof is None:
         dof = ro.NULL
 
-    if species_taxa is not None:
-        species_taxa_file = str(species_taxa.path / "species-taxa.tsv")
-    else:
-        species_taxa_file = ""
+    species_taxa_file = species_taxa if species_taxa is not None else ""
 
     if precomputed_fit is not None:
         maxZ_all = precomputed_fit["maxZ"]
@@ -370,10 +363,7 @@ def make_psea_table(
     pairs_dirfmt = pairs.view(PSEAPairsDirFmt)
     pairs_file_path = str(pairs_dirfmt.path / "pairs.tsv")
 
-    colors_file_path = ""
-    if species_colors is not None:
-        colors_dirfmt = species_colors.view(PSEASpeciesColorsDirFmt)
-        colors_file_path = str(colors_dirfmt.path / "species-colors.tsv")
+    colors_file_path = species_colors if species_colors is not None else ""
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
