@@ -67,7 +67,6 @@ def create_fgsea_table_for_pair(
     """
     print(f"Working on pair ({sample_a}, {sample_b})...")
 
-    # Manual: AAAAAAHAHHHHHHHHHHHHHHHHH
     processed_scores = processed_scores.transpose()
     if mapped_processed_scores is not None:
         mapped_processed_scores = mapped_processed_scores.transpose()
@@ -295,7 +294,6 @@ def run_iterative_peptide_analysis(
                 seed=seed,
                 p_val_thresh=p_val_thresh,
                 nes_thresh=nes_thresh,
-                # Manual: QIIME 2 won't accept [] for List[Str]
                 tested_species=tested_species_dict[pair] if tested_species_dict[pair] != [] else None,
                 dof=dof,
                 species_taxa=species_taxa,
@@ -403,8 +401,6 @@ def make_psea_table(
     # Process (log-scale) scores
     # ------------------------------------------------------------------
     scores_df = scores.view(pd.DataFrame)
-    # Manual: This df needs to be transposed. This transformer transposes the
-    # matrix, and we don't want that, so we need to transpose it back.
     scores_df = scores_df.transpose()
 
     processed_scores_df = process_scores(scores_df, pairs_list)
@@ -448,7 +444,7 @@ def make_psea_table(
             mapped_processed_scores=mapped_processed_scores_art,
             mapped_peptide_sets=epitope_gmt,
         )
-        # Manual: Needed to call .values on this dict
+
         pair_pep_sets_dict = {
             pair: gmt for pair, gmt in zip(pairs_list, filtered_gmts.values())
         }
