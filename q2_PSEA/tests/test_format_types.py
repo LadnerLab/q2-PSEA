@@ -1,148 +1,127 @@
-"""
-Tests for PSEAPairsTSVFormat, PSEASpeciesTaxaTSVFormat, and
-PSEASpeciesColorsTSVFormat validation logic.
-"""
-import pytest
+import unittest
+
 from qiime2.plugin import ValidationError
+from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.format_types import (
     PSEAPairsTSVFormat,
-    PSEASpeciesTaxaTSVFormat,
     PSEASpeciesColorsTSVFormat,
+    PSEASpeciesTaxaTSVFormat,
 )
 
 
-def _make_fmt(fmt_cls, content):
-    """Create a format instance and write *content* into it."""
+def _write(fmt_cls, content):
+    """Create a new format instance and write *content* into it."""
     fmt = fmt_cls()
     with fmt.open() as fh:
         fh.write(content)
     return fmt
 
 
-# ---------------------------------------------------------------------------
-# PSEAPairsTSVFormat
-# ---------------------------------------------------------------------------
+class TestPSEAPairsTSVFormat(TestPluginBase):
+    package = "q2_PSEA.tests"
 
-class TestPSEAPairsTSVFormat:
-    def test_valid_single_pair(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "sA\tsB\nS1\tS2\n")
-        fmt.validate()  # must not raise
+    def test_valid_fixture(self):
+        fmt = PSEAPairsTSVFormat(self.get_data_path("pairs.tsv"), mode="r")
+        fmt.validate()
 
     def test_valid_multiple_pairs(self):
-        fmt = _make_fmt(
-            PSEAPairsTSVFormat,
-            "sA\tsB\nS1\tS2\nS3\tS4\nS5\tS6\n",
-        )
+        fmt = PSEAPairsTSVFormat(self.get_data_path("pairs-two.tsv"), mode="r")
         fmt.validate()
 
     def test_empty_file_raises(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "")
-        with pytest.raises(ValidationError, match="header"):
+        fmt = _write(PSEAPairsTSVFormat, "")
+        with self.assertRaisesRegex(ValidationError, "header"):
             fmt.validate()
 
     def test_header_only_raises(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "sA\tsB\n")
-        with pytest.raises(ValidationError, match="one pair"):
+        fmt = _write(PSEAPairsTSVFormat, "sA\tsB\n")
+        with self.assertRaisesRegex(ValidationError, "one pair"):
             fmt.validate()
 
     def test_single_column_data_row_raises(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "sA\tsB\nS1\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEAPairsTSVFormat, "sA\tsB\nS1\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
 
     def test_empty_first_column_raises(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "sA\tsB\n\tS2\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEAPairsTSVFormat, "sA\tsB\n\tS2\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
 
     def test_empty_second_column_raises(self):
-        fmt = _make_fmt(PSEAPairsTSVFormat, "sA\tsB\nS1\t\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEAPairsTSVFormat, "sA\tsB\nS1\t\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
 
 
-# ---------------------------------------------------------------------------
-# PSEASpeciesTaxaTSVFormat
-# ---------------------------------------------------------------------------
+class TestPSEASpeciesTaxaTSVFormat(TestPluginBase):
+    package = "q2_PSEA.tests"
 
-class TestPSEASpeciesTaxaTSVFormat:
-    def test_valid(self):
-        fmt = _make_fmt(PSEASpeciesTaxaTSVFormat, "InfluenzaA\t11520\n")
-        fmt.validate()
-
-    def test_valid_multiple_rows(self):
-        fmt = _make_fmt(
-            PSEASpeciesTaxaTSVFormat,
-            "InfluenzaA\t11520\nEBV\t10376\nHIV-1\t11676\n",
+    def test_valid_fixture(self):
+        fmt = PSEASpeciesTaxaTSVFormat(
+            self.get_data_path("species-taxa.tsv"), mode="r"
         )
         fmt.validate()
 
     def test_empty_file_raises(self):
-        fmt = _make_fmt(PSEASpeciesTaxaTSVFormat, "")
-        with pytest.raises(ValidationError, match="empty"):
+        fmt = _write(PSEASpeciesTaxaTSVFormat, "")
+        with self.assertRaisesRegex(ValidationError, "empty"):
             fmt.validate()
 
     def test_single_column_raises(self):
-        fmt = _make_fmt(PSEASpeciesTaxaTSVFormat, "InfluenzaA\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEASpeciesTaxaTSVFormat, "InfluenzaA\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
 
     def test_empty_second_column_raises(self):
-        fmt = _make_fmt(PSEASpeciesTaxaTSVFormat, "InfluenzaA\t\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEASpeciesTaxaTSVFormat, "InfluenzaA\t\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
 
 
-# ---------------------------------------------------------------------------
-# PSEASpeciesColorsTSVFormat
-# ---------------------------------------------------------------------------
+class TestPSEASpeciesColorsTSVFormat(TestPluginBase):
+    package = "q2_PSEA.tests"
 
-class TestPSEASpeciesColorsTSVFormat:
-    def test_valid_with_hash(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#FF0000\n")
+    def test_valid_fixture_with_hash(self):
+        fmt = PSEASpeciesColorsTSVFormat(
+            self.get_data_path("species-colors.tsv"), mode="r"
+        )
         fmt.validate()
 
     def test_valid_without_hash(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\tFF0000\n")
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\tFF0000\n")
         fmt.validate()
 
     def test_valid_lowercase_hex(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#ff0000\n")
-        fmt.validate()
-
-    def test_valid_mixed_case_hex(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#aAbBcC\n")
-        fmt.validate()
-
-    def test_valid_multiple_rows(self):
-        fmt = _make_fmt(
-            PSEASpeciesColorsTSVFormat,
-            "InfluenzaA\t#FF0000\nEBV\t#00FF00\nHIV-1\t0000FF\n",
-        )
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#ff0000\n")
         fmt.validate()
 
     def test_empty_file_raises(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "")
-        with pytest.raises(ValidationError, match="empty"):
+        fmt = _write(PSEASpeciesColorsTSVFormat, "")
+        with self.assertRaisesRegex(ValidationError, "empty"):
             fmt.validate()
 
-    def test_invalid_hex_text_raises(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\tnotacolor\n")
-        with pytest.raises(ValidationError, match="HEX"):
+    def test_invalid_hex_raises(self):
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\tnotacolor\n")
+        with self.assertRaisesRegex(ValidationError, "HEX"):
             fmt.validate()
 
     def test_hex_too_short_raises(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#FF00\n")
-        with pytest.raises(ValidationError, match="HEX"):
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#FF00\n")
+        with self.assertRaisesRegex(ValidationError, "HEX"):
             fmt.validate()
 
     def test_hex_too_long_raises(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#FF0000AA\n")
-        with pytest.raises(ValidationError, match="HEX"):
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\t#FF0000AA\n")
+        with self.assertRaisesRegex(ValidationError, "HEX"):
             fmt.validate()
 
     def test_single_column_raises(self):
-        fmt = _make_fmt(PSEASpeciesColorsTSVFormat, "InfluenzaA\n")
-        with pytest.raises(ValidationError):
+        fmt = _write(PSEASpeciesColorsTSVFormat, "InfluenzaA\n")
+        with self.assertRaises(ValidationError):
             fmt.validate()
+
+
+if __name__ == "__main__":
+    unittest.main()

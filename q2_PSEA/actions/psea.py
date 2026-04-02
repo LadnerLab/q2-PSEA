@@ -497,6 +497,8 @@ def make_psea_table(
             )
             psea_tables.append(psea_table)
 
+            # TODO: We may want to split this off into a Method so we don't
+            # have to block here
             table_df = psea_table.view(pd.DataFrame)
             table_df.to_csv(
                 os.path.join(table_tempdir, f"{table_prefix}_psea_table.tsv"),

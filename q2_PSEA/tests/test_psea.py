@@ -1,18 +1,14 @@
-"""
-Tests for q2_PSEA.actions.psea — covering the pure-Python helper functions,
-create_fgsea_table_for_pair (with R mocked), and the iterative pipeline
-functions (with ctx mocked).
-"""
 import os
 import pathlib
 import tempfile
+import unittest
 from math import log
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
+from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
     _collapse_residuals_to_epitope,
@@ -27,11 +23,11 @@ from q2_PSEA.actions.psea import (
 
 
 # ---------------------------------------------------------------------------
-# Shared test fixtures / helpers
+# Pipeline test helpers — kept local, not shared via conftest
 # ---------------------------------------------------------------------------
 
-class MockArtifact:
-    """Minimal stand-in for a QIIME 2 artifact inside pipeline tests."""
+class _MockArtifact:
+    """Minimal stand-in for a QIIME 2 artifact inside mocked pipeline tests."""
 
     def __init__(self, data):
         self._data = data
@@ -40,7 +36,7 @@ class MockArtifact:
         return self._data
 
 
-class MockCtx:
+class _MockCtx:
     """Minimal stand-in for the QIIME 2 pipeline context object."""
 
     def __init__(self):
@@ -53,184 +49,154 @@ class MockCtx:
         return self._actions[(plugin, action)]
 
     def make_artifact(self, type_str, data):
-        return MockArtifact(data)
+        return _MockArtifact(data)
 
 
-def _make_scores_df(n=30, seed=0):
-    """
-    Return a (peptides × samples) DataFrame suitable for
-    _compute_pair_fit_and_residuals.
-    """
-    rng = np.random.default_rng(seed)
-    x = np.sort(rng.uniform(1, 10, n))
-    y = x + rng.normal(0, 0.5, n)
-    return pd.DataFrame(
-        {"sA": x, "sB": y},
-        index=[f"pep_{i}" for i in range(n)],
-    )
-
-
-def _make_pairs_dirfmt(content):
-    """
-    Return an object whose .path contains a pairs.tsv with *content*.
-    Used to fake PSEAPairsDirFmt inside pipeline mocks.
-    """
-    tmpdir = tempfile.mkdtemp()
-
-    class FakeDirFmt:
-        path = pathlib.Path(tmpdir)
-
-    with open(FakeDirFmt.path / "pairs.tsv", "w") as fh:
-        fh.write(content)
-
-    return FakeDirFmt()
+def _mock_ro_context(mock_ro, return_df):
+    """Wire mock_ro so the rpy2 conversion block passes *return_df* through."""
+    mock_combined = MagicMock()
+    ctx_mgr = MagicMock()
+    ctx_mgr.__enter__ = MagicMock(return_value=None)
+    ctx_mgr.__exit__ = MagicMock(return_value=False)
+    mock_combined.context.return_value = ctx_mgr
+    mock_ro.default_converter.__add__ = MagicMock(return_value=mock_combined)
+    mock_ro.NULL = None
+    mock_conv = MagicMock()
+    mock_conv.rpy2py.return_value = return_df
+    mock_ro.conversion.get_conversion.return_value = mock_conv
 
 
 # ---------------------------------------------------------------------------
 # process_scores
 # ---------------------------------------------------------------------------
 
-class TestProcessScores:
+class TestProcessScores(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        self.scores = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+
     def _expected(self, v, base=2, offset=3):
-        power = base ** offset  # 8
-        adjusted = power + v
-        clamped = max(1.0, adjusted)
-        return log(clamped, base) - offset
+        return log(max(1.0, base ** offset + v), base) - offset
 
     def test_selects_only_columns_in_pairs(self):
-        scores = pd.DataFrame(
-            {"sA": [0.0], "sB": [0.0], "sC": [0.0]},
-            index=["pep1"],
-        )
-        result = process_scores(scores, [("sA", "sB")])
-        assert list(result.columns) == ["sA", "sB"]
-        assert "sC" not in result.columns
+        result = process_scores(self.scores, [("sA", "sB")])
+        self.assertEqual(set(result.columns), {"sA", "sB"})
+        self.assertNotIn("sC", result.columns)
 
     def test_zero_input_maps_to_zero(self):
-        # v=0 → 0+8=8 → log2(8)-3 = 0
-        scores = pd.DataFrame({"sA": [0.0], "sB": [0.0]}, index=["pep1"])
+        scores = pd.DataFrame({"sA": [0.0], "sB": [0.0]}, index=["p"])
         result = process_scores(scores, [("sA", "sB")])
-        assert result.loc["pep1", "sA"] == pytest.approx(0.0)
+        self.assertAlmostEqual(result.loc["p", "sA"], 0.0)
 
     def test_very_negative_input_clamps_to_minus_three(self):
-        # v=-100 → -100+8=-92 → clamped to 1 → log2(1)-3 = -3
-        scores = pd.DataFrame({"sA": [-100.0], "sB": [-100.0]}, index=["pep1"])
+        scores = pd.DataFrame({"sA": [-100.0], "sB": [-100.0]}, index=["p"])
         result = process_scores(scores, [("sA", "sB")])
-        assert result.loc["pep1", "sA"] == pytest.approx(-3.0)
+        self.assertAlmostEqual(result.loc["p", "sA"], -3.0)
 
-    def test_positive_value_transformed_correctly(self):
+    def test_known_positive_value_transformed_correctly(self):
         v = 5.0
-        scores = pd.DataFrame({"sA": [v], "sB": [0.0]}, index=["pep1"])
+        scores = pd.DataFrame({"sA": [v], "sB": [0.0]}, index=["p"])
         result = process_scores(scores, [("sA", "sB")])
-        assert result.loc["pep1", "sA"] == pytest.approx(self._expected(v))
+        self.assertAlmostEqual(result.loc["p", "sA"], self._expected(v))
 
     def test_duplicate_samples_across_pairs_deduplicated(self):
-        # sA appears in both pairs → should appear once as a column
-        scores = pd.DataFrame(
-            {"sA": [1.0], "sB": [2.0], "sC": [3.0]},
-            index=["pep1"],
-        )
-        result = process_scores(scores, [("sA", "sB"), ("sA", "sC")])
-        assert sorted(result.columns) == ["sA", "sB", "sC"]
+        result = process_scores(self.scores, [("sA", "sB"), ("sA", "sC")])
+        self.assertEqual(sorted(result.columns), ["sA", "sB", "sC"])
 
     def test_all_peptides_retained(self):
-        scores = pd.DataFrame(
-            {"sA": [0.0, 5.0, -10.0], "sB": [0.0, 3.0, -8.0]},
-            index=["pep1", "pep2", "pep3"],
-        )
-        result = process_scores(scores, [("sA", "sB")])
-        assert len(result) == 3
+        result = process_scores(self.scores, [("sA", "sB")])
+        self.assertEqual(len(result), len(self.scores))
 
 
 # ---------------------------------------------------------------------------
 # _collapse_residuals_to_epitope
 # ---------------------------------------------------------------------------
 
-class TestCollapseResidualsToEpitope:
-    def _make_epitope_map(self, mapping):
-        """mapping: {epitope_id: [pep1, pep2, ...]}"""
+class TestCollapseResidualsToEpitope(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def _emap(self, mapping):
         return pd.DataFrame({"CodeName": mapping})
 
     def test_single_peptide_per_epitope(self):
-        epitope_map = self._make_epitope_map({"ep1": ["pep1"], "ep2": ["pep2"]})
-        residuals = pd.Series({"pep1": 0.5, "pep2": -0.3})
-        result = _collapse_residuals_to_epitope(residuals, epitope_map)
-        assert result["ep1"] == pytest.approx(0.5)
-        assert result["ep2"] == pytest.approx(-0.3)
+        emap = self._emap({"ep1": ["pep1"], "ep2": ["pep2"]})
+        res = pd.Series({"pep1": 0.5, "pep2": -0.3})
+        result = _collapse_residuals_to_epitope(res, emap)
+        self.assertAlmostEqual(result["ep1"], 0.5)
+        self.assertAlmostEqual(result["ep2"], -0.3)
 
-    def test_multiple_peptides_per_epitope_keeps_max_abs(self):
-        epitope_map = self._make_epitope_map({"ep1": ["pep1", "pep2"]})
-        # pep2 has larger absolute value, so ep1 should get -0.8
-        residuals = pd.Series({"pep1": 0.5, "pep2": -0.8})
-        result = _collapse_residuals_to_epitope(residuals, epitope_map)
-        assert result["ep1"] == pytest.approx(-0.8)
+    def test_multiple_peptides_keeps_max_abs(self):
+        emap = self._emap({"ep1": ["pep1", "pep2"]})
+        res = pd.Series({"pep1": 0.5, "pep2": -0.8})
+        result = _collapse_residuals_to_epitope(res, emap)
+        self.assertAlmostEqual(result["ep1"], -0.8)
 
     def test_unmapped_peptide_maps_to_itself(self):
-        epitope_map = self._make_epitope_map({"ep1": ["pep1"]})
-        residuals = pd.Series({"pep1": 0.5, "pep_orphan": 0.9})
-        result = _collapse_residuals_to_epitope(residuals, epitope_map)
-        assert "pep_orphan" in result.index
-        assert result["pep_orphan"] == pytest.approx(0.9)
+        emap = self._emap({"ep1": ["pep1"]})
+        res = pd.Series({"pep1": 0.5, "pep_orphan": 0.9})
+        result = _collapse_residuals_to_epitope(res, emap)
+        self.assertIn("pep_orphan", result.index)
+        self.assertAlmostEqual(result["pep_orphan"], 0.9)
 
     def test_peptide_in_multiple_epitopes(self):
-        epitope_map = self._make_epitope_map(
-            {"ep1": ["pep1", "pep2"], "ep2": ["pep1", "pep3"]}
-        )
-        residuals = pd.Series({"pep1": 1.0, "pep2": 0.2, "pep3": 0.5})
-        result = _collapse_residuals_to_epitope(residuals, epitope_map)
-        # ep1: max(abs(1.0), abs(0.2)) = 1.0 → pep1 wins
-        # ep2: max(abs(1.0), abs(0.5)) = 1.0 → pep1 wins
-        assert result["ep1"] == pytest.approx(1.0)
-        assert result["ep2"] == pytest.approx(1.0)
+        emap = self._emap({"ep1": ["pep1", "pep2"], "ep2": ["pep1", "pep3"]})
+        res = pd.Series({"pep1": 1.0, "pep2": 0.2, "pep3": 0.5})
+        result = _collapse_residuals_to_epitope(res, emap)
+        self.assertAlmostEqual(result["ep1"], 1.0)
+        self.assertAlmostEqual(result["ep2"], 1.0)
 
     def test_returns_series(self):
-        epitope_map = self._make_epitope_map({"ep1": ["pep1"]})
-        residuals = pd.Series({"pep1": 0.7})
-        result = _collapse_residuals_to_epitope(residuals, epitope_map)
-        assert isinstance(result, pd.Series)
+        emap = self._emap({"ep1": ["pep1"]})
+        result = _collapse_residuals_to_epitope(pd.Series({"pep1": 0.7}), emap)
+        self.assertIsInstance(result, pd.Series)
 
 
 # ---------------------------------------------------------------------------
-# write_gmt_from_dict / create_df_from_gmt (round-trip)
+# write_gmt_from_dict / create_df_from_gmt
 # ---------------------------------------------------------------------------
 
-class TestGmtRoundTrip:
-    def test_write_and_read_roundtrip(self):
-        gmt_dict = {
-            "sp1": ["pep1", "pep2", "pep3"],
-            "sp2": ["pep4", "pep5"],
-        }
+class TestGmtRoundTrip(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def test_create_df_from_gmt_reads_fixture(self):
+        result = create_df_from_gmt(self.get_data_path("gmt.gmt"))
+        self.assertEqual(set(result.index), {"sp1", "sp2"})
+
+    def test_create_df_reads_correct_peptides(self):
+        result = create_df_from_gmt(self.get_data_path("gmt.gmt"))
+        sp1_peps = [p.strip() for p in result.loc["sp1", "EpitopeID"] if p.strip()]
+        self.assertEqual(set(sp1_peps), {"pep_00", "pep_01", "pep_02", "pep_03"})
+
+    def test_write_then_read_roundtrip(self):
+        gmt_dict = {"sp1": ["pep_00", "pep_01"], "sp2": ["pep_04"]}
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".gmt", delete=False
         ) as tmp:
             tmp_path = tmp.name
-
         try:
             write_gmt_from_dict(tmp_path, gmt_dict)
             result = create_df_from_gmt(tmp_path)
-
-            assert set(result.index) == {"sp1", "sp2"}
-            # Leading edge list includes a trailing empty string from split; strip it
             sp1_peps = [p for p in result.loc["sp1", "EpitopeID"] if p.strip()]
-            assert set(sp1_peps) == {"pep1", "pep2", "pep3"}
+            self.assertEqual(set(sp1_peps), {"pep_00", "pep_01"})
         finally:
             os.unlink(tmp_path)
 
-    def test_write_gmt_format(self):
-        gmt_dict = {"sp1": ["pepA", "pepB"]}
+    def test_write_gmt_line_format(self):
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".gmt", delete=False
         ) as tmp:
             tmp_path = tmp.name
-
         try:
-            write_gmt_from_dict(tmp_path, gmt_dict)
+            write_gmt_from_dict(tmp_path, {"sp1": ["pepA", "pepB"]})
             with open(tmp_path) as fh:
                 line = fh.readline()
-            # Format: "speciesID\t\tpep1\tpep2\t\n"
-            assert line.startswith("sp1\t\t")
-            assert "pepA" in line
-            assert "pepB" in line
+            self.assertTrue(line.startswith("sp1\t\t"))
+            self.assertIn("pepA", line)
+            self.assertIn("pepB", line)
         finally:
             os.unlink(tmp_path)
 
@@ -239,76 +205,65 @@ class TestGmtRoundTrip:
 # _compute_pair_fit_and_residuals (py-smooth — no R required)
 # ---------------------------------------------------------------------------
 
-class TestComputePairFitAndResiduals:
+class TestComputePairFitAndResiduals(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        self.scores = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+        self.pair = ("sA", "sB")
+
     def test_output_shapes_correct(self):
-        scores = _make_scores_df(n=30)
-        pair = ("sA", "sB")
         x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            scores, pair, "py-smooth", 3, None
+            self.scores, self.pair, "py-smooth", 3, None
         )
-        assert len(x) == 30
-        assert len(yfit) == 30
-        assert len(maxZ) == 30
-        assert len(deltaZ) == 30
+        n = len(self.scores)
+        self.assertEqual(len(x), n)
+        self.assertEqual(len(yfit), n)
+        self.assertEqual(len(maxZ), n)
+        self.assertEqual(len(deltaZ), n)
 
-    def test_maxZ_is_elementwise_max_of_pair(self):
-        scores = _make_scores_df(n=30)
-        pair = ("sA", "sB")
+    def test_maxZ_equals_elementwise_max(self):
         _, _, maxZ, _ = _compute_pair_fit_and_residuals(
-            scores, pair, "py-smooth", 3, None
+            self.scores, self.pair, "py-smooth", 3, None
         )
-        # maxZ should be >= each individual column after sorting
-        data_sorted = scores[list(pair)].sort_values(by="sA")
-        expected_max = data_sorted.max(axis=1)
+        data_sorted = self.scores[list(self.pair)].sort_values(by="sA")
+        expected = data_sorted.max(axis=1)
         assert_series_equal(
-            maxZ.sort_index(),
-            expected_max.sort_index(),
-            check_names=False,
+            maxZ.sort_index(), expected.sort_index(), check_names=False
         )
 
-    def test_deltaZ_is_y_minus_yfit(self):
-        """deltaZ values should sum close to zero for a well-fit signal."""
-        scores = _make_scores_df(n=40)
-        pair = ("sA", "sB")
-        x, yfit, _, deltaZ = _compute_pair_fit_and_residuals(
-            scores, pair, "py-smooth", 3, None
+    def test_residuals_roughly_mean_zero(self):
+        _, _, _, deltaZ = _compute_pair_fit_and_residuals(
+            self.scores, self.pair, "py-smooth", 3, None
         )
-        # residuals from a smooth fit should be roughly mean-zero
-        assert abs(deltaZ.mean()) < 0.5
+        self.assertLess(abs(float(deltaZ.mean())), 0.5)
 
-    def test_with_epitope_map_collapses_residuals(self):
-        scores = _make_scores_df(n=30)
-        pair = ("sA", "sB")
-        # Map pairs of peptides to a single epitope each
-        pep_indices = list(scores.index)
-        mapping = {
-            f"ep_{i}": [pep_indices[2 * i], pep_indices[2 * i + 1]]
-            for i in range(5)
-        }
-        epitope_map = pd.DataFrame({"CodeName": mapping})
-
-        _, _, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            scores, pair, "py-smooth", 3, None, epitope_map=epitope_map
-        )
-        # Epitope IDs (not peptide IDs) should appear in the result
-        for ep in mapping:
-            assert ep in maxZ.index
-            assert ep in deltaZ.index
-
-    def test_no_finite_issues(self):
-        scores = _make_scores_df(n=30)
-        pair = ("sA", "sB")
+    def test_no_nan_or_inf(self):
         x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            scores, pair, "py-smooth", 3, None
+            self.scores, self.pair, "py-smooth", 3, None
         )
-        assert np.all(np.isfinite(x))
-        assert np.all(np.isfinite(yfit))
-        assert np.all(np.isfinite(maxZ.values))
-        assert np.all(np.isfinite(deltaZ.values))
+        self.assertTrue(np.all(np.isfinite(x)))
+        self.assertTrue(np.all(np.isfinite(yfit)))
+        self.assertTrue(np.all(np.isfinite(maxZ.values)))
+        self.assertTrue(np.all(np.isfinite(deltaZ.values)))
+
+    def test_epitope_map_collapses_to_epitope_ids(self):
+        peps = list(self.scores.index)
+        mapping = {f"ep_{i}": [peps[2 * i], peps[2 * i + 1]] for i in range(5)}
+        emap = pd.DataFrame({"CodeName": mapping})
+        _, _, maxZ, deltaZ = _compute_pair_fit_and_residuals(
+            self.scores, self.pair, "py-smooth", 3, None, epitope_map=emap
+        )
+        for ep in mapping:
+            self.assertIn(ep, maxZ.index)
+            self.assertIn(ep, deltaZ.index)
 
 
 # ---------------------------------------------------------------------------
-# create_fgsea_table_for_pair (R mocked out)
+# create_fgsea_table_for_pair (R mocked)
 # ---------------------------------------------------------------------------
 
 def _fake_psea_result():
@@ -318,43 +273,38 @@ def _fake_psea_result():
             "enrichmentScore": [0.7, -0.4],
             "NES": [2.1, -1.6],
             "p.adjust": [0.01, 0.04],
-            "core_enrichment": ["pep1/pep2", "pep3"],
+            "core_enrichment": ["pep_00/pep_01", "pep_04"],
             "pvalue": [0.005, 0.02],
             "qvalue": [0.01, 0.04],
-            "all_tested_peptides": ["pep1/pep2/pep4", "pep3/pep5"],
+            "all_tested_peptides": ["pep_00/pep_01/pep_02", "pep_04/pep_05"],
         }
     )
 
 
-class TestCreateFgseaTableForPair:
-    def _run(self, scores_df, gmt_df, precomputed_fit=None, **kwargs):
-        """Invoke create_fgsea_table_for_pair with R mocked out."""
-        expected = _fake_psea_result()
+class TestCreateFgseaTableForPair(TestPluginBase):
+    package = "q2_PSEA.tests"
 
+    def setUp(self):
+        super().setUp()
+        self.scores = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+        self.gmt = pd.read_csv(
+            self.get_data_path("peptide-sets.tsv"), sep="\t"
+        )
+
+    def _call(self, precomputed_fit=None, **kwargs):
+        """Invoke create_fgsea_table_for_pair with R fully mocked."""
+        expected = _fake_psea_result()
         with (
             patch("q2_PSEA.actions.psea.INTERNAL") as mock_internal,
             patch("q2_PSEA.actions.psea.ro") as mock_ro,
         ):
-            mock_internal.psea.return_value = "r_result_placeholder"
-
-            # Wire up the rpy2 context manager + conversion passthrough
-            mock_combined = MagicMock()
-            ctx_mgr = MagicMock()
-            ctx_mgr.__enter__ = MagicMock(return_value=None)
-            ctx_mgr.__exit__ = MagicMock(return_value=False)
-            mock_combined.context.return_value = ctx_mgr
-            mock_ro.default_converter.__add__ = MagicMock(
-                return_value=mock_combined
-            )
-
-            mock_conv = MagicMock()
-            mock_conv.rpy2py.return_value = expected
-            mock_ro.conversion.get_conversion.return_value = mock_conv
-            mock_ro.NULL = None
-
+            mock_internal.psea.return_value = "r_placeholder"
+            _mock_ro_context(mock_ro, expected)
             result = create_fgsea_table_for_pair(
-                processed_scores=scores_df.T,  # method receives transposed
-                peptide_sets=gmt_df,
+                processed_scores=self.scores.T,
+                peptide_sets=self.gmt,
                 sample_a="sA",
                 sample_b="sB",
                 threshold=1.0,
@@ -370,56 +320,40 @@ class TestCreateFgseaTableForPair:
         return result, mock_internal
 
     def test_returns_dataframe(self):
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
-        )
-        result, _ = self._run(scores, gmt)
-        assert isinstance(result, pd.DataFrame)
+        result, _ = self._call()
+        self.assertIsInstance(result, pd.DataFrame)
 
     def test_calls_internal_psea(self):
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
-        )
-        _, mock_internal = self._run(scores, gmt)
+        _, mock_internal = self._call()
         mock_internal.psea.assert_called_once()
 
     def test_precomputed_fit_skips_spline(self):
-        """When precomputed_fit is supplied, _compute_pair_fit_and_residuals
-        must not be called."""
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
+        fit_df = pd.DataFrame(
+            {
+                "maxZ": pd.Series(np.ones(15), index=self.scores.index),
+                "deltaZ": pd.Series(np.zeros(15), index=self.scores.index),
+            }
         )
-        maxZ = pd.Series(np.ones(30), index=scores.index)
-        deltaZ = pd.Series(np.zeros(30), index=scores.index)
-        fit_df = pd.DataFrame({"maxZ": maxZ, "deltaZ": deltaZ})
-
         with patch(
             "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
         ) as mock_fit:
-            self._run(scores, gmt, precomputed_fit=fit_df)
+            self._call(precomputed_fit=fit_df)
             mock_fit.assert_not_called()
 
-    def test_without_precomputed_fit_calls_spline(self):
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
-        )
+    def test_no_precomputed_fit_calls_spline(self):
         with patch(
             "q2_PSEA.actions.psea._compute_pair_fit_and_residuals",
             wraps=_compute_pair_fit_and_residuals,
         ) as mock_fit:
-            self._run(scores, gmt)
+            self._call()
             mock_fit.assert_called_once()
 
-    def test_species_taxa_file_path_passed_when_provided(self):
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
-        )
-        # Build a fake PSEASpeciesTaxaDirFmt
+    def test_no_species_taxa_passes_empty_string_to_r(self):
+        _, mock_internal = self._call()
+        species_arg = mock_internal.psea.call_args.args[3]
+        self.assertEqual(species_arg, "")
+
+    def test_species_taxa_passes_file_path_to_r(self):
         tmpdir = tempfile.mkdtemp()
 
         class FakeTaxaDirFmt:
@@ -427,32 +361,17 @@ class TestCreateFgseaTableForPair:
 
         taxa_file = pathlib.Path(tmpdir) / "species-taxa.tsv"
         taxa_file.write_text("InfluenzaA\t11520\n")
-        fake_dirfmt = FakeTaxaDirFmt()
 
-        result, mock_internal = self._run(scores, gmt, species_taxa=fake_dirfmt)
-        # The species_taxa_file argument (5th positional after maxZ/deltaZ/gmt)
-        # should be the real path, not ""
-        call_args = mock_internal.psea.call_args
-        # species_taxa_file is the 4th positional argument
-        species_arg = call_args.args[3] if call_args.args else None
-        assert species_arg == str(taxa_file)
-
-    def test_no_species_taxa_passes_empty_string(self):
-        scores = _make_scores_df(n=30)
-        gmt = pd.DataFrame(
-            {"term": ["sp1"] * 5, "gene": scores.index[:5].tolist()}
-        )
-        _, mock_internal = self._run(scores, gmt)
-        call_args = mock_internal.psea.call_args
-        species_arg = call_args.args[3] if call_args.args else None
-        assert species_arg == ""
+        _, mock_internal = self._call(species_taxa=FakeTaxaDirFmt())
+        species_arg = mock_internal.psea.call_args.args[3]
+        self.assertEqual(species_arg, str(taxa_file))
 
 
 # ---------------------------------------------------------------------------
 # run_iterative_process_single_pair
 # ---------------------------------------------------------------------------
 
-def _make_gmt_df():
+def _gmt_df():
     return pd.DataFrame(
         {
             "term": ["12345", "12345", "12345", "67890", "67890"],
@@ -461,200 +380,147 @@ def _make_gmt_df():
     )
 
 
-def _make_psea_table_df(sig=True):
-    """Return a PSEA result with or without a significant species."""
-    if sig:
-        return pd.DataFrame(
-            {
-                "ID": ["12345"],
-                "NES": [2.5],
-                "p.adjust": [0.01],
-                "all_tested_peptides": ["pep1/pep2"],
-            }
-        )
+def _psea_table_df(sig=True):
     return pd.DataFrame(
         {
             "ID": ["12345"],
-            "NES": [0.3],
-            "p.adjust": [0.9],
+            "NES": [2.5 if sig else 0.3],
+            "p.adjust": [0.01 if sig else 0.9],
             "all_tested_peptides": ["pep1/pep2"],
         }
     )
 
 
-class TestRunIterativeProcessSinglePair:
+class TestRunIterativeProcessSinglePair(TestPluginBase):
+    package = "q2_PSEA.tests"
+
     def _build_ctx(self, psea_table_df):
-        ctx = MockCtx()
-        psea_art = MockArtifact(psea_table_df)
-
-        def fake_create_fgsea(**kwargs):
-            return (psea_art,)
-
+        ctx = _MockCtx()
+        art = _MockArtifact(psea_table_df)
         ctx.register_action(
-            "psea", "create_fgsea_table_for_pair", fake_create_fgsea
+            "psea", "create_fgsea_table_for_pair", lambda **kw: (art,)
         )
         return ctx
 
+    def _run(self, table_df, gmt_df, **extra):
+        ctx = self._build_ctx(table_df)
+        return run_iterative_process_single_pair(
+            ctx,
+            processed_scores=_MockArtifact(pd.DataFrame()),
+            peptide_sets=_MockArtifact(gmt_df),
+            sample_a="sA",
+            sample_b="sB",
+            threshold=1.0,
+            permutation_num=100,
+            min_size=2,
+            max_size=500,
+            spline_type="py-smooth",
+            degree=3,
+            seed=42,
+            p_val_thresh=0.05,
+            nes_thresh=1.0,
+            **extra,
+        )
+
     def test_no_sig_species_gmt_unchanged(self):
-        gmt_df = _make_gmt_df()
-        table_df = _make_psea_table_df(sig=False)
-        ctx = self._build_ctx(table_df)
+        gmt = _gmt_df()
+        _, updated = self._run(_psea_table_df(sig=False), gmt)
+        assert_frame_equal(updated._data, gmt)
 
-        _, updated_gmt = run_iterative_process_single_pair(
-            ctx,
-            processed_scores=MockArtifact(pd.DataFrame()),
-            peptide_sets=MockArtifact(gmt_df),
-            sample_a="sA",
-            sample_b="sB",
-            threshold=1.0,
-            permutation_num=100,
-            min_size=2,
-            max_size=500,
-            spline_type="py-smooth",
-            degree=3,
-            seed=42,
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
+    def test_sig_species_removes_leading_edge_from_other_species(self):
+        _, updated = self._run(_psea_table_df(sig=True), _gmt_df())
+        result = updated._data
+        other = result[result["term"] == "67890"]
+        # pep1 is in the leading edge of 12345 → removed from 67890
+        self.assertNotIn("pep1", other["gene"].values)
+        # pep4 is not in the leading edge → stays in 67890
+        self.assertIn("pep4", other["gene"].values)
+        # All of 12345's peptides are untouched
+        own = result[result["term"] == "12345"]
+        self.assertEqual(set(own["gene"]), {"pep1", "pep2", "pep3"})
+
+    def test_already_tested_species_gmt_unchanged(self):
+        gmt = _gmt_df()
+        _, updated = self._run(
+            _psea_table_df(sig=True), gmt, tested_species=["12345"]
         )
+        assert_frame_equal(updated._data, gmt)
 
-        assert_frame_equal(updated_gmt._data, gmt_df)
-
-    def test_sig_species_removes_leading_edge_from_others(self):
-        """Leading-edge peptides of significant species should be removed from
-        other species' rows in the GMT."""
-        gmt_df = _make_gmt_df()
-        # "12345" is significant with leading edge pep1/pep2
-        table_df = _make_psea_table_df(sig=True)
-        ctx = self._build_ctx(table_df)
-
-        _, updated_gmt = run_iterative_process_single_pair(
-            ctx,
-            processed_scores=MockArtifact(pd.DataFrame()),
-            peptide_sets=MockArtifact(gmt_df),
-            sample_a="sA",
-            sample_b="sB",
-            threshold=1.0,
-            permutation_num=100,
-            min_size=2,
-            max_size=500,
-            spline_type="py-smooth",
-            degree=3,
-            seed=42,
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
-        )
-
-        result_gmt = updated_gmt._data
-        # pep1 should be removed from species 67890 (but kept in 12345)
-        other_rows = result_gmt[result_gmt["term"] == "67890"]
-        assert "pep1" not in other_rows["gene"].values
-        # pep4 (not in leading edge) stays in 67890
-        assert "pep4" in other_rows["gene"].values
-        # All rows of species 12345 are unchanged
-        own_rows = result_gmt[result_gmt["term"] == "12345"]
-        assert set(own_rows["gene"]) == {"pep1", "pep2", "pep3"}
-
-    def test_sig_species_already_tested_gmt_unchanged(self):
-        gmt_df = _make_gmt_df()
-        table_df = _make_psea_table_df(sig=True)
-        ctx = self._build_ctx(table_df)
-
-        _, updated_gmt = run_iterative_process_single_pair(
-            ctx,
-            processed_scores=MockArtifact(pd.DataFrame()),
-            peptide_sets=MockArtifact(gmt_df),
-            sample_a="sA",
-            sample_b="sB",
-            threshold=1.0,
-            permutation_num=100,
-            min_size=2,
-            max_size=500,
-            spline_type="py-smooth",
-            degree=3,
-            seed=42,
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
-            tested_species=["12345"],  # already tested
-        )
-
-        assert_frame_equal(updated_gmt._data, gmt_df)
-
-    def test_species_name_fallback_when_column_missing(self):
-        """run_iterative_process_single_pair should not raise KeyError when the
-        'species_name' column is absent from the PSEA table (i.e., no
-        species_taxa was passed)."""
-        gmt_df = _make_gmt_df()
-        # No 'species_name' column in table
-        table_df = _make_psea_table_df(sig=True)
-        assert "species_name" not in table_df.columns
-
-        ctx = self._build_ctx(table_df)
-        # Should not raise
-        run_iterative_process_single_pair(
-            ctx,
-            processed_scores=MockArtifact(pd.DataFrame()),
-            peptide_sets=MockArtifact(gmt_df),
-            sample_a="sA",
-            sample_b="sB",
-            threshold=1.0,
-            permutation_num=100,
-            min_size=2,
-            max_size=500,
-            spline_type="py-smooth",
-            degree=3,
-            seed=42,
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
-        )
+    def test_no_species_name_column_does_not_raise(self):
+        """Without species_taxa the table has no 'species_name' column;
+        the code must fall back to row['ID'] without KeyError."""
+        table_df = _psea_table_df(sig=True)
+        self.assertNotIn("species_name", table_df.columns)
+        self._run(table_df, _gmt_df())  # must not raise
 
 
 # ---------------------------------------------------------------------------
 # run_iterative_peptide_analysis
 # ---------------------------------------------------------------------------
 
-class TestRunIterativePeptideAnalysis:
-    def _build_ctx(self, psea_table_df, gmt_df):
-        ctx = MockCtx()
-        psea_art = MockArtifact(psea_table_df)
-        gmt_art = MockArtifact(gmt_df)
+class TestRunIterativePeptideAnalysis(TestPluginBase):
+    package = "q2_PSEA.tests"
 
-        def fake_run_single_pair(**kwargs):
-            return psea_art, gmt_art
+    def setUp(self):
+        super().setUp()
+        self.scores = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+        self.gmt = pd.read_csv(
+            self.get_data_path("peptide-sets.tsv"), sep="\t"
+        )
 
+    def _make_pairs_dirfmt(self, pairs_content):
+        """Write *pairs_content* as pairs.tsv in a temp dir and return a
+        fake PSEAPairsDirFmt whose .path points there.  The function under
+        test hard-codes 'pairs.tsv' as the filename, so we must name it that
+        regardless of what content it holds."""
+        import shutil
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmpdir)
+        with open(os.path.join(tmpdir, "pairs.tsv"), "w") as fh:
+            fh.write(pairs_content)
+
+        class FakeDirFmt:
+            path = pathlib.Path(tmpdir)
+
+        return FakeDirFmt()
+
+    def _build_ctx(self, table_df):
+        ctx = _MockCtx()
+        psea_art = _MockArtifact(table_df)
+        gmt_art = _MockArtifact(self.gmt)
         ctx.register_action(
-            "psea", "run_iterative_process_single_pair", fake_run_single_pair
+            "psea",
+            "run_iterative_process_single_pair",
+            lambda **kw: (psea_art, gmt_art),
         )
         return ctx
 
-    def test_terminates_when_no_sig_species(self):
-        """With no significant species the loop should complete in one pass."""
-        gmt_df = _make_gmt_df()
-        # Non-significant PSEA table
-        table_df = _make_psea_table_df(sig=False)
-        ctx = self._build_ctx(table_df, gmt_df)
+    def _mock_fit_return(self):
+        n = len(self.scores)
+        pep_idx = self.scores.index
+        return (
+            np.linspace(1, 8, n),
+            np.linspace(1, 8, n),
+            pd.Series(np.ones(n), index=pep_idx),
+            pd.Series(np.zeros(n), index=pep_idx),
+        )
 
-        fake_dirfmt = _make_pairs_dirfmt("sA\tsB\nsA\tsB\n")
+    _ONE_PAIR = "sA\tsB\nsample1\tsample2\n"
+    _TWO_PAIRS = "sA\tsB\nsample1\tsample2\nsample3\tsample4\n"
 
-        scores_df = _make_scores_df(n=30)
-        # FeatureTable[Zscore] view returns samples-as-rows (transposed)
-        scores_transposed = scores_df.T  # samples as rows, peptides as cols
-
+    def _run(self, ctx, pairs_content):
+        fake_dirfmt = self._make_pairs_dirfmt(pairs_content)
         with patch(
             "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
         ) as mock_fit:
-            pep_idx = scores_df.index
-            mock_fit.return_value = (
-                np.linspace(1, 10, 30),
-                np.linspace(1, 10, 30),
-                pd.Series(np.ones(30), index=pep_idx),
-                pd.Series(np.zeros(30), index=pep_idx),
-            )
-
-            results = run_iterative_peptide_analysis(
+            mock_fit.return_value = self._mock_fit_return()
+            result = run_iterative_peptide_analysis(
                 ctx,
-                processed_scores=MockArtifact(scores_transposed),
-                pairs=MockArtifact(fake_dirfmt),
-                peptide_sets=MockArtifact(gmt_df),
+                processed_scores=_MockArtifact(self.scores.T),
+                pairs=_MockArtifact(fake_dirfmt),
+                peptide_sets=_MockArtifact(self.gmt),
                 threshold=1.0,
                 permutation_num=100,
                 min_size=2,
@@ -665,91 +531,28 @@ class TestRunIterativePeptideAnalysis:
                 p_val_thresh=0.05,
                 nes_thresh=1.0,
             )
+        return result, mock_fit
 
-        assert isinstance(results, list)
-        assert len(results) == 1  # one pair
+    def test_single_pair_returns_one_gmt(self):
+        ctx = self._build_ctx(_psea_table_df(sig=False))
+        result, _ = self._run(ctx, self._ONE_PAIR)
+        self.assertEqual(len(result), 1)
 
-    def test_returns_one_gmt_per_pair(self):
-        """Result list length should equal the number of pairs."""
-        gmt_df = _make_gmt_df()
-        table_df = _make_psea_table_df(sig=False)
-        # Two distinct pairs — identical tuples would collapse to one dict key
-        ctx = self._build_ctx(table_df, gmt_df)
-        fake_dirfmt = _make_pairs_dirfmt(
-            "timepoint1_sample\ttimepoint2_sample\nsA\tsB\nsC\tsD\n"
-        )
+    def test_two_distinct_pairs_returns_two_gmts(self):
+        ctx = self._build_ctx(_psea_table_df(sig=False))
+        result, _ = self._run(ctx, self._TWO_PAIRS)
+        self.assertEqual(len(result), 2)
 
-        scores_df = _make_scores_df(n=30)
-        scores_transposed = scores_df.T
+    def test_fit_computed_once_per_distinct_pair(self):
+        ctx = self._build_ctx(_psea_table_df(sig=False))
+        _, mock_fit = self._run(ctx, self._TWO_PAIRS)
+        self.assertEqual(mock_fit.call_count, 2)
 
-        with patch("q2_PSEA.actions.psea._compute_pair_fit_and_residuals") as mock_fit:
-            pep_idx = scores_df.index
-            mock_fit.return_value = (
-                np.linspace(1, 10, 30),
-                np.linspace(1, 10, 30),
-                pd.Series(np.ones(30), index=pep_idx),
-                pd.Series(np.zeros(30), index=pep_idx),
-            )
+    def test_returns_list(self):
+        ctx = self._build_ctx(_psea_table_df(sig=False))
+        result, _ = self._run(ctx, self._ONE_PAIR)
+        self.assertIsInstance(result, list)
 
-            results = run_iterative_peptide_analysis(
-                ctx,
-                processed_scores=MockArtifact(scores_transposed),
-                pairs=MockArtifact(fake_dirfmt),
-                peptide_sets=MockArtifact(gmt_df),
-                threshold=1.0,
-                permutation_num=100,
-                min_size=2,
-                max_size=500,
-                spline_type="py-smooth",
-                degree=3,
-                seed=42,
-                p_val_thresh=0.05,
-                nes_thresh=1.0,
-            )
 
-        # Two pairs → two filtered GMTs
-        assert len(results) == 2
-
-    def test_fit_computed_once_per_pair(self):
-        """_compute_pair_fit_and_residuals should be called exactly once per
-        pair regardless of how many iterations run."""
-        gmt_df = _make_gmt_df()
-        table_df = _make_psea_table_df(sig=False)
-        ctx = self._build_ctx(table_df, gmt_df)
-        # Two distinct pairs — identical tuples would collapse to one dict key
-        fake_dirfmt = _make_pairs_dirfmt(
-            "timepoint1_sample\ttimepoint2_sample\nsA\tsB\nsC\tsD\n"
-        )
-
-        scores_df = _make_scores_df(n=30)
-        scores_transposed = scores_df.T
-
-        with patch(
-            "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
-        ) as mock_fit:
-            pep_idx = scores_df.index
-            mock_fit.return_value = (
-                np.linspace(1, 10, 30),
-                np.linspace(1, 10, 30),
-                pd.Series(np.ones(30), index=pep_idx),
-                pd.Series(np.zeros(30), index=pep_idx),
-            )
-
-            run_iterative_peptide_analysis(
-                ctx,
-                processed_scores=MockArtifact(scores_transposed),
-                pairs=MockArtifact(fake_dirfmt),
-                peptide_sets=MockArtifact(gmt_df),
-                threshold=1.0,
-                permutation_num=100,
-                min_size=2,
-                max_size=500,
-                spline_type="py-smooth",
-                degree=3,
-                seed=42,
-                p_val_thresh=0.05,
-                nes_thresh=1.0,
-            )
-
-        # Two pairs → fit computed exactly twice (once per pair)
-        assert mock_fit.call_count == 2
+if __name__ == "__main__":
+    unittest.main()
