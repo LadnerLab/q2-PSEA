@@ -86,6 +86,7 @@ plugin.register_semantic_type_to_format(
 # Transformers
 # ---------------------------------------------------------------------------
 
+
 @plugin.register_transformer
 def _psea_pairs_tsv_to_df(ff: PSEAPairsTSVFormat) -> pd.DataFrame:
     return pd.read_csv(str(ff), sep="\t", header=0)

@@ -47,10 +47,10 @@ def make_metadata(df, length):
 
 
 def save_taxa_leading_peps_file(
-        taxa_peps_filepath,
-        taxa,
-        leading_peps
-    ) -> None:
+            taxa_peps_filepath,
+            taxa,
+            leading_peps
+        ) -> None:
     """
 
     Parameters
@@ -94,7 +94,8 @@ def remove_peptides_in_gmt_format(scores, peptide_sets_file) -> pd.DataFrame:
     """
     read_gmtr = ro.r["read.gmt"]
     with (ro.default_converter + pandas2ri.converter).context():
-        peptide_sets = read_gmtr(peptide_sets_file)  # TODO: feel like it's faster to write our own...
+        # TODO: feel like it's faster to write our own...
+        peptide_sets = read_gmtr(peptide_sets_file)
     pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
     return scores.drop(index=pep_list), peptide_sets
 

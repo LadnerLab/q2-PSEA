@@ -259,7 +259,8 @@ def run_iterative_peptide_analysis(
     # Compute spline fit and residuals once per pair before iterating
     scores_df = processed_scores.view(pd.DataFrame).transpose()
     dof_r = ro.NULL if dof is None else dof
-    epitope_map_df = epitope_map.view(pd.DataFrame) if epitope_map is not None else None
+    epitope_map_df = \
+        epitope_map.view(pd.DataFrame) if epitope_map is not None else None
     pair_fit_artifact = {}
     for pair in pairs_list:
         _, _, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
@@ -267,7 +268,9 @@ def run_iterative_peptide_analysis(
             epitope_map=epitope_map_df,
         )
         fit_df = pd.DataFrame({"maxZ": maxZ_all, "deltaZ": deltaZ_all})
-        pair_fit_artifact[pair] = ctx.make_artifact("FeatureData[PSEAScores]", fit_df)
+        pair_fit_artifact[pair] = ctx.make_artifact(
+            "FeatureData[PSEAScores]", fit_df
+        )
 
     iteration_num = 1
 
@@ -294,7 +297,10 @@ def run_iterative_peptide_analysis(
                 seed=seed,
                 p_val_thresh=p_val_thresh,
                 nes_thresh=nes_thresh,
-                tested_species=tested_species_dict[pair] if tested_species_dict[pair] != [] else None,
+                tested_species=(
+                    tested_species_dict[pair] if
+                    tested_species_dict[pair] != [] else None
+                ),
                 dof=dof,
                 species_taxa=species_taxa,
                 epitope_map=epitope_map,
@@ -465,7 +471,8 @@ def make_psea_table(
     pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
     psea_tables = []
 
-    mapped_epitope_df = mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
+    mapped_epitope_df = \
+        mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
     dof_r = ro.NULL if dof is None else dof
 
     with tempfile.TemporaryDirectory() as table_tempdir:
@@ -596,7 +603,10 @@ def make_psea_table(
                 )
 
                 scatter_plot, = zscatter(
-                    zscores=mapped_processed_scores_art if epitope is not None else processed_scores_art,
+                    zscores=(
+                        mapped_processed_scores_art if epitope is not None
+                        else processed_scores_art
+                    ),
                     pairs_file=pairs_file_path,
                     spline_file=spline_file,
                     p_val_access="p.adjust",

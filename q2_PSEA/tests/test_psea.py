@@ -168,8 +168,13 @@ class TestGmtRoundTrip(TestPluginBase):
 
     def test_create_df_reads_correct_peptides(self):
         result = create_df_from_gmt(self.get_data_path("gmt.gmt"))
-        sp1_peps = [p.strip() for p in result.loc["sp1", "EpitopeID"] if p.strip()]
-        self.assertEqual(set(sp1_peps), {"pep_00", "pep_01", "pep_02", "pep_03"})
+        sp1_peps = [
+            p.strip() for p in result.loc["sp1", "EpitopeID"] if p.strip()
+        ]
+        self.assertEqual(
+            set(sp1_peps),
+            {"pep_00", "pep_01", "pep_02", "pep_03"}
+        )
 
     def test_write_then_read_roundtrip(self):
         gmt_dict = {"sp1": ["pep_00", "pep_01"], "sp2": ["pep_04"]}

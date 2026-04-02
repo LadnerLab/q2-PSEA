@@ -11,7 +11,7 @@ SPLINE_TYPES = ["r-smooth", "py-smooth", "cubic"]
 
 def smooth_spline(x, y, knots=3, s=0.788458):
     """Returns predicted values of `y` based on the given `x` values
-    
+
     Parameters
     ----------
     x : list(float)
