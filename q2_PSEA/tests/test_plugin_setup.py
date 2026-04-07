@@ -69,7 +69,8 @@ class TestRunIterativeProcessSinglePair(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        self.action = self.plugin.pipelines["run_iterative_process_single_pair"]
+        self.action = \
+            self.plugin.pipelines["run_iterative_process_single_pair"]
         self.sig = self.action.signature
 
     def test_registered_as_pipeline(self):
@@ -136,7 +137,8 @@ class TestMakePseaTable(TestPluginBase):
         self.assertNotIn("species_colors", self.sig.inputs)
 
     def test_outputs(self):
-        for name in ("scatter_plot", "volcano_plot", "ae_plots", "psea_tables"):
+        for name in \
+                ("scatter_plot", "volcano_plot", "ae_plots", "psea_tables"):
             self.assertIn(name, self.sig.outputs)
 
 
