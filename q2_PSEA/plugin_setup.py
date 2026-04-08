@@ -20,6 +20,7 @@ from q2_PSEA.actions.psea import (
     run_iterative_peptide_analysis,
     make_psea_table,
 )
+from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.format_types import PSEAPairsTSVFormat, PSEAPairsDirFmt
 from q2_PSEA.types import PSEAPairs
 from qiime2.plugin import (
@@ -439,5 +440,184 @@ plugin.pipelines.register_function(
         " clusterProfiler::GSEA to perform enrichment analysis on Z-score"
         " data, optionally collapsing to epitope level and/or running an"
         " iterative cross-reactivity filtering step."
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Register volcano visualizer
+# ---------------------------------------------------------------------------
+
+plugin.visualizers.register_function(
+    function=volcano,
+    inputs={
+        "pairs": PSEAPairs,
+        "psea_tables": Collection[FeatureData[PSEAScores]],
+    },
+    parameters={
+        "x": List[Float],
+        "y": List[Float],
+        "taxa": List[Str],
+        "xy_access": List[Str],
+        "taxa_access": Str,
+        "x_threshold": Float,
+        "y_threshold": Float,
+        "log": Bool,
+        "xy_labels": List[Str],
+        "colors_file": Str,
+        "vis_outputs_dir": Str,
+    },
+    input_descriptions={
+        "pairs": (
+            "Tab-delimited file listing pairs of sample names (one pair per"
+            " row, header required)."
+        ),
+        "psea_tables": (
+            "Per-pair PSEA result tables. When provided, x, y, and taxa are"
+            " read from these artifacts using xy_access and taxa_access."
+        ),
+    },
+    parameter_descriptions={
+        "x": "Coordinates along the x-axis at which to plot points.",
+        "y": "Coordinates along the y-axis at which to plot points.",
+        "taxa": (
+            "List of identifiers positionally associated with the p-values"
+            " and enrichment scores. Displayed on hover."
+        ),
+        "xy_access": (
+            "Column names in the PSEA table for x and y values, respectively."
+        ),
+        "taxa_access": (
+            "Column name in the PSEA table used to grab highlighting"
+            " information."
+        ),
+        "x_threshold": (
+            "Minimum absolute enrichment score for a taxon to be highlighted."
+        ),
+        "y_threshold": (
+            "Maximum adjusted p-value for a taxon to be highlighted."
+        ),
+        "log": (
+            "If True, plot -log10(y) in ascending order; otherwise plot y"
+            " values in descending order."
+        ),
+        "xy_labels": "Axis labels for x and y, respectively.",
+        "colors_file": (
+            "Optional TSV file mapping species names to HEX color codes."
+        ),
+        "vis_outputs_dir": (
+            "Optional directory to write per-pair HTML files outside of the"
+            " QIIME 2 visualization."
+        ),
+    },
+    name="Volcano Visualizer",
+    description=(
+        "Generates a volcano plot of enrichment scores vs. adjusted p-values."
+        " Significant taxa are highlighted when identifiers are provided."
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Register zscatter visualizer
+# ---------------------------------------------------------------------------
+
+plugin.visualizers.register_function(
+    function=zscatter,
+    inputs={
+        "zscores": FeatureTable[Zscore],
+        "pairs": PSEAPairs,
+        "psea_tables": Collection[FeatureData[PSEAScores]],
+    },
+    input_descriptions={
+        "zscores": "Matrix of Z scores.",
+        "pairs": (
+            "Tab-delimited file listing pairs of sample names (one pair per"
+            " row, header required)."
+        ),
+        "psea_tables": (
+            "Per-pair PSEA result tables used to highlight leading-edge"
+            " peptides for significant taxa."
+        ),
+    },
+    parameters={
+        "spline_file": Str,
+        "p_val_access": Str,
+        "le_peps_access": Str,
+        "taxa_access": Str,
+        "highlight_threshold": Float,
+        "colors_file": Str,
+        "vis_outputs_dir": Str,
+    },
+    parameter_descriptions={
+        "spline_file": (
+            "TSV file with spline results (x, y, pair columns)."
+        ),
+        "p_val_access": (
+            "Column name in psea_tables compared to 'highlight_threshold'"
+            " for highlighting."
+        ),
+        "le_peps_access": "Column name with leading-edge peptides for"
+        " tooltip.",
+        "taxa_access": "Column name with taxa names for highlighting.",
+        "highlight_threshold": (
+            "Maximum p-value for a taxon to be highlighted."
+        ),
+        "colors_file": (
+            "Optional TSV file mapping species names to HEX color codes."
+        ),
+        "vis_outputs_dir": (
+            "Optional directory to write per-pair HTML files outside of the"
+            " QIIME 2 visualization."
+        ),
+    },
+    name="Z Score Scatter Visualization",
+    description=(
+        "Creates a heatmap scatter plot of Z scores for each sample pair."
+        " An optional spline fit and significant leading-edge peptides can"
+        " be overlaid."
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Register aeplots visualizer
+# ---------------------------------------------------------------------------
+
+plugin.visualizers.register_function(
+    function=aeplots,
+    inputs={},
+    input_descriptions={},
+    parameters={
+        "pos_nes_ae_file": Str,
+        "neg_nes_ae_file": Str,
+        "xy_access": List[Str],
+        "xy_labels": List[Str],
+        "colors_file": Str,
+        "vis_outputs_dir": Str,
+    },
+    parameter_descriptions={
+        "pos_nes_ae_file": (
+            "TSV file with Species and Events columns for positive-NES"
+            " antibody event counts."
+        ),
+        "neg_nes_ae_file": (
+            "TSV file with Species and Events columns for negative-NES"
+            " antibody event counts."
+        ),
+        "xy_access": (
+            "Column names for x (events) and y (species) values,"
+            " respectively."
+        ),
+        "xy_labels": "Axis labels for x and y, respectively.",
+        "colors_file": (
+            "Optional TSV file mapping species names to HEX color codes."
+        ),
+        "vis_outputs_dir": (
+            "Optional directory to write an HTML file outside of the QIIME 2"
+            " visualization."
+        ),
+    },
+    name="Antibody Events Plots Visualizer",
+    description=(
+        "Generates bar plots of species antibody-event counts for positive"
+        " and negative NES results."
     ),
 )

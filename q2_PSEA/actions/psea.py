@@ -352,16 +352,10 @@ def make_psea_table(
 ):
     start_time = time.perf_counter()
 
-    volcano = ctx.get_action("ps-plot", "volcano")
-    zscatter = ctx.get_action("ps-plot", "zscatter")
-    aeplots = ctx.get_action("ps-plot", "aeplots")
+    volcano = ctx.get_action("psea", "volcano")
+    zscatter = ctx.get_action("psea", "zscatter")
+    aeplots = ctx.get_action("psea", "aeplots")
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
-
-    # ------------------------------------------------------------------
-    # Extract file paths needed by legacy ps-plot actions (which take Str)
-    # ------------------------------------------------------------------
-    pairs_dirfmt = pairs.view(PSEAPairsDirFmt)
-    pairs_file_path = str(pairs_dirfmt.path / "pairs.tsv")
 
     colors_file_path = species_colors if species_colors is not None else ""
 
@@ -370,7 +364,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Parse pairs list
     # ------------------------------------------------------------------
-    pairs_df = pd.read_csv(pairs_file_path, sep="\t", header=0)
+    pairs_df = pairs.view(pd.DataFrame)
     pairs_list = [
         (str(row.iloc[0]), str(row.iloc[1]))
         for _, row in pairs_df.iterrows()
@@ -465,166 +459,160 @@ def make_psea_table(
         mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
     dof_r = ro.NULL if dof is None else dof
 
-    with tempfile.TemporaryDirectory() as table_tempdir:
-        for pair in pairs_list:
-            sample_a, sample_b = pair
-            table_prefix = f"{sample_a}~{sample_b}"
+    for pair in pairs_list:
+        sample_a, sample_b = pair
+        table_prefix = f"{sample_a}~{sample_b}"
 
-            psea_table, = create_fgsea_table(
-                processed_scores=processed_scores_art,
-                peptide_sets=pair_pep_sets_dict[pair],
-                sample_a=sample_a,
-                sample_b=sample_b,
-                threshold=threshold,
-                permutation_num=permutation_num,
-                min_size=min_size,
-                max_size=max_size,
-                spline_type=spline_type,
-                degree=degree,
-                seed=seed,
-                dof=dof,
-                species_taxa=species_taxa,
-                epitope_map=mapped_epitope,
-                mapped_processed_scores=mapped_processed_scores_art,
-                mapped_peptide_sets=epitope_gmt,
-            )
-            psea_tables.append(psea_table)
+        psea_table, = create_fgsea_table(
+            processed_scores=processed_scores_art,
+            peptide_sets=pair_pep_sets_dict[pair],
+            sample_a=sample_a,
+            sample_b=sample_b,
+            threshold=threshold,
+            permutation_num=permutation_num,
+            min_size=min_size,
+            max_size=max_size,
+            spline_type=spline_type,
+            degree=degree,
+            seed=seed,
+            dof=dof,
+            species_taxa=species_taxa,
+            epitope_map=mapped_epitope,
+            mapped_processed_scores=mapped_processed_scores_art,
+            mapped_peptide_sets=epitope_gmt,
+        )
+        psea_tables.append(psea_table)
 
-            # TODO: We may want to split this off into a Method so we don't
-            # have to block here
-            table_df = psea_table.view(pd.DataFrame)
-            table_df.to_csv(
-                os.path.join(table_tempdir, f"{table_prefix}_psea_table.tsv"),
-                sep="\t",
-                index=False,
-            )
+        # TODO: We may want to split this off into a Method so we don't
+        # have to block here.
+        table_df = psea_table.view(pd.DataFrame)
 
-            # Spline data for scatter plot
-            x, yfit, _, _ = _compute_pair_fit_and_residuals(
-                processed_scores_df,
-                pair,
-                spline_type,
-                degree,
-                dof_r,
-                epitope_map=mapped_epitope_df,
-            )
-            pair_spline_dict["x"].extend(x.tolist())
-            pair_spline_dict["y"].extend(yfit.tolist())
-            pair_spline_dict["pair"].extend([table_prefix] * len(x))
+        # Spline data for scatter plot
+        x, yfit, _, _ = _compute_pair_fit_and_residuals(
+            processed_scores_df,
+            pair,
+            spline_type,
+            degree,
+            dof_r,
+            epitope_map=mapped_epitope_df,
+        )
+        pair_spline_dict["x"].extend(x.tolist())
+        pair_spline_dict["y"].extend(yfit.tolist())
+        pair_spline_dict["pair"].extend([table_prefix] * len(x))
 
-            # Populate event matrices
-            for _, row in table_df.iterrows():
-                taxa = row[taxa_access]
-                if (
-                    row["p.adjust"] < p_val_thresh
-                    and abs(row["NES"]) > nes_thresh
-                ):
-                    if row["NES"] > 0:
-                        if taxa not in pos_nes_event_matrix:
-                            pos_nes_event_matrix[taxa] = empty_pair_row.copy()
-                        pos_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
-                        pos_nes_count_dict[taxa] = (
-                            pos_nes_count_dict.get(taxa, 0) + 1
+        # Populate event matrices
+        for _, row in table_df.iterrows():
+            taxa = row[taxa_access]
+            if (
+                row["p.adjust"] < p_val_thresh
+                and abs(row["NES"]) > nes_thresh
+            ):
+                if row["NES"] > 0:
+                    if taxa not in pos_nes_event_matrix:
+                        pos_nes_event_matrix[taxa] = empty_pair_row.copy()
+                    pos_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
+                    pos_nes_count_dict[taxa] = (
+                        pos_nes_count_dict.get(taxa, 0) + 1
+                    )
+                elif row["NES"] < 0:
+                    if taxa not in neg_nes_event_matrix:
+                        neg_nes_event_matrix[taxa] = empty_pair_row.copy()
+                    neg_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
+                    neg_nes_count_dict[taxa] = (
+                        neg_nes_count_dict.get(taxa, 0) + 1
+                    )
+                else:
+                    if taxa not in zero_nes_event_matrix:
+                        zero_nes_event_matrix[taxa] = (
+                            empty_pair_row.copy()
                         )
-                    elif row["NES"] < 0:
-                        if taxa not in neg_nes_event_matrix:
-                            neg_nes_event_matrix[taxa] = empty_pair_row.copy()
-                        neg_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
-                        neg_nes_count_dict[taxa] = (
-                            neg_nes_count_dict.get(taxa, 0) + 1
-                        )
-                    else:
-                        if taxa not in zero_nes_event_matrix:
-                            zero_nes_event_matrix[taxa] = (
-                                empty_pair_row.copy()
-                            )
-                        zero_nes_event_matrix[taxa][
-                            pairs_list.index(pair)
-                        ] = 1
-                        zero_nes_count_dict[taxa] = (
-                            zero_nes_count_dict.get(taxa, 0) + 1
-                        )
-
-        # ------------------------------------------------------------------
-        # Build summary files and visualizations
-        # ------------------------------------------------------------------
-        with tempfile.TemporaryDirectory() as summary_tempdir:
-            pos_nes_count_dict = dict(
-                sorted(
-                    pos_nes_count_dict.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            )
-            neg_nes_count_dict = dict(
-                sorted(
-                    neg_nes_count_dict.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            )
-
-            pos_ae_file = os.path.join(summary_tempdir, "Positive_NES_AE.tsv")
-            neg_ae_file = os.path.join(summary_tempdir, "Negative_NES_AE.tsv")
-
-            with open(pos_ae_file, "w") as fh:
-                fh.write("Species\tEvents\n")
-                for taxa, count in pos_nes_count_dict.items():
-                    fh.write(f"{taxa}\t{count}\n")
-
-            with open(neg_ae_file, "w") as fh:
-                fh.write("Species\tEvents\n")
-                for taxa, count in neg_nes_count_dict.items():
-                    fh.write(f"{taxa}\t{count}\n")
-
-            if zero_nes_count_dict:
-                print("\n")
-                for taxa, count in zero_nes_count_dict.items():
-                    event_word = "events" if count > 1 else "event"
-                    print(
-                        f"{count} {event_word} for {taxa}, which has an NES"
-                        " of 0"
+                    zero_nes_event_matrix[taxa][
+                        pairs_list.index(pair)
+                    ] = 1
+                    zero_nes_count_dict[taxa] = (
+                        zero_nes_count_dict.get(taxa, 0) + 1
                     )
 
-            with tempfile.TemporaryDirectory() as spline_tempdir:
-                spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
-                pd.DataFrame(pair_spline_dict).to_csv(
-                    spline_file, sep="\t", index=False
+    # ------------------------------------------------------------------
+    # Build summary files and visualizations
+    # ------------------------------------------------------------------
+    with tempfile.TemporaryDirectory() as summary_tempdir:
+        pos_nes_count_dict = dict(
+            sorted(
+                pos_nes_count_dict.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        )
+        neg_nes_count_dict = dict(
+            sorted(
+                neg_nes_count_dict.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        )
+
+        pos_ae_file = os.path.join(summary_tempdir, "Positive_NES_AE.tsv")
+        neg_ae_file = os.path.join(summary_tempdir, "Negative_NES_AE.tsv")
+
+        with open(pos_ae_file, "w") as fh:
+            fh.write("Species\tEvents\n")
+            for taxa, count in pos_nes_count_dict.items():
+                fh.write(f"{taxa}\t{count}\n")
+
+        with open(neg_ae_file, "w") as fh:
+            fh.write("Species\tEvents\n")
+            for taxa, count in neg_nes_count_dict.items():
+                fh.write(f"{taxa}\t{count}\n")
+
+        if zero_nes_count_dict:
+            print("\n")
+            for taxa, count in zero_nes_count_dict.items():
+                event_word = "events" if count > 1 else "event"
+                print(
+                    f"{count} {event_word} for {taxa}, which has an NES"
+                    " of 0"
                 )
 
-                scatter_plot, = zscatter(
-                    zscores=(
-                        mapped_processed_scores_art if epitope is not None
-                        else processed_scores_art
-                    ),
-                    pairs_file=pairs_file_path,
-                    spline_file=spline_file,
-                    p_val_access="p.adjust",
-                    le_peps_access="core_enrichment",
-                    taxa_access=taxa_access,
-                    highlight_data=table_tempdir,
-                    highlight_threshold=p_val_thresh,
-                    colors_file=colors_file_path,
-                )
+        with tempfile.TemporaryDirectory() as spline_tempdir:
+            spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
+            pd.DataFrame(pair_spline_dict).to_csv(
+                spline_file, sep="\t", index=False
+            )
 
-                volcano_plot, = volcano(
-                    xy_dir=table_tempdir,
-                    xy_access=["NES", "p.adjust"],
-                    taxa_access=taxa_access,
-                    x_threshold=nes_thresh,
-                    y_threshold=p_val_thresh,
-                    xy_labels=["Enrichment score", "Adjusted p-values"],
-                    pairs_file=pairs_file_path,
-                    colors_file=colors_file_path,
-                )
+            scatter_plot, = zscatter(
+                zscores=(
+                    mapped_processed_scores_art if epitope is not None
+                    else processed_scores_art
+                ),
+                pairs=pairs,
+                spline_file=spline_file,
+                p_val_access="p.adjust",
+                le_peps_access="core_enrichment",
+                taxa_access=taxa_access,
+                psea_tables=psea_tables,
+                highlight_threshold=p_val_thresh,
+                colors_file=colors_file_path,
+            )
 
-                ae_plot, = aeplots(
-                    pos_nes_ae_file=pos_ae_file,
-                    neg_nes_ae_file=neg_ae_file,
-                    xy_access=["Events", "Species"],
-                    xy_labels=["Number of AEs in cohort", "Species"],
-                    colors_file=colors_file_path,
-                )
+            volcano_plot, = volcano(
+                pairs=pairs,
+                psea_tables=psea_tables,
+                xy_access=["NES", "p.adjust"],
+                taxa_access=taxa_access,
+                x_threshold=nes_thresh,
+                y_threshold=p_val_thresh,
+                xy_labels=["Enrichment score", "Adjusted p-values"],
+                colors_file=colors_file_path,
+            )
+
+            ae_plot, = aeplots(
+                pos_nes_ae_file=pos_ae_file,
+                neg_nes_ae_file=neg_ae_file,
+                xy_access=["Events", "Species"],
+                xy_labels=["Number of AEs in cohort", "Species"],
+                colors_file=colors_file_path,
+            )
 
     end_time = time.perf_counter()
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
