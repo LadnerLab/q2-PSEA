@@ -339,14 +339,18 @@ class TestAeplots(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        self.pos_ae = self.get_data_path("pos-ae.tsv")
-        self.neg_ae = self.get_data_path("neg-ae.tsv")
+        self.pos_ae = pd.read_csv(
+            self.get_data_path("pos-ae.tsv"), sep="\t"
+        )
+        self.neg_ae = pd.read_csv(
+            self.get_data_path("neg-ae.tsv"), sep="\t"
+        )
 
     def _call(self, output_dir, **kwargs):
         return aeplots(
             output_dir=output_dir,
-            pos_nes_ae_file=self.pos_ae,
-            neg_nes_ae_file=self.neg_ae,
+            pos_ae_counts=self.pos_ae,
+            neg_ae_counts=self.neg_ae,
             **kwargs,
         )
 

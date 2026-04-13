@@ -339,6 +339,68 @@ def run_iterative_peptide_analysis(
     return list(pair_gmt_dict.values())
 
 
+def count_antibody_events(
+    psea_tables: pd.DataFrame,
+    p_val_thresh: float,
+    nes_thresh: float,
+    taxa_access: str,
+) -> (pd.DataFrame, pd.DataFrame):
+    """QIIME 2 method: count positive- and negative-NES antibody events.
+
+    Iterates over every PSEA table in *psea_tables*. A taxon is counted as one
+    event for a given pair when its adjusted p-value is below *p_val_thresh*
+    and the absolute value of its NES exceeds *nes_thresh*. Positive and
+    negative NES events are tallied separately.
+
+    Returns
+    -------
+    pos_ae_counts : pd.DataFrame
+        Two-column DataFrame (Species, Events) sorted by event count
+        descending. Contains taxa with significant positive NES.
+    neg_ae_counts : pd.DataFrame
+        Same structure for taxa with significant negative NES.
+    """
+    pos_count = {}
+    neg_count = {}
+    zero_count = {}
+
+    for _, table_df in psea_tables.items():
+        for _, row in table_df.iterrows():
+            taxa = row[taxa_access]
+            if (
+                row["p.adjust"] < p_val_thresh
+                and abs(row["NES"]) > nes_thresh
+            ):
+                if row["NES"] > 0:
+                    pos_count[taxa] = pos_count.get(taxa, 0) + 1
+                elif row["NES"] < 0:
+                    neg_count[taxa] = neg_count.get(taxa, 0) + 1
+                else:
+                    zero_count[taxa] = zero_count.get(taxa, 0) + 1
+
+    if zero_count:
+        print()
+        for taxa, count in zero_count.items():
+            event_word = "events" if count > 1 else "event"
+            print(f"{count} {event_word} for {taxa}, which has an NES of 0")
+
+    pos_count = dict(
+        sorted(pos_count.items(), key=lambda item: item[1], reverse=True)
+    )
+    neg_count = dict(
+        sorted(neg_count.items(), key=lambda item: item[1], reverse=True)
+    )
+
+    pos_ae_df = pd.DataFrame(
+        list(pos_count.items()), columns=["Species", "Events"]
+    )
+    neg_ae_df = pd.DataFrame(
+        list(neg_count.items()), columns=["Species", "Events"]
+    )
+
+    return pos_ae_df, neg_ae_df
+
+
 def make_psea_table(
     ctx,
     scores,
@@ -452,14 +514,6 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Final per-pair PSEA analysis
     # ------------------------------------------------------------------
-    pos_nes_event_matrix = dict()
-    neg_nes_event_matrix = dict()
-    zero_nes_event_matrix = dict()
-    empty_pair_row = [0] * len(pairs_list)
-    pos_nes_count_dict = dict()
-    neg_nes_count_dict = dict()
-    zero_nes_count_dict = dict()
-
     pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
     psea_tables = []
 
@@ -491,10 +545,6 @@ def make_psea_table(
         )
         psea_tables.append(psea_table)
 
-        # TODO: We may want to split this off into a Method so we don't
-        # have to block here.
-        table_df = psea_table.view(pd.DataFrame)
-
         # Spline data for scatter plot
         x, yfit, _, _ = _compute_pair_fit_and_residuals(
             processed_scores_df,
@@ -508,119 +558,56 @@ def make_psea_table(
         pair_spline_dict["y"].extend(yfit.tolist())
         pair_spline_dict["pair"].extend([table_prefix] * len(x))
 
-        # Populate event matrices
-        for _, row in table_df.iterrows():
-            taxa = row[taxa_access]
-            if (
-                row["p.adjust"] < p_val_thresh
-                and abs(row["NES"]) > nes_thresh
-            ):
-                if row["NES"] > 0:
-                    if taxa not in pos_nes_event_matrix:
-                        pos_nes_event_matrix[taxa] = empty_pair_row.copy()
-                    pos_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
-                    pos_nes_count_dict[taxa] = (
-                        pos_nes_count_dict.get(taxa, 0) + 1
-                    )
-                elif row["NES"] < 0:
-                    if taxa not in neg_nes_event_matrix:
-                        neg_nes_event_matrix[taxa] = empty_pair_row.copy()
-                    neg_nes_event_matrix[taxa][pairs_list.index(pair)] = 1
-                    neg_nes_count_dict[taxa] = (
-                        neg_nes_count_dict.get(taxa, 0) + 1
-                    )
-                else:
-                    if taxa not in zero_nes_event_matrix:
-                        zero_nes_event_matrix[taxa] = (
-                            empty_pair_row.copy()
-                        )
-                    zero_nes_event_matrix[taxa][
-                        pairs_list.index(pair)
-                    ] = 1
-                    zero_nes_count_dict[taxa] = (
-                        zero_nes_count_dict.get(taxa, 0) + 1
-                    )
+    # ------------------------------------------------------------------
+    # Count antibody events and build visualizations
+    # ------------------------------------------------------------------
+    count_ae = ctx.get_action("psea", "count_antibody_events")
+    pos_ae_counts, neg_ae_counts = count_ae(
+        psea_tables=psea_tables,
+        p_val_thresh=p_val_thresh,
+        nes_thresh=nes_thresh,
+        taxa_access=taxa_access,
+    )
 
-    # ------------------------------------------------------------------
-    # Build summary files and visualizations
-    # ------------------------------------------------------------------
-    with tempfile.TemporaryDirectory() as summary_tempdir:
-        pos_nes_count_dict = dict(
-            sorted(
-                pos_nes_count_dict.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
-        neg_nes_count_dict = dict(
-            sorted(
-                neg_nes_count_dict.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
+    with tempfile.TemporaryDirectory() as spline_tempdir:
+        spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
+        pd.DataFrame(pair_spline_dict).to_csv(
+            spline_file, sep="\t", index=False
         )
 
-        pos_ae_file = os.path.join(summary_tempdir, "Positive_NES_AE.tsv")
-        neg_ae_file = os.path.join(summary_tempdir, "Negative_NES_AE.tsv")
+        scatter_plot, = zscatter(
+            zscores=(
+                mapped_processed_scores_art if epitope is not None
+                else processed_scores_art
+            ),
+            pairs=pairs,
+            spline_file=spline_file,
+            p_val_access="p.adjust",
+            le_peps_access="core_enrichment",
+            taxa_access=taxa_access,
+            psea_tables=psea_tables,
+            highlight_threshold=p_val_thresh,
+            colors_file=species_colors,
+        )
 
-        with open(pos_ae_file, "w") as fh:
-            fh.write("Species\tEvents\n")
-            for taxa, count in pos_nes_count_dict.items():
-                fh.write(f"{taxa}\t{count}\n")
+        volcano_plot, = volcano(
+            pairs=pairs,
+            psea_tables=psea_tables,
+            xy_access=["NES", "p.adjust"],
+            taxa_access=taxa_access,
+            x_threshold=nes_thresh,
+            y_threshold=p_val_thresh,
+            xy_labels=["Enrichment score", "Adjusted p-values"],
+            colors_file=species_colors,
+        )
 
-        with open(neg_ae_file, "w") as fh:
-            fh.write("Species\tEvents\n")
-            for taxa, count in neg_nes_count_dict.items():
-                fh.write(f"{taxa}\t{count}\n")
-
-        if zero_nes_count_dict:
-            print("\n")
-            for taxa, count in zero_nes_count_dict.items():
-                event_word = "events" if count > 1 else "event"
-                print(
-                    f"{count} {event_word} for {taxa}, which has an NES"
-                    " of 0"
-                )
-
-        with tempfile.TemporaryDirectory() as spline_tempdir:
-            spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
-            pd.DataFrame(pair_spline_dict).to_csv(
-                spline_file, sep="\t", index=False
-            )
-
-            scatter_plot, = zscatter(
-                zscores=(
-                    mapped_processed_scores_art if epitope is not None
-                    else processed_scores_art
-                ),
-                pairs=pairs,
-                spline_file=spline_file,
-                p_val_access="p.adjust",
-                le_peps_access="core_enrichment",
-                taxa_access=taxa_access,
-                psea_tables=psea_tables,
-                highlight_threshold=p_val_thresh,
-                colors_file=species_colors,
-            )
-
-            volcano_plot, = volcano(
-                pairs=pairs,
-                psea_tables=psea_tables,
-                xy_access=["NES", "p.adjust"],
-                taxa_access=taxa_access,
-                x_threshold=nes_thresh,
-                y_threshold=p_val_thresh,
-                xy_labels=["Enrichment score", "Adjusted p-values"],
-                colors_file=species_colors,
-            )
-
-            ae_plot, = aeplots(
-                pos_nes_ae_file=pos_ae_file,
-                neg_nes_ae_file=neg_ae_file,
-                xy_access=["Events", "Species"],
-                xy_labels=["Number of AEs in cohort", "Species"],
-                colors_file=species_colors,
-            )
+    ae_plot, = aeplots(
+        pos_ae_counts=pos_ae_counts,
+        neg_ae_counts=neg_ae_counts,
+        xy_access=["Events", "Species"],
+        xy_labels=["Number of AEs in cohort", "Species"],
+        colors_file=species_colors,
+    )
 
     end_time = time.perf_counter()
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")

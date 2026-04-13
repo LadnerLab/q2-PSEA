@@ -15,14 +15,20 @@ import q2_PSEA
 import q2_PSEA.actions.splines as splines
 
 from q2_PSEA.actions.psea import (
+    count_antibody_events,
     create_fgsea_table_for_pair,
     run_iterative_process_single_pair,
     run_iterative_peptide_analysis,
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
-from q2_PSEA.format_types import PSEAPairsTSVFormat, PSEAPairsDirFmt
-from q2_PSEA.types import PSEAPairs
+from q2_PSEA.format_types import (
+    PSEAAECountsDirFmt,
+    PSEAAECountsTSVFormat,
+    PSEAPairsTSVFormat,
+    PSEAPairsDirFmt,
+)
+from q2_PSEA.types import PSEAAECounts, PSEAPairs
 from qiime2.plugin import (
     Bool,
     Collection,
@@ -52,18 +58,22 @@ plugin = Plugin(
 # Register formats
 # ---------------------------------------------------------------------------
 
-plugin.register_formats(PSEAPairsTSVFormat, PSEAPairsDirFmt)
+plugin.register_formats(
+    PSEAAECountsDirFmt, PSEAAECountsTSVFormat,
+    PSEAPairsTSVFormat, PSEAPairsDirFmt,
+)
 
 # ---------------------------------------------------------------------------
 # Register semantic types
 # ---------------------------------------------------------------------------
 
-plugin.register_semantic_types(PSEAPairs)
+plugin.register_semantic_types(PSEAAECounts, PSEAPairs)
 
 # ---------------------------------------------------------------------------
 # Map semantic types -> directory formats
 # ---------------------------------------------------------------------------
 
+plugin.register_semantic_type_to_format(PSEAAECounts, PSEAAECountsDirFmt)
 plugin.register_semantic_type_to_format(PSEAPairs, PSEAPairsDirFmt)
 
 # ---------------------------------------------------------------------------
@@ -82,6 +92,74 @@ def _df_to_psea_pairs_tsv(df: pd.DataFrame) -> PSEAPairsTSVFormat:
     df.to_csv(str(result), sep="\t", index=False)
     return result
 
+
+@plugin.register_transformer
+def _ae_counts_tsv_to_df(ff: PSEAAECountsTSVFormat) -> pd.DataFrame:
+    return pd.read_csv(str(ff), sep="\t", header=0)
+
+
+@plugin.register_transformer
+def _df_to_ae_counts_tsv(df: pd.DataFrame) -> PSEAAECountsTSVFormat:
+    result = PSEAAECountsTSVFormat()
+    df.to_csv(str(result), sep="\t", index=False)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Register count_antibody_events as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=count_antibody_events,
+    inputs={
+        "psea_tables": Collection[FeatureData[PSEAScores]],
+    },
+    parameters={
+        "p_val_thresh": Float,
+        "nes_thresh": Float,
+        "taxa_access": Str,
+    },
+    outputs=[
+        ("pos_ae_counts", PSEAAECounts),
+        ("neg_ae_counts", PSEAAECounts),
+    ],
+    input_descriptions={
+        "psea_tables": (
+            "Per-pair PSEA result tables produced by"
+            " create_fgsea_table_for_pair."
+        ),
+    },
+    parameter_descriptions={
+        "p_val_thresh": (
+            "Adjusted p-value threshold; taxa below this value are counted"
+            " as significant events."
+        ),
+        "nes_thresh": (
+            "Absolute NES threshold; taxa whose absolute NES exceeds this"
+            " value are counted as significant events."
+        ),
+        "taxa_access": (
+            "Column name in the PSEA tables used to identify taxa (e.g."
+            " 'ID' or 'species_name')."
+        ),
+    },
+    output_descriptions={
+        "pos_ae_counts": (
+            "Species-level counts of significant positive-NES antibody"
+            " events across all pairs, sorted by event count descending."
+        ),
+        "neg_ae_counts": (
+            "Species-level counts of significant negative-NES antibody"
+            " events across all pairs, sorted by event count descending."
+        ),
+    },
+    name="Count Antibody Events",
+    description=(
+        "Counts the number of sample pairs in which each taxon is"
+        " significantly enriched (positive or negative NES) according to"
+        " the supplied p-value and NES thresholds."
+    ),
+)
 
 # ---------------------------------------------------------------------------
 # Register create_fgsea_table_for_pair as a method
@@ -587,25 +665,27 @@ plugin.visualizers.register_function(
 
 plugin.visualizers.register_function(
     function=aeplots,
-    inputs={},
-    input_descriptions={},
+    inputs={
+        "pos_ae_counts": PSEAAECounts,
+        "neg_ae_counts": PSEAAECounts,
+    },
+    input_descriptions={
+        "pos_ae_counts": (
+            "Species-level counts of significant positive-NES antibody"
+            " events, as produced by count_antibody_events."
+        ),
+        "neg_ae_counts": (
+            "Species-level counts of significant negative-NES antibody"
+            " events, as produced by count_antibody_events."
+        ),
+    },
     parameters={
-        "pos_nes_ae_file": Str,
-        "neg_nes_ae_file": Str,
         "xy_access": List[Str],
         "xy_labels": List[Str],
         "colors_file": Metadata,
         "vis_outputs_dir": Str,
     },
     parameter_descriptions={
-        "pos_nes_ae_file": (
-            "TSV file with Species and Events columns for positive-NES"
-            " antibody event counts."
-        ),
-        "neg_nes_ae_file": (
-            "TSV file with Species and Events columns for negative-NES"
-            " antibody event counts."
-        ),
         "xy_access": (
             "Column names for x (events) and y (species) values,"
             " respectively."

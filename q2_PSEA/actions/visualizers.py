@@ -530,8 +530,8 @@ def zscatter(
 
 def aeplots(
     output_dir: str,
-    pos_nes_ae_file: str,
-    neg_nes_ae_file: str,
+    pos_ae_counts: pd.DataFrame,
+    neg_ae_counts: pd.DataFrame,
     colors_file: qiime2.Metadata = None,
     xy_access: list = ["Events", "Species"],
     xy_labels: list = ["Number of AEs in cohort", "Species"],
@@ -539,8 +539,8 @@ def aeplots(
 ) -> None:
     alt.data_transformers.disable_max_rows()
 
-    pos_df = pd.read_csv(pos_nes_ae_file, sep="\t")
-    neg_df = pd.read_csv(neg_nes_ae_file, sep="\t")
+    pos_df = pos_ae_counts.copy()
+    neg_df = neg_ae_counts.copy()
 
     pos_df["NES"] = "Positive"
     neg_df["NES"] = "Negative"

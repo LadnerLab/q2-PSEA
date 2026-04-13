@@ -27,7 +27,24 @@ PSEAPairsDirFmt = model.SingleFileDirectoryFormat(
 )
 
 
+class PSEAAECountsTSVFormat(model.TextFileFormat):
+    def _validate_(self, level):
+        with self.open() as fh:
+            header = fh.readline().strip().split("\t")
+            if header != ["Species", "Events"]:
+                raise ValidationError(
+                    "AE counts file must have a header of 'Species\\tEvents'."
+                )
+
+
+PSEAAECountsDirFmt = model.SingleFileDirectoryFormat(
+    "PSEAAECountsDirFmt", "ae_counts.tsv", PSEAAECountsTSVFormat
+)
+
+
 __all__ = [
-    "PSEAPairsTSVFormat",
+    "PSEAAECountsDirFmt",
+    "PSEAAECountsTSVFormat",
     "PSEAPairsDirFmt",
+    "PSEAPairsTSVFormat",
 ]

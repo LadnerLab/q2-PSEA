@@ -14,6 +14,7 @@ from qiime2.plugin.testing import TestPluginBase
 from q2_PSEA.actions.psea import (
     _collapse_residuals_to_epitope,
     _compute_pair_fit_and_residuals,
+    count_antibody_events,
     create_df_from_gmt,
     create_fgsea_table_for_pair,
     process_scores,
@@ -551,6 +552,100 @@ class TestRunIterativePeptideAnalysis(TestPluginBase):
         ctx = self._build_ctx(_psea_table_df(sig=False))
         result, _ = self._run(ctx, self._ONE_PAIR)
         self.assertIsInstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# count_antibody_events
+# ---------------------------------------------------------------------------
+
+def _ae_psea_tables(rows):
+    """Build a fake psea_tables dict as count_antibody_events expects."""
+    df = pd.DataFrame(rows)
+    return {"pair1": df}
+
+
+class TestCountAntibodyEvents(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def _call(self, rows, **kwargs):
+        tables = _ae_psea_tables(rows)
+        defaults = dict(p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID")
+        defaults.update(kwargs)
+        return count_antibody_events(tables, **defaults)
+
+    def test_returns_two_dataframes(self):
+        pos, neg = self._call([
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+        ])
+        self.assertIsInstance(pos, pd.DataFrame)
+        self.assertIsInstance(neg, pd.DataFrame)
+
+    def test_significant_positive_nes_counted(self):
+        pos, _ = self._call([
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+        ])
+        self.assertEqual(len(pos), 1)
+        self.assertEqual(pos.iloc[0]["Species"], "sp1")
+        self.assertEqual(pos.iloc[0]["Events"], 1)
+
+    def test_significant_negative_nes_counted(self):
+        _, neg = self._call([
+            {"ID": "sp2", "NES": -2.0, "p.adjust": 0.01},
+        ])
+        self.assertEqual(len(neg), 1)
+        self.assertEqual(neg.iloc[0]["Species"], "sp2")
+        self.assertEqual(neg.iloc[0]["Events"], 1)
+
+    def test_non_significant_row_not_counted(self):
+        pos, neg = self._call([
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.9},   # p-val too high
+            {"ID": "sp2", "NES": 0.5, "p.adjust": 0.01},  # NES too low
+        ])
+        self.assertEqual(len(pos), 0)
+        self.assertEqual(len(neg), 0)
+
+    def test_multiple_pairs_accumulate_counts(self):
+        tables = {
+            "pairA": pd.DataFrame([
+                {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+            ]),
+            "pairB": pd.DataFrame([
+                {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+            ]),
+        }
+        pos, _ = count_antibody_events(
+            tables, p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID"
+        )
+        self.assertEqual(pos.iloc[0]["Events"], 2)
+
+    def test_output_sorted_by_events_descending(self):
+        tables = {
+            "pairA": pd.DataFrame([
+                {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+                {"ID": "sp2", "NES": 2.0, "p.adjust": 0.01},
+            ]),
+            "pairB": pd.DataFrame([
+                {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+            ]),
+        }
+        pos, _ = count_antibody_events(
+            tables, p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID"
+        )
+        self.assertEqual(pos.iloc[0]["Species"], "sp1")
+
+    def test_output_columns(self):
+        pos, neg = self._call([
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+        ])
+        self.assertListEqual(list(pos.columns), ["Species", "Events"])
+        self.assertListEqual(list(neg.columns), ["Species", "Events"])
+
+    def test_taxa_access_species_name(self):
+        pos, _ = self._call(
+            [{"species_name": "InfluenzaA", "NES": 2.0, "p.adjust": 0.01}],
+            taxa_access="species_name",
+        )
+        self.assertEqual(pos.iloc[0]["Species"], "InfluenzaA")
 
 
 if __name__ == "__main__":
