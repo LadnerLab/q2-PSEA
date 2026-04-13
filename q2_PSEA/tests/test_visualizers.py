@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 import pandas as pd
+import qiime2
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.visualizers import aeplots, volcano, zscatter
@@ -149,6 +150,9 @@ class TestVolcano(TestPluginBase):
 
     def test_colors_file_does_not_raise(self):
         """Custom color mapping for significant taxa must not raise."""
+        colors_md = qiime2.Metadata.load(
+            self.get_data_path("species-colors.tsv")
+        )
         with tempfile.TemporaryDirectory() as output_dir:
             self._call(
                 output_dir,
@@ -158,7 +162,7 @@ class TestVolcano(TestPluginBase):
                 taxa_access="species_name",
                 x_threshold=0.4,
                 y_threshold=0.05,
-                colors_file=self.get_data_path("species-colors.tsv"),
+                colors_file=colors_md,
             )
             self.assertTrue(
                 os.path.exists(os.path.join(output_dir, "index.html"))
@@ -358,10 +362,13 @@ class TestAeplots(TestPluginBase):
 
     def test_colors_file_does_not_raise(self):
         """Species in pos/neg AE files that match colors file get custom colors."""
+        colors_md = qiime2.Metadata.load(
+            self.get_data_path("species-colors.tsv")
+        )
         with tempfile.TemporaryDirectory() as output_dir:
             self._call(
                 output_dir,
-                colors_file=self.get_data_path("species-colors.tsv"),
+                colors_file=colors_md,
             )
             self.assertTrue(
                 os.path.exists(os.path.join(output_dir, "index.html"))

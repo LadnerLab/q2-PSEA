@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import pandas as pd
+import qiime2
 import rpy2.robjects as ro
 import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
@@ -30,7 +31,7 @@ def create_fgsea_table_for_pair(
     degree: int,
     seed: int,
     dof: int = None,
-    species_taxa: str = None,
+    species_taxa: qiime2.Metadata = None,
     epitope_map: pd.DataFrame = None,
     mapped_processed_scores: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
@@ -72,8 +73,6 @@ def create_fgsea_table_for_pair(
     if dof is None:
         dof = ro.NULL
 
-    species_taxa_file = species_taxa if species_taxa is not None else ""
-
     if precomputed_fit is not None:
         maxZ_all = precomputed_fit["maxZ"]
         deltaZ_all = precomputed_fit["deltaZ"]
@@ -94,17 +93,26 @@ def create_fgsea_table_for_pair(
     maxZ = maxZ_all.reindex(idx)
     deltaZ = deltaZ_all.reindex(idx)
 
-    table = INTERNAL.psea(
-        maxZ,
-        deltaZ,
-        peptide_sets_for_analysis,
-        species_taxa_file,
-        threshold,
-        permutation_num,
-        min_size,
-        max_size,
-        seed,
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if species_taxa is not None:
+            taxa_df = species_taxa.to_dataframe().reset_index()
+            species_taxa_file = os.path.join(tmpdir, "species_taxa.tsv")
+            taxa_df.to_csv(species_taxa_file, sep="\t", header=False, index=False)
+        else:
+            species_taxa_file = ""
+
+        table = INTERNAL.psea(
+            maxZ,
+            deltaZ,
+            peptide_sets_for_analysis,
+            species_taxa_file,
+            threshold,
+            permutation_num,
+            min_size,
+            max_size,
+            seed,
+        )
+
     with (ro.default_converter + pandas2ri.converter).context():
         table = ro.conversion.get_conversion().rpy2py(table)
 
@@ -128,7 +136,7 @@ def run_iterative_process_single_pair(
     nes_thresh,
     tested_species=None,
     dof=None,
-    species_taxa=None,
+    species_taxa: qiime2.Metadata = None,
     epitope_map=None,
     mapped_processed_scores=None,
     mapped_peptide_sets=None,
@@ -215,7 +223,7 @@ def run_iterative_peptide_analysis(
     p_val_thresh,
     nes_thresh,
     dof=None,
-    species_taxa=None,
+    species_taxa: qiime2.Metadata = None,
     epitope_map=None,
     mapped_processed_scores=None,
     mapped_peptide_sets=None,
@@ -335,8 +343,8 @@ def make_psea_table(
     pairs,
     peptide_sets,
     threshold,
-    species_taxa=None,
-    species_colors=None,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
     epitope=None,
     collapse="Viral",
     p_val_thresh=0.05,
@@ -356,8 +364,6 @@ def make_psea_table(
     zscatter = ctx.get_action("psea", "zscatter")
     aeplots = ctx.get_action("psea", "aeplots")
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
-
-    colors_file_path = species_colors if species_colors is not None else ""
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -592,7 +598,7 @@ def make_psea_table(
                 taxa_access=taxa_access,
                 psea_tables=psea_tables,
                 highlight_threshold=p_val_thresh,
-                colors_file=colors_file_path,
+                colors_file=species_colors,
             )
 
             volcano_plot, = volcano(
@@ -603,7 +609,7 @@ def make_psea_table(
                 x_threshold=nes_thresh,
                 y_threshold=p_val_thresh,
                 xy_labels=["Enrichment score", "Adjusted p-values"],
-                colors_file=colors_file_path,
+                colors_file=species_colors,
             )
 
             ae_plot, = aeplots(
@@ -611,7 +617,7 @@ def make_psea_table(
                 neg_nes_ae_file=neg_ae_file,
                 xy_access=["Events", "Species"],
                 xy_labels=["Number of AEs in cohort", "Species"],
-                colors_file=colors_file_path,
+                colors_file=species_colors,
             )
 
     end_time = time.perf_counter()

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import qiime2
 
 from q2_PSEA.format_types import PSEAPairsDirFmt
 
@@ -13,7 +14,7 @@ def volcano(
     output_dir: str,
     pairs: PSEAPairsDirFmt,
     psea_tables: pd.DataFrame = None,
-    colors_file: str = "",
+    colors_file: qiime2.Metadata = None,
     x: list = None,
     y: list = None,
     taxa: list = None,
@@ -122,16 +123,14 @@ def volcano(
             "#CC79A7",
         ])
         legend = alt.Legend(title="Significant Taxa")
-        if colors_file:
+        if colors_file is not None:
             all_species = list(set(highlight_df["taxa"].to_list()))
             num_extra_colors = len(all_species)
 
-            color_df = pd.read_csv(
-                colors_file, sep="\t", header=None, names=["Taxa", "Color"]
-            )
-            color_df = color_df[color_df["Taxa"].isin(all_species)]
-            species_list = color_df["Taxa"].to_list()
-            colors_list = color_df["Color"].to_list()
+            color_df = colors_file.to_dataframe()
+            color_df = color_df[color_df.index.isin(all_species)]
+            species_list = color_df.index.to_list()
+            colors_list = color_df.iloc[:, 0].to_list()
             num_extra_colors -= len(species_list)
 
             color_iter = iter(
@@ -228,7 +227,7 @@ def zscatter(
     zscores: pd.DataFrame,
     pairs: PSEAPairsDirFmt,
     psea_tables: pd.DataFrame = None,
-    colors_file: str = "",
+    colors_file: qiime2.Metadata = None,
     p_val_access: str = None,
     le_peps_access: str = None,
     taxa_access: str = None,
@@ -388,16 +387,14 @@ def zscatter(
     shape = alt.Shape("taxa:N", legend=None)
     legend = alt.Legend(title="Significant Taxa")
 
-    if colors_file:
+    if colors_file is not None:
         all_species = list(set(highlight_df["taxa"].to_list()))
         num_extra_colors = len(all_species)
 
-        color_df = pd.read_csv(
-            colors_file, sep="\t", header=None, names=["Taxa", "Color"]
-        )
-        color_df = color_df[color_df["Taxa"].isin(all_species)]
-        species_list = color_df["Taxa"].to_list()
-        colors_list = color_df["Color"].to_list()
+        color_df = colors_file.to_dataframe()
+        color_df = color_df[color_df.index.isin(all_species)]
+        species_list = color_df.index.to_list()
+        colors_list = color_df.iloc[:, 0].to_list()
         num_extra_colors -= len(species_list)
 
         color_iter = iter(
@@ -535,7 +532,7 @@ def aeplots(
     output_dir: str,
     pos_nes_ae_file: str,
     neg_nes_ae_file: str,
-    colors_file: str = "",
+    colors_file: qiime2.Metadata = None,
     xy_access: list = ["Events", "Species"],
     xy_labels: list = ["Number of AEs in cohort", "Species"],
     vis_outputs_dir: str = None,
@@ -555,16 +552,14 @@ def aeplots(
         "#F0E442", "#0072B2", "#D55E00",
         "#CC79A7",
     ])
-    if colors_file:
+    if colors_file is not None:
         all_species = list(set(ae_df["Species"].to_list()))
         num_extra_colors = len(all_species)
 
-        color_df = pd.read_csv(
-            colors_file, sep="\t", header=None, names=["Species", "Color"]
-        )
-        color_df = color_df[color_df["Species"].isin(all_species)]
-        species_list = color_df["Species"].to_list()
-        colors_list = color_df["Color"].to_list()
+        color_df = colors_file.to_dataframe()
+        color_df = color_df[color_df.index.isin(all_species)]
+        species_list = color_df.index.to_list()
+        colors_list = color_df.iloc[:, 0].to_list()
         num_extra_colors -= len(species_list)
 
         color_iter = iter(

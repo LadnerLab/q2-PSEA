@@ -29,6 +29,7 @@ from qiime2.plugin import (
     Float,
     Int,
     List,
+    Metadata,
     Plugin,
     Str,
     Visualization,
@@ -108,7 +109,7 @@ plugin.methods.register_function(
         "degree": Int,
         "seed": Int,
         "dof": Int,
-        "species_taxa": Str,
+        "species_taxa": Metadata,
     },
     parameter_descriptions={
         "sample_a": "Name of the first sample in the pair.",
@@ -136,8 +137,9 @@ plugin.methods.register_function(
             "Degrees of freedom for spline fitting (affects 'cubic' only)."
         ),
         "species_taxa": (
-            "Optional path to a TSV file mapping species names to taxonomy"
-            " IDs."
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+            " When provided, enrichment results are annotated with species"
+            " names."
         ),
     },
     input_descriptions={
@@ -201,7 +203,7 @@ plugin.pipelines.register_function(
         "nes_thresh": Float,
         "tested_species": List[Str],
         "dof": Int,
-        "species_taxa": Str,
+        "species_taxa": Metadata,
     },
     parameter_descriptions={
         "sample_a": "Name of the first sample in the pair.",
@@ -224,8 +226,9 @@ plugin.pipelines.register_function(
             " re-testing the same species."
         ),
         "dof": "Degrees of freedom for spline fitting.",
-        "species_taxa": "Optional path to a TSV file mapping species names"
-        " to taxonomy IDs.",
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+        ),
     },
     input_descriptions={
         "processed_scores": "Log-scaled Z-score matrix.",
@@ -286,7 +289,7 @@ plugin.pipelines.register_function(
         "p_val_thresh": Float,
         "nes_thresh": Float,
         "dof": Int,
-        "species_taxa": Str,
+        "species_taxa": Metadata,
     },
     parameter_descriptions={
         "threshold": "Minimum Z-score for GSEA inclusion.",
@@ -299,8 +302,9 @@ plugin.pipelines.register_function(
         "p_val_thresh": "Adjusted p-value threshold for significance.",
         "nes_thresh": "Absolute NES threshold for significance.",
         "dof": "Degrees of freedom for spline fitting.",
-        "species_taxa": "Optional path to a TSV file mapping species names to"
-        " taxonomy IDs.",
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+        ),
     },
     input_descriptions={
         "processed_scores": "Log-scaled Z-score matrix for all samples.",
@@ -350,8 +354,8 @@ plugin.pipelines.register_function(
         "dof": Int,
         "iterative_analysis": Bool,
         "seed": Int,
-        "species_taxa": Str,
-        "species_colors": Str,
+        "species_taxa": Metadata,
+        "species_colors": Metadata,
     },
     parameter_descriptions={
         "threshold": (
@@ -386,12 +390,12 @@ plugin.pipelines.register_function(
         ),
         "seed": "Random seed for GSEA permutations.",
         "species_taxa": (
-            "Optional path to a TSV file mapping species names to taxonomy"
-            " IDs. When provided, enrichment results are annotated with"
-            " species names."
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+            " When provided, enrichment results are annotated with species"
+            " names."
         ),
         "species_colors": (
-            "Optional path to a TSV file mapping species names to HEX color"
+            "Optional Metadata mapping species names (IDs) to HEX color"
             " codes used in output visualizations."
         ),
     },
@@ -463,7 +467,7 @@ plugin.visualizers.register_function(
         "y_threshold": Float,
         "log": Bool,
         "xy_labels": List[Str],
-        "colors_file": Str,
+        "colors_file": Metadata,
         "vis_outputs_dir": Str,
     },
     input_descriptions={
@@ -502,7 +506,7 @@ plugin.visualizers.register_function(
         ),
         "xy_labels": "Axis labels for x and y, respectively.",
         "colors_file": (
-            "Optional TSV file mapping species names to HEX color codes."
+            "Optional Metadata mapping species names (IDs) to HEX color codes."
         ),
         "vis_outputs_dir": (
             "Optional directory to write per-pair HTML files outside of the"
@@ -544,7 +548,7 @@ plugin.visualizers.register_function(
         "le_peps_access": Str,
         "taxa_access": Str,
         "highlight_threshold": Float,
-        "colors_file": Str,
+        "colors_file": Metadata,
         "vis_outputs_dir": Str,
     },
     parameter_descriptions={
@@ -562,7 +566,7 @@ plugin.visualizers.register_function(
             "Maximum p-value for a taxon to be highlighted."
         ),
         "colors_file": (
-            "Optional TSV file mapping species names to HEX color codes."
+            "Optional Metadata mapping species names (IDs) to HEX color codes."
         ),
         "vis_outputs_dir": (
             "Optional directory to write per-pair HTML files outside of the"
@@ -590,7 +594,7 @@ plugin.visualizers.register_function(
         "neg_nes_ae_file": Str,
         "xy_access": List[Str],
         "xy_labels": List[Str],
-        "colors_file": Str,
+        "colors_file": Metadata,
         "vis_outputs_dir": Str,
     },
     parameter_descriptions={
@@ -608,7 +612,7 @@ plugin.visualizers.register_function(
         ),
         "xy_labels": "Axis labels for x and y, respectively.",
         "colors_file": (
-            "Optional TSV file mapping species names to HEX color codes."
+            "Optional Metadata mapping species names (IDs) to HEX color codes."
         ),
         "vis_outputs_dir": (
             "Optional directory to write an HTML file outside of the QIIME 2"

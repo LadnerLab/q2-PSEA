@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import qiime2
 from pandas.testing import assert_frame_equal, assert_series_equal
 from qiime2.plugin.testing import TestPluginBase
 
@@ -359,10 +360,10 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         self.assertEqual(species_arg, "")
 
     def test_species_taxa_passes_file_path_to_r(self):
-        taxa_path = self.get_data_path("species-taxa.tsv")
-        _, mock_internal = self._call(species_taxa=taxa_path)
+        taxa_md = qiime2.Metadata.load(self.get_data_path("species-taxa.tsv"))
+        _, mock_internal = self._call(species_taxa=taxa_md)
         species_arg = mock_internal.psea.call_args.args[3]
-        self.assertEqual(species_arg, taxa_path)
+        self.assertNotEqual(species_arg, "")
 
 
 # ---------------------------------------------------------------------------
