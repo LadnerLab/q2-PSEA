@@ -5,6 +5,7 @@ from q2_types.feature_data import FeatureData
 from q2_types.feature_table import FeatureTable
 from q2_pepsirf.format_types import (
     PSEAScores,
+    Enriched,
     Epitope,
     MappedEpitope,
     GMT,
@@ -22,6 +23,12 @@ from q2_PSEA.actions.psea import (
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
+from q2_PSEA.actions.epitope import (
+    create_epitope_map,
+    epitope_zscore,
+    taxa_to_epitope,
+    enriched_subtypes,
+)
 from q2_PSEA.format_types import (
     PSEAAECountsDirFmt,
     PSEAAECountsTSVFormat,
@@ -37,6 +44,7 @@ from qiime2.plugin import (
     List,
     Metadata,
     Plugin,
+    Range,
     Str,
     Visualization,
     Choices,
@@ -704,4 +712,120 @@ plugin.visualizers.register_function(
         "Generates bar plots of species antibody-event counts for positive"
         " and negative NES results."
     ),
+)
+
+# ---------------------------------------------------------------------------
+# Register create_epitope_map as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=create_epitope_map,
+    inputs={'epitope': FeatureData[Epitope]},
+    parameters={
+        'collapse': Str % Choices(['Bacterial', 'Viral', 'Both'])
+    },
+    outputs=[
+        ('epitope_map', FeatureData[MappedEpitope])
+    ],
+    input_descriptions={'epitope': 'FeatureTable containing at least '
+                        'CodeName, SpeciesID, ClusterID, EpitopeWindow, '
+                        'Species, and Subtype columns'},
+    parameter_descriptions={},
+    output_descriptions={'epitope_map': 'FeatureTable containing columns '
+                         'described in action descriptions.'},
+    name='create epitope map',
+    description='Creates the fully defined epitope name '
+                'species_clusterID_EpitopeWindow mapped to peptide code names '
+                'and species/subtypes the epitope is associated with.',
+)
+
+# ---------------------------------------------------------------------------
+# Register epitope_zscore as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=epitope_zscore,
+    inputs={
+        'zscores': FeatureTable[Zscore],
+        'epitope_map': FeatureData[MappedEpitope],
+    },
+    parameters={},
+    outputs=[
+        ('epitope_zscore', FeatureTable[Zscore]),
+    ],
+    input_descriptions={
+        'zscores': 'FeatureTable containing the code names of peptides and '
+                   'their per sample z scores',
+        'epitope_map': 'FeatureTable containing epitopes and their associated '
+                       'peptides and subtypes',
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        'epitope_zscore': 'FeatureTable containing the epitopes and their per '
+                          'sample z scores.',
+    },
+    name='zscore',
+    description='Creates a map of epitopes to their max z-score within each '
+                'sample. The maxes are taken by finding the per sample maxes '
+                'among z scores of peptides associated with a given epitope.',
+)
+
+# ---------------------------------------------------------------------------
+# Register taxa_to_epitope as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=taxa_to_epitope,
+    inputs={
+        'epitope': FeatureData[Epitope],
+    },
+    parameters={
+        'collapse': Str % Choices(['Bacterial', 'Viral', 'Both'])
+    },
+    outputs=[
+        ('epitope_gmt', GMT),
+    ],
+    input_descriptions={
+        'epitope': 'Feature table containing at least SpeciesID, ClusterID, '
+                   'and EpitopeWindow columns',
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        'epitope_gmt': 'GMT mapping SpeciesIDs to associated epitopes.',
+    },
+    name='taxa to epitope',
+    description='Creates a GMT file mapping SpeciesIDs to their associated '
+                'epitopes.',
+)
+
+# ---------------------------------------------------------------------------
+# Register enriched_subtypes as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=enriched_subtypes,
+    inputs={
+        'scores': Collection[FeatureData[PSEAScores]],
+        'subtypes': FeatureData[MappedEpitope],
+    },
+    parameters={
+        'p_value': Float % Range(0, None),
+        'enrichment_score': Float % Range(0, None),
+        'include_negative_enrichment': Bool,
+        'split_column': Str,
+        'peptide_library': Str,
+    },
+    outputs=[
+        ('enriched', Collection[FeatureData[Enriched]]),
+    ],
+    input_descriptions={
+        'scores': 'PSEAScores of peptides/epitopes.',
+        'subtypes': 'subtypes',
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        'enriched': 'Enriched subtypes.',
+    },
+    name='enriched subtypes',
+    description='Counts which subtypes have been enriched.',
 )
