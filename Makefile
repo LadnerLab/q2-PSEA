@@ -5,7 +5,8 @@ PYTHON ?= python
 all: ;
 
 lint:
-	flake8
+	flake8 \
+	--exclude ./build/,./versioneer.py,./setup.py
 
 test: all
 	py.test
