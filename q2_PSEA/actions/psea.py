@@ -97,7 +97,9 @@ def create_fgsea_table_for_pair(
         if species_taxa is not None:
             taxa_df = species_taxa.to_dataframe().reset_index()
             species_taxa_file = os.path.join(tmpdir, "species_taxa.tsv")
-            taxa_df.to_csv(species_taxa_file, sep="\t", header=False, index=False)
+            taxa_df.to_csv(
+                species_taxa_file, sep="\t", header=False, index=False
+            )
         else:
             species_taxa_file = ""
 
@@ -136,7 +138,7 @@ def run_iterative_process_single_pair(
     nes_thresh,
     tested_species=None,
     dof=None,
-    species_taxa: qiime2.Metadata = None,
+    species_taxa=None,
     epitope_map=None,
     mapped_processed_scores=None,
     mapped_peptide_sets=None,
@@ -223,7 +225,7 @@ def run_iterative_peptide_analysis(
     p_val_thresh,
     nes_thresh,
     dof=None,
-    species_taxa: qiime2.Metadata = None,
+    species_taxa=None,
     epitope_map=None,
     mapped_processed_scores=None,
     mapped_peptide_sets=None,
@@ -343,8 +345,8 @@ def make_psea_table(
     pairs,
     peptide_sets,
     threshold,
-    species_taxa: qiime2.Metadata = None,
-    species_colors: qiime2.Metadata = None,
+    species_taxa=None,
+    species_colors=None,
     epitope=None,
     collapse="Viral",
     p_val_thresh=0.05,

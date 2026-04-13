@@ -99,7 +99,9 @@ class TestVolcano(TestPluginBase):
     # ------------------------------------------------------------------
 
     def test_taxa_access_adds_highlight_layer(self):
-        """Significant row triggers a highlight layer; index.html must exist."""
+        """
+        Significant row triggers a highlight layer; index.html must exist.
+        """
         with tempfile.TemporaryDirectory() as output_dir:
             self._call(
                 output_dir,
@@ -115,7 +117,9 @@ class TestVolcano(TestPluginBase):
             )
 
     def test_no_taxa_access_skips_highlight_layer(self):
-        """No taxa_access → no highlight chart built; must still produce HTML."""
+        """
+        No taxa_access → no highlight chart built; must still produce HTML.
+        """
         with tempfile.TemporaryDirectory() as output_dir:
             self._call(
                 output_dir,
@@ -211,7 +215,8 @@ class TestZscatter(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        # scores-vis.tsv has sample1 and sample2 columns matching pairs.tsv data
+        # scores-vis.tsv has sample1 and sample2 columns matching pairs.tsv
+        # data
         self.zscores = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         )
@@ -361,7 +366,9 @@ class TestAeplots(TestPluginBase):
     # ------------------------------------------------------------------
 
     def test_colors_file_does_not_raise(self):
-        """Species in pos/neg AE files that match colors file get custom colors."""
+        """
+        Species in pos/neg AE files that match colors file get custom colors.
+        """
         colors_md = qiime2.Metadata.load(
             self.get_data_path("species-colors.tsv")
         )
