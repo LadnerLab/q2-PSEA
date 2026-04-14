@@ -21,6 +21,7 @@ from q2_PSEA.actions.psea import (
     run_iterative_peptide_analysis,
     run_iterative_process_single_pair,
     write_gmt_from_dict,
+    make_psea_table,
 )
 
 
@@ -36,6 +37,10 @@ class _MockArtifact:
 
     def view(self, type_):
         return self._data
+
+    def values(self):
+        """Support Collection-like iteration without going through view()."""
+        return self._data.values()
 
 
 class _MockCtx:
@@ -66,6 +71,24 @@ def _mock_ro_context(mock_ro, return_df):
     mock_conv = MagicMock()
     mock_conv.rpy2py.return_value = return_df
     mock_ro.conversion.get_conversion.return_value = mock_conv
+
+
+# ---------------------------------------------------------------------------
+# Shared fake PSEA result
+# ---------------------------------------------------------------------------
+
+def _fake_psea_df():
+    """Minimal PSEA result DataFrame — non-significant so AE counts stay 0."""
+    return pd.DataFrame({
+        "ID": ["sp1"],
+        "enrichmentScore": [0.5],
+        "NES": [0.3],
+        "p.adjust": [0.9],
+        "core_enrichment": ["pep_00"],
+        "pvalue": [0.5],
+        "qvalue": [0.9],
+        "all_tested_peptides": ["pep_00/pep_01"],
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -646,6 +669,329 @@ class TestCountAntibodyEvents(TestPluginBase):
             taxa_access="species_name",
         )
         self.assertEqual(pos.iloc[0]["Species"], "InfluenzaA")
+
+
+# ---------------------------------------------------------------------------
+# TestMakePseaTableNonIterative
+# ---------------------------------------------------------------------------
+
+class TestMakePseaTableNonIterative(TestPluginBase):
+    """Execution tests for make_psea_table with iterative_analysis=False.
+
+    All QIIME 2 sub-actions are registered on a mock context so no R code
+    runs.  The spline step inside the loop
+    (``_compute_pair_fit_and_residuals``) is called directly with
+    ``spline_type="py-smooth"`` and ``dof=1`` to stay pure-Python.
+    """
+
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+
+        # scores-vis.tsv: index=peptide_id, cols=[sample1, sample2]
+        raw_scores = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        # FeatureTable[Zscore] viewed as DataFrame has samples as rows,
+        # peptides as columns — so transpose the on-disk representation.
+        self.scores_q2 = raw_scores.T
+
+        # pairs.tsv → one pair (sample1, sample2)
+        self.pairs_one = pd.read_csv(
+            self.get_data_path("pairs.tsv"), sep="\t"
+        )
+        # pairs-two.tsv → two pairs: (sample1, sample2) and (sample3, sample4)
+        self.pairs_two = pd.read_csv(
+            self.get_data_path("pairs-two.tsv"), sep="\t"
+        )
+
+        self.gmt = pd.read_csv(
+            self.get_data_path("peptide-sets.tsv"), sep="\t"
+        )
+
+    # ------------------------------------------------------------------
+    # Context factory
+    # ------------------------------------------------------------------
+
+    def _build_ctx(self):
+        ctx = _MockCtx()
+
+        fake_psea = _MockArtifact(_fake_psea_df())
+        pos_ae = _MockArtifact(
+            pd.DataFrame({"Species": pd.Series([], dtype=str),
+                          "Events": pd.Series([], dtype=int)})
+        )
+        neg_ae = _MockArtifact(
+            pd.DataFrame({"Species": pd.Series([], dtype=str),
+                          "Events": pd.Series([], dtype=int)})
+        )
+
+        ctx.register_action(
+            "psea", "create_fgsea_table_for_pair",
+            lambda **kw: (fake_psea,),
+        )
+        ctx.register_action(
+            "psea", "count_antibody_events",
+            lambda **kw: (pos_ae, neg_ae),
+        )
+        ctx.register_action(
+            "psea", "zscatter",
+            lambda **kw: (_MockArtifact(None),),
+        )
+        ctx.register_action(
+            "psea", "volcano",
+            lambda **kw: (_MockArtifact(None),),
+        )
+        ctx.register_action(
+            "psea", "aeplots",
+            lambda **kw: (_MockArtifact(None),),
+        )
+
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Runner helper
+    # ------------------------------------------------------------------
+
+    def _run(self, pairs_df=None, scores_q2=None, ctx=None, **kwargs):
+        if ctx is None:
+            ctx = self._build_ctx()
+        if pairs_df is None:
+            pairs_df = self.pairs_one
+        if scores_q2 is None:
+            scores_q2 = self.scores_q2
+
+        return make_psea_table(
+            ctx,
+            scores=_MockArtifact(scores_q2),
+            pairs=_MockArtifact(pairs_df),
+            peptide_sets=_MockArtifact(self.gmt),
+            threshold=1.0,
+            permutation_num=100,
+            min_size=2,
+            max_size=500,
+            spline_type="py-smooth",
+            degree=3,
+            dof=1,
+            seed=42,
+            iterative_analysis=False,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------
+    # Tests — output structure
+    # ------------------------------------------------------------------
+
+    def test_returns_four_outputs(self):
+        result = self._run()
+        self.assertEqual(len(result), 4)
+
+    def test_psea_tables_is_list(self):
+        _, _, _, psea_tables = self._run()
+        self.assertIsInstance(psea_tables, list)
+
+    def test_one_pair_produces_one_psea_table(self):
+        _, _, _, psea_tables = self._run()
+        self.assertEqual(len(psea_tables), 1)
+
+    # ------------------------------------------------------------------
+    # Tests — pairs-two.tsv (two-pair path)
+    # ------------------------------------------------------------------
+
+    def _scores_four_samples(self):
+        """Extend scores_q2 to cover sample3/sample4 for pairs-two.tsv."""
+        scores_4col = self.scores_q2.copy()
+        scores_4col.loc["sample3"] = self.scores_q2.loc["sample1"] * 0.9
+        scores_4col.loc["sample4"] = self.scores_q2.loc["sample2"] * 0.8
+        return scores_4col
+
+    def test_two_pairs_produces_two_psea_tables(self):
+        """
+        pairs-two.tsv drives a two-pair run; psea_tables must have 2 items.
+        """
+        _, _, _, psea_tables = self._run(
+            pairs_df=self.pairs_two,
+            scores_q2=self._scores_four_samples(),
+        )
+        self.assertEqual(len(psea_tables), 2)
+
+    def test_create_fgsea_called_once_for_single_pair(self):
+        call_count = {"n": 0}
+        fake_psea = _MockArtifact(_fake_psea_df())
+
+        def counting(**kw):
+            call_count["n"] += 1
+            return (fake_psea,)
+
+        ctx = self._build_ctx()
+        ctx.register_action("psea", "create_fgsea_table_for_pair", counting)
+        self._run(ctx=ctx)
+        self.assertEqual(call_count["n"], 1)
+
+    def test_create_fgsea_called_twice_for_two_pairs(self):
+        """pairs-two.tsv triggers create_fgsea_table_for_pair twice."""
+        call_count = {"n": 0}
+        fake_psea = _MockArtifact(_fake_psea_df())
+
+        def counting(**kw):
+            call_count["n"] += 1
+            return (fake_psea,)
+
+        ctx = self._build_ctx()
+        ctx.register_action("psea", "create_fgsea_table_for_pair", counting)
+        self._run(
+            ctx=ctx,
+            pairs_df=self.pairs_two,
+            scores_q2=self._scores_four_samples(),
+        )
+        self.assertEqual(call_count["n"], 2)
+
+    # ------------------------------------------------------------------
+    # Tests — optional metadata inputs
+    # ------------------------------------------------------------------
+
+    def test_species_taxa_metadata_accepted(self):
+        taxa_md = qiime2.Metadata.load(self.get_data_path("species-taxa.tsv"))
+        result = self._run(species_taxa=taxa_md)
+        self.assertIsNotNone(result)
+
+    def test_species_colors_metadata_accepted(self):
+        colors_md = qiime2.Metadata.load(
+            self.get_data_path("species-colors.tsv")
+        )
+        result = self._run(species_colors=colors_md)
+        self.assertIsNotNone(result)
+
+
+# ---------------------------------------------------------------------------
+# TestMakePseaTableIterative
+# ---------------------------------------------------------------------------
+
+class TestMakePseaTableIterative(TestPluginBase):
+    """Execution tests for the iterative_analysis=True branch of
+    make_psea_table.
+
+    ``run_iterative_peptide_analysis`` is registered in the mock context and
+    returns a Collection-like artifact whose ``.values()`` yields one filtered
+    GMT artifact per pair.
+    """
+
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+
+        raw_scores = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        self.scores_q2 = raw_scores.T
+
+        self.pairs_one = pd.read_csv(
+            self.get_data_path("pairs.tsv"), sep="\t"
+        )
+
+        self.gmt = pd.read_csv(
+            self.get_data_path("peptide-sets.tsv"), sep="\t"
+        )
+
+    def _build_ctx(self, on_run_iterative=None):
+        """Build a mock context for the iterative analysis path.
+
+        ``on_run_iterative`` is an optional override for the
+        ``run_iterative_peptide_analysis`` callable so callers can inject
+        tracking logic.
+        """
+        ctx = _MockCtx()
+
+        fake_psea = _MockArtifact(_fake_psea_df())
+        gmt_art = _MockArtifact(self.gmt)
+        # Collection[GMT] artifact: .values() must return one GMT per pair.
+        filtered_gmts_art = _MockArtifact({"0": gmt_art})
+
+        pos_ae = _MockArtifact(
+            pd.DataFrame({"Species": pd.Series([], dtype=str),
+                          "Events": pd.Series([], dtype=int)})
+        )
+        neg_ae = _MockArtifact(
+            pd.DataFrame({"Species": pd.Series([], dtype=str),
+                          "Events": pd.Series([], dtype=int)})
+        )
+
+        if on_run_iterative is None:
+            on_run_iterative = lambda **kw: (filtered_gmts_art,)  # noqa: E731
+
+        ctx.register_action(
+            "psea", "run_iterative_peptide_analysis", on_run_iterative
+        )
+        ctx.register_action(
+            "psea", "create_fgsea_table_for_pair",
+            lambda **kw: (fake_psea,),
+        )
+        ctx.register_action(
+            "psea", "count_antibody_events",
+            lambda **kw: (pos_ae, neg_ae),
+        )
+        ctx.register_action(
+            "psea", "zscatter",
+            lambda **kw: (_MockArtifact(None),),
+        )
+        ctx.register_action(
+            "psea", "volcano",
+            lambda **kw: (_MockArtifact(None),),
+        )
+        ctx.register_action(
+            "psea", "aeplots",
+            lambda **kw: (_MockArtifact(None),),
+        )
+
+        return ctx
+
+    def _run(self, ctx=None, **kwargs):
+        if ctx is None:
+            ctx = self._build_ctx()
+
+        return make_psea_table(
+            ctx,
+            scores=_MockArtifact(self.scores_q2),
+            pairs=_MockArtifact(self.pairs_one),
+            peptide_sets=_MockArtifact(self.gmt),
+            threshold=1.0,
+            permutation_num=100,
+            min_size=2,
+            max_size=500,
+            spline_type="py-smooth",
+            degree=3,
+            dof=1,
+            seed=42,
+            iterative_analysis=True,
+            **kwargs,
+        )
+
+    def test_iterative_calls_run_iterative_analysis(self):
+        call_count = {"n": 0}
+        gmt_art = _MockArtifact(self.gmt)
+        filtered_gmts_art = _MockArtifact({"0": gmt_art})
+
+        def tracking(**kw):
+            call_count["n"] += 1
+            return (filtered_gmts_art,)
+
+        ctx = self._build_ctx(on_run_iterative=tracking)
+        self._run(ctx=ctx)
+        self.assertEqual(call_count["n"], 1)
+
+    def test_iterative_returns_four_outputs(self):
+        result = self._run()
+        self.assertEqual(len(result), 4)
+
+    def test_iterative_psea_tables_is_list(self):
+        _, _, _, psea_tables = self._run()
+        self.assertIsInstance(psea_tables, list)
+
+    def test_iterative_one_pair_produces_one_psea_table(self):
+        _, _, _, psea_tables = self._run()
+        self.assertEqual(len(psea_tables), 1)
 
 
 if __name__ == "__main__":
