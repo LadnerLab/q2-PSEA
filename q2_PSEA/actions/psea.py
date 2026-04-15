@@ -15,9 +15,6 @@ from q2_PSEA.actions.r_functions import INTERNAL
 from q2_PSEA.format_types import PSEAPairsDirFmt
 
 
-pandas2ri.activate()
-
-
 def create_fgsea_table_for_pair(
     processed_scores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
@@ -515,7 +512,7 @@ def make_psea_table(
     # Final per-pair PSEA analysis
     # ------------------------------------------------------------------
     pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
-    psea_tables = []
+    psea_tables = {}
 
     mapped_epitope_df = \
         mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
@@ -543,7 +540,7 @@ def make_psea_table(
             mapped_processed_scores=mapped_processed_scores_art,
             mapped_peptide_sets=epitope_gmt,
         )
-        psea_tables.append(psea_table)
+        psea_tables[table_prefix] = psea_table
 
         # Spline data for scatter plot
         x, yfit, _, _ = _compute_pair_fit_and_residuals(

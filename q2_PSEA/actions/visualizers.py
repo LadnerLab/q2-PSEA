@@ -290,8 +290,9 @@ def zscatter(
     for pair in pairs_list:
         pair = pair.split("~")
 
-        x = zscores.loc[:, pair[0]]
-        y = zscores.loc[:, pair[1]]
+        x = zscores.loc[pair[0]]
+        y = zscores.loc[pair[1]]
+
         heatmap, x_edges, y_edges = np.histogram2d(x, y, bins=(70, 70))
         for x in range(0, heatmap.shape[0]):
             for y in range(0, heatmap.shape[1]):
@@ -334,10 +335,10 @@ def zscatter(
                     sig_taxa = rows.iloc[i, 2]
                     for le_pep in le_peps:
                         highlight_dict["x"].append(
-                            zscores.loc[le_pep, pair[0]]
+                            zscores.loc[pair[0], le_pep]
                         )
                         highlight_dict["y"].append(
-                            zscores.loc[le_pep, pair[1]]
+                            zscores.loc[pair[1], le_pep]
                         )
                         highlight_dict["peptide"].append(le_pep)
                         highlight_dict["taxa"].append(sig_taxa)

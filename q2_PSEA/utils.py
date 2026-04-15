@@ -7,8 +7,6 @@ from rpy2.robjects.packages import importr
 
 
 cluster_profiler = importr("clusterProfiler")
-pandas2ri.activate()
-
 
 def generate_metadata(replicates):
     """
