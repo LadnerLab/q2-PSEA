@@ -787,9 +787,9 @@ class TestMakePseaTableNonIterative(TestPluginBase):
         result = self._run()
         self.assertEqual(len(result), 4)
 
-    def test_psea_tables_is_list(self):
+    def test_psea_tables_is_dict(self):
         _, _, _, psea_tables = self._run()
-        self.assertIsInstance(psea_tables, list)
+        self.assertIsInstance(psea_tables, dict)
 
     def test_one_pair_produces_one_psea_table(self):
         _, _, _, psea_tables = self._run()
@@ -985,9 +985,9 @@ class TestMakePseaTableIterative(TestPluginBase):
         result = self._run()
         self.assertEqual(len(result), 4)
 
-    def test_iterative_psea_tables_is_list(self):
+    def test_iterative_psea_tables_is_dict(self):
         _, _, _, psea_tables = self._run()
-        self.assertIsInstance(psea_tables, list)
+        self.assertIsInstance(psea_tables, dict)
 
     def test_iterative_one_pair_produces_one_psea_table(self):
         _, _, _, psea_tables = self._run()
