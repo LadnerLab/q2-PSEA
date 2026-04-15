@@ -10,7 +10,7 @@ import tempfile
 import time
 
 from math import log, pow
-from rpy2.robjects import pandas2ri
+from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
 from q2_PSEA.format_types import PSEAPairsDirFmt
 
@@ -100,20 +100,20 @@ def create_fgsea_table_for_pair(
         else:
             species_taxa_file = ""
 
-        table = INTERNAL.psea(
-            maxZ,
-            deltaZ,
-            peptide_sets_for_analysis,
-            species_taxa_file,
-            threshold,
-            permutation_num,
-            min_size,
-            max_size,
-            seed,
-        )
+        with (ro.default_converter + pandas2ri.converter).context():
+            table = INTERNAL.psea(
+                maxZ,
+                deltaZ,
+                peptide_sets_for_analysis,
+                species_taxa_file,
+                threshold,
+                permutation_num,
+                min_size,
+                max_size,
+                seed,
+            )
 
-    with (ro.default_converter + pandas2ri.converter).context():
-        table = ro.conversion.get_conversion().rpy2py(table)
+            table = ro.conversion.get_conversion().rpy2py(table)
 
     return table
 
@@ -445,13 +445,13 @@ def make_psea_table(
     epitope_gmt = None
 
     if epitope is not None:
-        create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
+        create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         mapped_epitope, = create_epitope_map(epitope, collapse)
 
-        create_epitope_zscore = ctx.get_action("epitope", "epitope_zscore")
+        create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         epitope_zscore, = create_epitope_zscore(scores, mapped_epitope)
 
-        create_epitope_gmt = ctx.get_action("epitope", "taxa_to_epitope")
+        create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
         epitope_gmt, = create_epitope_gmt(epitope, collapse)
 
     # ------------------------------------------------------------------
@@ -628,9 +628,11 @@ def _compute_pair_fit_and_residuals(
     elif spline_type == "py-LinearGAM":
         yfit = splines.smooth_gam(x, y)
     elif spline_type == "cubic":
-        yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
+        with numpy2ri.converter.context():
+            yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
     else:
-        yfit = splines.R_SPLINES.smooth_spline(x, y)
+        with numpy2ri.converter.context():
+            yfit = splines.R_SPLINES.smooth_spline(x, y)
 
     maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
     maxZ = pd.Series(
