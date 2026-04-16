@@ -263,10 +263,7 @@ plugin.methods.register_function(
         "permutation_num": Int,
         "min_size": Int,
         "max_size": Int,
-        "spline_type": Str % Choices(splines.SPLINE_TYPES),
-        "degree": Int,
         "seed": Int,
-        "dof": Int,
         "species_taxa": Metadata,
     },
     parameter_descriptions={
