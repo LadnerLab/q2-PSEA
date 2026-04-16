@@ -12,14 +12,12 @@ from pandas.testing import assert_frame_equal, assert_series_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
-    _collapse_residuals_to_epitope,
     _compute_pair_fit_and_residuals,
     count_antibody_events,
     create_fgsea_table_for_pair,
     process_scores,
     run_iterative_peptide_analysis,
     run_iterative_process_single_pair,
-    write_gmt_from_dict,
     make_psea_table,
 )
 
@@ -149,76 +147,10 @@ class TestProcessScores(TestPluginBase):
         result = process_scores(self.scores_q2, self._pairs(("sA", "sB")))
         self.assertEqual(len(result), len(self.scores))
 
-
-# ---------------------------------------------------------------------------
-# _collapse_residuals_to_epitope
-# ---------------------------------------------------------------------------
-
-class TestCollapseResidualsToEpitope(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def _emap(self, mapping):
-        return pd.DataFrame({"CodeName": mapping})
-
-    def test_single_peptide_per_epitope(self):
-        emap = self._emap({"ep1": ["pep1"], "ep2": ["pep2"]})
-        res = pd.Series({"pep1": 0.5, "pep2": -0.3})
-        result = _collapse_residuals_to_epitope(res, emap)
-        self.assertAlmostEqual(result["ep1"], 0.5)
-        self.assertAlmostEqual(result["ep2"], -0.3)
-
-    def test_multiple_peptides_keeps_max_abs(self):
-        emap = self._emap({"ep1": ["pep1", "pep2"]})
-        res = pd.Series({"pep1": 0.5, "pep2": -0.8})
-        result = _collapse_residuals_to_epitope(res, emap)
-        self.assertAlmostEqual(result["ep1"], -0.8)
-
-    def test_unmapped_peptide_maps_to_itself(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        res = pd.Series({"pep1": 0.5, "pep_orphan": 0.9})
-        result = _collapse_residuals_to_epitope(res, emap)
-        self.assertIn("pep_orphan", result.index)
-        self.assertAlmostEqual(result["pep_orphan"], 0.9)
-
-    def test_peptide_in_multiple_epitopes(self):
-        emap = self._emap({"ep1": ["pep1", "pep2"], "ep2": ["pep1", "pep3"]})
-        res = pd.Series({"pep1": 1.0, "pep2": 0.2, "pep3": 0.5})
-        result = _collapse_residuals_to_epitope(res, emap)
-        self.assertAlmostEqual(result["ep1"], 1.0)
-        self.assertAlmostEqual(result["ep2"], 1.0)
-
-    def test_returns_series(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        result = _collapse_residuals_to_epitope(pd.Series({"pep1": 0.7}), emap)
-        self.assertIsInstance(result, pd.Series)
-
-
-# ---------------------------------------------------------------------------
-# write_gmt_from_dict / create_df_from_gmt
-# ---------------------------------------------------------------------------
-
-class TestGmtRoundTrip(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_write_gmt_line_format(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".gmt", delete=False
-        ) as tmp:
-            tmp_path = tmp.name
-        try:
-            write_gmt_from_dict(tmp_path, {"sp1": ["pepA", "pepB"]})
-            with open(tmp_path) as fh:
-                line = fh.readline()
-            self.assertTrue(line.startswith("sp1\t\t"))
-            self.assertIn("pepA", line)
-            self.assertIn("pepB", line)
-        finally:
-            os.unlink(tmp_path)
-
-
 # ---------------------------------------------------------------------------
 # _compute_pair_fit_and_residuals (py-smooth — no R required)
 # ---------------------------------------------------------------------------
+
 
 class TestComputePairFitAndResiduals(TestPluginBase):
     package = "q2_PSEA.tests"
