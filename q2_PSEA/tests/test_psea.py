@@ -15,7 +15,6 @@ from q2_PSEA.actions.psea import (
     _collapse_residuals_to_epitope,
     _compute_pair_fit_and_residuals,
     count_antibody_events,
-    create_df_from_gmt,
     create_fgsea_table_for_pair,
     process_scores,
     run_iterative_peptide_analysis,
@@ -200,34 +199,6 @@ class TestCollapseResidualsToEpitope(TestPluginBase):
 
 class TestGmtRoundTrip(TestPluginBase):
     package = "q2_PSEA.tests"
-
-    def test_create_df_from_gmt_reads_fixture(self):
-        result = create_df_from_gmt(self.get_data_path("gmt.gmt"))
-        self.assertEqual(set(result.index), {"sp1", "sp2"})
-
-    def test_create_df_reads_correct_peptides(self):
-        result = create_df_from_gmt(self.get_data_path("gmt.gmt"))
-        sp1_peps = [
-            p.strip() for p in result.loc["sp1", "EpitopeID"] if p.strip()
-        ]
-        self.assertEqual(
-            set(sp1_peps),
-            {"pep_00", "pep_01", "pep_02", "pep_03"}
-        )
-
-    def test_write_then_read_roundtrip(self):
-        gmt_dict = {"sp1": ["pep_00", "pep_01"], "sp2": ["pep_04"]}
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".gmt", delete=False
-        ) as tmp:
-            tmp_path = tmp.name
-        try:
-            write_gmt_from_dict(tmp_path, gmt_dict)
-            result = create_df_from_gmt(tmp_path)
-            sp1_peps = [p for p in result.loc["sp1", "EpitopeID"] if p.strip()]
-            self.assertEqual(set(sp1_peps), {"pep_00", "pep_01"})
-        finally:
-            os.unlink(tmp_path)
 
     def test_write_gmt_line_format(self):
         with tempfile.NamedTemporaryFile(

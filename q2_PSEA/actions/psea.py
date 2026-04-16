@@ -631,8 +631,8 @@ def _compute_pair_fit_and_residuals(
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
     if epitope_map is not None:
-        maxZ_out = _collapse_residuals_to_epitope(maxZ, epitope_map)
-        deltaZ_out = _collapse_residuals_to_epitope(deltaZ, epitope_map)
+        maxZ_out = utils.collapse_residuals_to_epitope(maxZ, epitope_map)
+        deltaZ_out = utils.collapse_residuals_to_epitope(deltaZ, epitope_map)
     else:
         maxZ_out = maxZ
         deltaZ_out = deltaZ
@@ -686,50 +686,3 @@ def process_scores(
     return processed_scores.apply(
         lambda row: row.apply(lambda val: log(val, base) - offset)
     )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers (not registered as QIIME 2 actions)
-# ---------------------------------------------------------------------------
-
-
-def write_gmt_from_dict(outfile_name, gmt_dict) -> None:
-    with open(outfile_name, "w") as gmt_file:
-        for species in gmt_dict.keys():
-            gmt_file.write(f"{species}\t\t")
-            for peptide in gmt_dict[species]:
-                gmt_file.write(f"{peptide}\t")
-            gmt_file.write("\n")
-
-
-def create_df_from_gmt(gmt_file_path):
-    result = pd.DataFrame(columns=["EpitopeID"])
-    with open(gmt_file_path) as fh:
-        for line in fh.readlines():
-            speciesID, epitopeID = line.split("\t\t")
-            epitopeID = epitopeID.split("\t")
-            result.loc[speciesID] = [epitopeID]
-    result.index.name = "SpeciesID"
-    return result
-
-
-def _collapse_residuals_to_epitope(peptide_residuals, epitope_map):
-    peptide_to_epitopes = {}
-    for epitope, peptides in epitope_map["CodeName"].items():
-        for peptide in peptides:
-            if peptide not in peptide_to_epitopes:
-                peptide_to_epitopes[peptide] = []
-            peptide_to_epitopes[peptide].append(epitope)
-
-    epitope_residuals = {}
-    for peptide, residual in peptide_residuals.items():
-        mapped_epitopes = peptide_to_epitopes.get(peptide)
-        if not mapped_epitopes:
-            mapped_epitopes = (peptide,)
-        for epitope in mapped_epitopes:
-            if epitope not in epitope_residuals:
-                epitope_residuals[epitope] = residual
-            elif abs(residual) > abs(epitope_residuals[epitope]):
-                epitope_residuals[epitope] = residual
-
-    return pd.Series(epitope_residuals)
