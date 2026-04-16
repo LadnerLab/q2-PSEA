@@ -108,7 +108,9 @@ class TestProcessScores(TestPluginBase):
         self.scores_q2 = self.scores.T  # samples×features
 
     def _pairs(self, *pairs):
-        """Build a PSEAPairs-style DataFrame from a sequence of (a, b) tuples."""
+        """
+        Build a PSEAPairs-style DataFrame from a sequence of (a, b) tuples.
+        """
         return pd.DataFrame(
             [(a, b) for a, b in pairs], columns=["sampleA", "sampleB"]
         )
