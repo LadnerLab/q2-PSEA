@@ -541,7 +541,6 @@ def run_iterative_process_single_pair(
     # create gmt file for this pair (filtered gmt from prev iteration)
     pair_sets_filename = f"{peptide_sets_out_dir}/{pair[0]}_{pair[1]}".replace(".","-") + ".gmt"
 
-    # TODO: We need to ditch this
     utils.write_gmt_from_dict(pair_sets_filename, gmt_dict)
 
     table = create_fgsea_table_for_pair(
