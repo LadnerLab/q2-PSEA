@@ -437,22 +437,13 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Process (log-scale) scores
     # ------------------------------------------------------------------
-    scores_df = scores.view(pd.DataFrame)
-    scores_df = scores_df.transpose()
-
-    processed_scores_df = process_scores(scores_df, pairs_list)
-    processed_scores_art = ctx.make_artifact(
-        "FeatureTable[Zscore]", processed_scores_df
-    )
+    process_scores_action = ctx.get_action("psea", "process_scores")
+    processed_scores_art, = process_scores_action(scores=scores, pairs=pairs)
 
     mapped_processed_scores_art = None
     if epitope is not None:
-        epitope_zscore_df = epitope_zscore.view(pd.DataFrame).transpose()
-        mapped_processed_scores_df = process_scores(
-            epitope_zscore_df, pairs_list
-        )
-        mapped_processed_scores_art = ctx.make_artifact(
-            "FeatureTable[Zscore]", mapped_processed_scores_df
+        mapped_processed_scores_art, = process_scores_action(
+            scores=epitope_zscore, pairs=pairs
         )
 
     # ------------------------------------------------------------------
@@ -577,7 +568,7 @@ def make_psea_table(
             y_threshold=p_val_thresh,
             xy_labels=["Enrichment score", "Adjusted p-values"],
             colors_file=species_colors,
-        )
+            )
 
     ae_plot, = aeplots(
         pos_ae_counts=pos_ae_counts,
@@ -663,19 +654,33 @@ def _compute_pair_fit_and_residuals(
 # ---------------------------------------------------------------------------
 
 
-def process_scores(scores, pairs) -> pd.DataFrame:
-    """Grabs replicates specified `pairs` from scores matrix and processes
-    those remaining scores.
-    Returns a Pandas DataFrame of processed Z scores.
+def process_scores(
+    scores: pd.DataFrame,
+    pairs: pd.DataFrame,
+) -> pd.DataFrame:
+    """Select and log-scale Z-scores for the samples referenced in *pairs*.
+
+    Parameters
+    ----------
+    scores : pd.DataFrame
+        Z-score matrix from FeatureTable[Zscore] (samples × features).
+    pairs : pd.DataFrame
+        Two-column pairs table (from PSEAPairs).
+
+    Returns
+    -------
+    pd.DataFrame
+        Processed Z-score matrix (features × samples) stored as
+        FeatureTable[Zscore].
     """
+    # FeatureTable[Zscore] arrives as samples × features; convert to
+    # features × samples so we can index by sample name.
+    scores = scores.transpose()
+
     base = 2
     offset = 3
     power = pow(base, offset)
-    reps_list = []
-    for pair in pairs:
-        for rep in pair:
-            reps_list.append(rep)
-    reps_list = list(np.unique(reps_list))
+    reps_list = list(np.unique(pairs.values.flatten()))
     processed_scores = scores.loc[:, reps_list]
 
     processed_scores = processed_scores.apply(lambda row: power + row, axis=0)

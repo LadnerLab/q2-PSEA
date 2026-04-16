@@ -100,40 +100,52 @@ class TestProcessScores(TestPluginBase):
 
     def setUp(self):
         super().setUp()
+        # scores.tsv is features×samples on disk; QIIME 2 FeatureTable[Zscore]
+        # is viewed as samples×features, so transpose before passing.
         self.scores = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+        self.scores_q2 = self.scores.T  # samples×features
+
+    def _pairs(self, *pairs):
+        """Build a PSEAPairs-style DataFrame from a sequence of (a, b) tuples."""
+        return pd.DataFrame(
+            [(a, b) for a, b in pairs], columns=["sampleA", "sampleB"]
         )
 
     def _expected(self, v, base=2, offset=3):
         return log(max(1.0, base ** offset + v), base) - offset
 
     def test_selects_only_columns_in_pairs(self):
-        result = process_scores(self.scores, [("sA", "sB")])
+        result = process_scores(self.scores_q2, self._pairs(("sA", "sB")))
         self.assertEqual(set(result.columns), {"sA", "sB"})
         self.assertNotIn("sC", result.columns)
 
     def test_zero_input_maps_to_zero(self):
-        scores = pd.DataFrame({"sA": [0.0], "sB": [0.0]}, index=["p"])
-        result = process_scores(scores, [("sA", "sB")])
+        # samples×features: rows=samples, cols=features
+        scores = pd.DataFrame({"p": [0.0, 0.0]}, index=["sA", "sB"])
+        result = process_scores(scores, self._pairs(("sA", "sB")))
         self.assertAlmostEqual(result.loc["p", "sA"], 0.0)
 
     def test_very_negative_input_clamps_to_minus_three(self):
-        scores = pd.DataFrame({"sA": [-100.0], "sB": [-100.0]}, index=["p"])
-        result = process_scores(scores, [("sA", "sB")])
+        scores = pd.DataFrame({"p": [-100.0, -100.0]}, index=["sA", "sB"])
+        result = process_scores(scores, self._pairs(("sA", "sB")))
         self.assertAlmostEqual(result.loc["p", "sA"], -3.0)
 
     def test_known_positive_value_transformed_correctly(self):
         v = 5.0
-        scores = pd.DataFrame({"sA": [v], "sB": [0.0]}, index=["p"])
-        result = process_scores(scores, [("sA", "sB")])
+        scores = pd.DataFrame({"p": [v, 0.0]}, index=["sA", "sB"])
+        result = process_scores(scores, self._pairs(("sA", "sB")))
         self.assertAlmostEqual(result.loc["p", "sA"], self._expected(v))
 
     def test_duplicate_samples_across_pairs_deduplicated(self):
-        result = process_scores(self.scores, [("sA", "sB"), ("sA", "sC")])
+        result = process_scores(
+            self.scores_q2, self._pairs(("sA", "sB"), ("sA", "sC"))
+        )
         self.assertEqual(sorted(result.columns), ["sA", "sB", "sC"])
 
     def test_all_peptides_retained(self):
-        result = process_scores(self.scores, [("sA", "sB")])
+        result = process_scores(self.scores_q2, self._pairs(("sA", "sB")))
         self.assertEqual(len(result), len(self.scores))
 
 
@@ -749,6 +761,7 @@ class TestMakePseaTableNonIterative(TestPluginBase):
 
         fake_psea = _MockArtifact(_fake_psea_df())
         spline_art = self._make_spline_art()
+        processed_scores_art = _MockArtifact(pd.DataFrame())
         pos_ae = _MockArtifact(
             pd.DataFrame({"Species": pd.Series([], dtype=str),
                           "Events": pd.Series([], dtype=int)})
@@ -758,6 +771,10 @@ class TestMakePseaTableNonIterative(TestPluginBase):
                           "Events": pd.Series([], dtype=int)})
         )
 
+        ctx.register_action(
+            "psea", "process_scores",
+            lambda **kw: (processed_scores_art,),
+        )
         ctx.register_action(
             "psea", "_compute_pair_fit_and_residuals",
             lambda **kw: (spline_art,),
@@ -954,6 +971,7 @@ class TestMakePseaTableIterative(TestPluginBase):
         # Collection[GMT] artifact: .values() must return one GMT per pair.
         filtered_gmts_art = _MockArtifact({"0": gmt_art})
         spline_art = self._make_spline_art()
+        processed_scores_art = _MockArtifact(pd.DataFrame())
 
         pos_ae = _MockArtifact(
             pd.DataFrame({"Species": pd.Series([], dtype=str),
@@ -967,6 +985,10 @@ class TestMakePseaTableIterative(TestPluginBase):
         if on_run_iterative is None:
             on_run_iterative = lambda **kw: (filtered_gmts_art,)  # noqa: E731
 
+        ctx.register_action(
+            "psea", "process_scores",
+            lambda **kw: (processed_scores_art,),
+        )
         ctx.register_action(
             "psea", "_compute_pair_fit_and_residuals",
             lambda **kw: (spline_art,),

@@ -19,6 +19,7 @@ from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
     count_antibody_events,
     create_fgsea_table_for_pair,
+    process_scores,
     run_iterative_process_single_pair,
     run_iterative_peptide_analysis,
     make_psea_table,
@@ -131,6 +132,40 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
     df.to_csv(str(result), sep="\t", index=True)
     return result
 
+
+# ---------------------------------------------------------------------------
+# Register process_scores as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=process_scores,
+    inputs={
+        "scores": FeatureTable[Zscore],
+        "pairs": PSEAPairs,
+    },
+    parameters={},
+    outputs=[("processed_scores", FeatureTable[Zscore])],
+    input_descriptions={
+        "scores": "Z-score matrix (FeatureTable[Zscore]).",
+        "pairs": (
+            "Tab-delimited file listing sample pairs (one per row, header"
+            " required)."
+        ),
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "processed_scores": (
+            "Log-scaled Z-score matrix containing only the samples referenced"
+            " in the pairs file."
+        ),
+    },
+    name="Process Scores",
+    description=(
+        "Selects the samples referenced in the pairs file from the Z-score"
+        " matrix and applies log-scaling to produce the processed Z-score"
+        " matrix used in PSEA."
+    ),
+)
 
 # ---------------------------------------------------------------------------
 # Register _compute_pair_fit_and_residuals as a method
@@ -283,14 +318,7 @@ plugin.methods.register_function(
             "Maximum number of peptides from a set that can appear in the"
             " data."
         ),
-        "spline_type": "Spline method used to fit the Z-score scatter.",
-        "degree": (
-            "Polynomial degree for spline fitting (affects 'cubic' only)."
-        ),
         "seed": "Random seed for GSEA permutations.",
-        "dof": (
-            "Degrees of freedom for spline fitting (affects 'cubic' only)."
-        ),
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
             " When provided, enrichment results are annotated with species"
