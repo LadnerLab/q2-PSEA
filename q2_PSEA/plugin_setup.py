@@ -392,8 +392,6 @@ plugin.pipelines.register_function(
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
         "max_size": "Maximum peptide-set size.",
-        "spline_type": "Spline method for Z-score fitting.",
-        "degree": "Polynomial degree for spline fitting.",
         "seed": "Random seed for GSEA permutations.",
         "p_val_thresh": (
             "Adjusted p-value threshold for calling a species significant."
@@ -405,7 +403,6 @@ plugin.pipelines.register_function(
             "Species IDs already tested in prior iterations; used to avoid"
             " re-testing the same species."
         ),
-        "dof": "Degrees of freedom for spline fitting.",
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),
