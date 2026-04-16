@@ -649,11 +649,6 @@ def _compute_pair_fit_and_residuals(
     return spline_df
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers (not registered as QIIME 2 actions)
-# ---------------------------------------------------------------------------
-
-
 def process_scores(
     scores: pd.DataFrame,
     pairs: pd.DataFrame,
@@ -691,6 +686,11 @@ def process_scores(
     return processed_scores.apply(
         lambda row: row.apply(lambda val: log(val, base) - offset)
     )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (not registered as QIIME 2 actions)
+# ---------------------------------------------------------------------------
 
 
 def write_gmt_from_dict(outfile_name, gmt_dict) -> None:
