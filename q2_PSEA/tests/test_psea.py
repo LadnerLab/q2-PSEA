@@ -243,50 +243,56 @@ class TestComputePairFitAndResiduals(TestPluginBase):
         self.scores = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
         )
-        self.pair = ("sA", "sB")
+        # Function expects samples×features (QIIME 2 FeatureTable orientation)
+        self.scores_q2 = self.scores.T
+
+    def _call(self, **kwargs):
+        return _compute_pair_fit_and_residuals(
+            self.scores_q2, "sA", "sB", "py-smooth", 3, **kwargs
+        )
+
+    def test_returns_dataframe_with_required_columns(self):
+        df = self._call()
+        self.assertIsInstance(df, pd.DataFrame)
+        for col in ("x", "yfit", "maxZ", "deltaZ"):
+            self.assertIn(col, df.columns)
 
     def test_output_shapes_correct(self):
-        x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            self.scores, self.pair, "py-smooth", 3, None
-        )
+        df = self._call()
         n = len(self.scores)
-        self.assertEqual(len(x), n)
-        self.assertEqual(len(yfit), n)
-        self.assertEqual(len(maxZ), n)
-        self.assertEqual(len(deltaZ), n)
+        self.assertEqual(len(df["x"].dropna()), n)
+        self.assertEqual(len(df["yfit"].dropna()), n)
+        self.assertEqual(len(df["maxZ"].dropna()), n)
+        self.assertEqual(len(df["deltaZ"].dropna()), n)
 
     def test_maxZ_equals_elementwise_max(self):
-        _, _, maxZ, _ = _compute_pair_fit_and_residuals(
-            self.scores, self.pair, "py-smooth", 3, None
-        )
-        data_sorted = self.scores[list(self.pair)].sort_values(by="sA")
+        df = self._call()
+        maxZ = df["maxZ"].dropna()
+        data_sorted = self.scores[["sA", "sB"]].sort_values(by="sA")
         expected = data_sorted.max(axis=1)
         assert_series_equal(
             maxZ.sort_index(), expected.sort_index(), check_names=False
         )
 
     def test_residuals_roughly_mean_zero(self):
-        _, _, _, deltaZ = _compute_pair_fit_and_residuals(
-            self.scores, self.pair, "py-smooth", 3, None
-        )
+        df = self._call()
+        deltaZ = df["deltaZ"].dropna()
         self.assertLess(abs(float(deltaZ.mean())), 0.5)
 
     def test_no_nan_or_inf(self):
-        x, yfit, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            self.scores, self.pair, "py-smooth", 3, None
-        )
-        self.assertTrue(np.all(np.isfinite(x)))
-        self.assertTrue(np.all(np.isfinite(yfit)))
-        self.assertTrue(np.all(np.isfinite(maxZ.values)))
-        self.assertTrue(np.all(np.isfinite(deltaZ.values)))
+        df = self._call()
+        self.assertTrue(np.all(np.isfinite(df["x"].dropna().to_numpy())))
+        self.assertTrue(np.all(np.isfinite(df["yfit"].dropna().to_numpy())))
+        self.assertTrue(np.all(np.isfinite(df["maxZ"].dropna().values)))
+        self.assertTrue(np.all(np.isfinite(df["deltaZ"].dropna().values)))
 
     def test_epitope_map_collapses_to_epitope_ids(self):
         peps = list(self.scores.index)
         mapping = {f"ep_{i}": [peps[2 * i], peps[2 * i + 1]] for i in range(5)}
         emap = pd.DataFrame({"CodeName": mapping})
-        _, _, maxZ, deltaZ = _compute_pair_fit_and_residuals(
-            self.scores, self.pair, "py-smooth", 3, None, epitope_map=emap
-        )
+        df = self._call(epitope_map=emap)
+        maxZ = df["maxZ"].dropna()
+        deltaZ = df["deltaZ"].dropna()
         for ep in mapping:
             self.assertIn(ep, maxZ.index)
             self.assertIn(ep, deltaZ.index)
@@ -358,12 +364,14 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         mock_internal.psea.assert_called_once()
 
     def test_precomputed_fit_skips_spline(self):
-        fit_df = pd.DataFrame(
-            {
-                "maxZ": pd.Series(np.ones(15), index=self.scores.index),
-                "deltaZ": pd.Series(np.zeros(15), index=self.scores.index),
-            }
-        )
+        n = len(self.scores)
+        idx = self.scores.index
+        fit_df = pd.DataFrame({
+            "x": np.linspace(0, 1, n),
+            "yfit": np.linspace(0, 1, n),
+            "maxZ": pd.Series(np.ones(n), index=idx),
+            "deltaZ": pd.Series(np.zeros(n), index=idx),
+        }, index=idx)
         with patch(
             "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
         ) as mock_fit:
@@ -509,10 +517,27 @@ class TestRunIterativePeptideAnalysis(TestPluginBase):
 
         return FakeDirFmt()
 
+    def _make_spline_art(self):
+        n = len(self.scores)
+        idx = self.scores.index
+        df = pd.DataFrame({
+            "x": np.linspace(1, 8, n),
+            "yfit": np.linspace(1, 8, n),
+            "maxZ": np.ones(n),
+            "deltaZ": np.zeros(n),
+        }, index=idx)
+        return _MockArtifact(df)
+
     def _build_ctx(self, table_df):
         ctx = _MockCtx()
         psea_art = _MockArtifact(table_df)
         gmt_art = _MockArtifact(self.gmt)
+        spline_art = self._make_spline_art()
+        ctx.register_action(
+            "psea",
+            "_compute_pair_fit_and_residuals",
+            lambda **kw: (spline_art,),
+        )
         ctx.register_action(
             "psea",
             "run_iterative_process_single_pair",
@@ -520,60 +545,54 @@ class TestRunIterativePeptideAnalysis(TestPluginBase):
         )
         return ctx
 
-    def _mock_fit_return(self):
-        n = len(self.scores)
-        pep_idx = self.scores.index
-        return (
-            np.linspace(1, 8, n),
-            np.linspace(1, 8, n),
-            pd.Series(np.ones(n), index=pep_idx),
-            pd.Series(np.zeros(n), index=pep_idx),
-        )
-
     _ONE_PAIR = "sA\tsB\nsample1\tsample2\n"
     _TWO_PAIRS = "sA\tsB\nsample1\tsample2\nsample3\tsample4\n"
 
     def _run(self, ctx, pairs_content):
         fake_dirfmt = self._make_pairs_dirfmt(pairs_content)
-        with patch(
-            "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
-        ) as mock_fit:
-            mock_fit.return_value = self._mock_fit_return()
-            result = run_iterative_peptide_analysis(
-                ctx,
-                processed_scores=_MockArtifact(self.scores.T),
-                pairs=_MockArtifact(fake_dirfmt),
-                peptide_sets=_MockArtifact(self.gmt),
-                threshold=1.0,
-                permutation_num=100,
-                min_size=2,
-                max_size=500,
-                spline_type="py-smooth",
-                degree=3,
-                seed=42,
-                p_val_thresh=0.05,
-                nes_thresh=1.0,
-            )
-        return result, mock_fit
+        return run_iterative_peptide_analysis(
+            ctx,
+            processed_scores=_MockArtifact(self.scores.T),
+            pairs=_MockArtifact(fake_dirfmt),
+            peptide_sets=_MockArtifact(self.gmt),
+            threshold=1.0,
+            permutation_num=100,
+            min_size=2,
+            max_size=500,
+            spline_type="py-smooth",
+            degree=3,
+            seed=42,
+            p_val_thresh=0.05,
+            nes_thresh=1.0,
+        )
 
     def test_single_pair_returns_one_gmt(self):
         ctx = self._build_ctx(_psea_table_df(sig=False))
-        result, _ = self._run(ctx, self._ONE_PAIR)
+        result = self._run(ctx, self._ONE_PAIR)
         self.assertEqual(len(result), 1)
 
     def test_two_distinct_pairs_returns_two_gmts(self):
         ctx = self._build_ctx(_psea_table_df(sig=False))
-        result, _ = self._run(ctx, self._TWO_PAIRS)
+        result = self._run(ctx, self._TWO_PAIRS)
         self.assertEqual(len(result), 2)
 
     def test_fit_computed_once_per_distinct_pair(self):
+        call_count = {"n": 0}
+
+        def counting_fit(**kw):
+            call_count["n"] += 1
+            return (self._make_spline_art(),)
+
         ctx = self._build_ctx(_psea_table_df(sig=False))
-        _, mock_fit = self._run(ctx, self._TWO_PAIRS)
-        self.assertEqual(mock_fit.call_count, 2)
+        ctx.register_action(
+            "psea", "_compute_pair_fit_and_residuals", counting_fit
+        )
+        self._run(ctx, self._TWO_PAIRS)
+        self.assertEqual(call_count["n"], 2)
 
     def test_returns_list(self):
         ctx = self._build_ctx(_psea_table_df(sig=False))
-        result, _ = self._run(ctx, self._ONE_PAIR)
+        result = self._run(ctx, self._ONE_PAIR)
         self.assertIsInstance(result, list)
 
 
@@ -714,10 +733,22 @@ class TestMakePseaTableNonIterative(TestPluginBase):
     # Context factory
     # ------------------------------------------------------------------
 
+    def _make_spline_art(self, n=15):
+        """Return a mock FeatureData[Spline] artifact with n peptide rows."""
+        idx = pd.Index([f"pep_{i:02d}" for i in range(n)])
+        df = pd.DataFrame({
+            "x": np.linspace(0.5, 2.0, n),
+            "yfit": np.linspace(0.5, 2.0, n),
+            "maxZ": np.ones(n),
+            "deltaZ": np.zeros(n),
+        }, index=idx)
+        return _MockArtifact(df)
+
     def _build_ctx(self):
         ctx = _MockCtx()
 
         fake_psea = _MockArtifact(_fake_psea_df())
+        spline_art = self._make_spline_art()
         pos_ae = _MockArtifact(
             pd.DataFrame({"Species": pd.Series([], dtype=str),
                           "Events": pd.Series([], dtype=int)})
@@ -727,6 +758,10 @@ class TestMakePseaTableNonIterative(TestPluginBase):
                           "Events": pd.Series([], dtype=int)})
         )
 
+        ctx.register_action(
+            "psea", "_compute_pair_fit_and_residuals",
+            lambda **kw: (spline_art,),
+        )
         ctx.register_action(
             "psea", "create_fgsea_table_for_pair",
             lambda **kw: (fake_psea,),
@@ -895,6 +930,16 @@ class TestMakePseaTableIterative(TestPluginBase):
             self.get_data_path("peptide-sets.tsv"), sep="\t"
         )
 
+    def _make_spline_art(self, n=15):
+        idx = pd.Index([f"pep_{i:02d}" for i in range(n)])
+        df = pd.DataFrame({
+            "x": np.linspace(0.5, 2.0, n),
+            "yfit": np.linspace(0.5, 2.0, n),
+            "maxZ": np.ones(n),
+            "deltaZ": np.zeros(n),
+        }, index=idx)
+        return _MockArtifact(df)
+
     def _build_ctx(self, on_run_iterative=None):
         """Build a mock context for the iterative analysis path.
 
@@ -908,6 +953,7 @@ class TestMakePseaTableIterative(TestPluginBase):
         gmt_art = _MockArtifact(self.gmt)
         # Collection[GMT] artifact: .values() must return one GMT per pair.
         filtered_gmts_art = _MockArtifact({"0": gmt_art})
+        spline_art = self._make_spline_art()
 
         pos_ae = _MockArtifact(
             pd.DataFrame({"Species": pd.Series([], dtype=str),
@@ -921,6 +967,10 @@ class TestMakePseaTableIterative(TestPluginBase):
         if on_run_iterative is None:
             on_run_iterative = lambda **kw: (filtered_gmts_art,)  # noqa: E731
 
+        ctx.register_action(
+            "psea", "_compute_pair_fit_and_residuals",
+            lambda **kw: (spline_art,),
+        )
         ctx.register_action(
             "psea", "run_iterative_peptide_analysis", on_run_iterative
         )

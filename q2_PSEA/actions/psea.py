@@ -65,19 +65,8 @@ def create_fgsea_table_for_pair(
     if mapped_processed_scores is not None:
         mapped_processed_scores = mapped_processed_scores.transpose()
 
-    pair = (sample_a, sample_b)
-
-    if dof is None:
-        dof = ro.NULL
-
-    if precomputed_fit is not None:
-        maxZ_all = precomputed_fit["maxZ"]
-        deltaZ_all = precomputed_fit["deltaZ"]
-    else:
-        _, _, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
-            processed_scores, pair, spline_type, degree, dof,
-            epitope_map=epitope_map,
-        )
+    maxZ_all = precomputed_fit["maxZ"].dropna()
+    deltaZ_all = precomputed_fit["deltaZ"].dropna()
 
     if epitope_map is not None:
         filtered_scores, peptide_sets_for_analysis = \
@@ -256,21 +245,23 @@ def run_iterative_peptide_analysis(
     sig_species_found_dict = {pair: True for pair in pairs_list}
     tested_species_dict = {pair: [] for pair in pairs_list}
 
-    # Compute spline fit and residuals once per pair before iterating
-    scores_df = processed_scores.view(pd.DataFrame).transpose()
-    dof_r = ro.NULL if dof is None else dof
-    epitope_map_df = \
-        epitope_map.view(pd.DataFrame) if epitope_map is not None else None
+    # Compute spline fit and residuals once per pair before iterating.
+    # Calling via ctx ensures provenance is captured and QIIME 2 handles
+    # data transformation automatically.
+    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
     pair_fit_artifact = {}
     for pair in pairs_list:
-        _, _, maxZ_all, deltaZ_all = _compute_pair_fit_and_residuals(
-            scores_df, pair, spline_type, degree, dof_r,
-            epitope_map=epitope_map_df,
+        sample_a, sample_b = pair
+        spline_art, = compute_fit(
+            processed_scores=processed_scores,
+            sample_a=sample_a,
+            sample_b=sample_b,
+            spline_type=spline_type,
+            degree=degree,
+            dof=dof,
+            epitope_map=epitope_map,
         )
-        fit_df = pd.DataFrame({"maxZ": maxZ_all, "deltaZ": deltaZ_all})
-        pair_fit_artifact[pair] = ctx.make_artifact(
-            "FeatureData[PSEAScores]", fit_df
-        )
+        pair_fit_artifact[pair] = spline_art
 
     iteration_num = 1
 
@@ -425,6 +416,7 @@ def make_psea_table(
     zscatter = ctx.get_action("psea", "zscatter")
     aeplots = ctx.get_action("psea", "aeplots")
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
+    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -514,13 +506,25 @@ def make_psea_table(
     pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
     psea_tables = {}
 
-    mapped_epitope_df = \
-        mapped_epitope.view(pd.DataFrame) if mapped_epitope else None
-    dof_r = ro.NULL if dof is None else dof
-
     for pair in pairs_list:
         sample_a, sample_b = pair
         table_prefix = f"{sample_a}~{sample_b}"
+
+        # Compute spline fit once per pair; reuse it for both the scatter
+        # plot data and as the precomputed_fit input to create_fgsea_table.
+        spline_art, = compute_fit(
+            processed_scores=processed_scores_art,
+            sample_a=sample_a,
+            sample_b=sample_b,
+            spline_type=spline_type,
+            degree=degree,
+            dof=dof,
+            epitope_map=mapped_epitope,
+        )
+
+        spline_df = spline_art.view(pd.DataFrame)
+        x = spline_df["x"].dropna().to_numpy()
+        yfit = spline_df["yfit"].dropna().to_numpy()
 
         psea_table, = create_fgsea_table(
             processed_scores=processed_scores_art,
@@ -539,18 +543,10 @@ def make_psea_table(
             epitope_map=mapped_epitope,
             mapped_processed_scores=mapped_processed_scores_art,
             mapped_peptide_sets=epitope_gmt,
+            precomputed_fit=spline_art,
         )
         psea_tables[table_prefix] = psea_table
 
-        # Spline data for scatter plot
-        x, yfit, _, _ = _compute_pair_fit_and_residuals(
-            processed_scores_df,
-            pair,
-            spline_type,
-            degree,
-            dof_r,
-            epitope_map=mapped_epitope_df,
-        )
         pair_spline_dict["x"].extend(x.tolist())
         pair_spline_dict["y"].extend(yfit.tolist())
         pair_spline_dict["pair"].extend([table_prefix] * len(x))
@@ -612,16 +608,34 @@ def make_psea_table(
     return scatter_plot, volcano_plot, ae_plot, psea_tables
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers (not registered as QIIME 2 actions)
-# ---------------------------------------------------------------------------
-
 def _compute_pair_fit_and_residuals(
-    processed_scores, pair, spline_type, degree, dof, epitope_map=None
-):
-    data_sorted = processed_scores.loc[:, pair].sort_values(by=pair[0])
-    x = data_sorted.loc[:, pair[0]].to_numpy()
-    y = data_sorted.loc[:, pair[1]].to_numpy()
+    processed_scores: pd.DataFrame,
+    sample_a: str,
+    sample_b: str,
+    spline_type: str,
+    degree: int,
+    dof: int = None,
+    epitope_map: pd.DataFrame = None,
+) -> pd.DataFrame:
+    """Fit a spline to the Z-score scatter for a single sample pair and
+    compute per-peptide/epitope residuals.
+
+    Returns a DataFrame with columns ``x``, ``yfit``, ``maxZ``, ``deltaZ``
+    (``FeatureData[Spline]``).  When *epitope_map* is supplied, ``maxZ`` and
+    ``deltaZ`` are collapsed to epitope IDs, so those rows will differ from
+    the peptide rows that carry ``x`` and ``yfit``; the non-applicable cells
+    are ``NaN``.
+    """
+    # FeatureTable[Zscore] arrives as samples × features; convert to
+    # features × samples so we can index by sample name.
+    processed_scores = processed_scores.transpose()
+
+    pair = (sample_a, sample_b)
+    data_sorted = processed_scores.loc[:, list(pair)].sort_values(by=sample_a)
+    x = data_sorted.loc[:, sample_a].to_numpy()
+    y = data_sorted.loc[:, sample_b].to_numpy()
+
+    dof_r = ro.NULL if dof is None else dof
 
     if spline_type == "py-smooth":
         yfit = splines.smooth_spline(x, y)
@@ -629,22 +643,39 @@ def _compute_pair_fit_and_residuals(
         yfit = splines.smooth_gam(x, y)
     elif spline_type == "cubic":
         with numpy2ri.converter.context():
-            yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
+            yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof_r)
     else:
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.smooth_spline(x, y)
 
-    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
+    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, list(pair)], 1)
     maxZ = pd.Series(
         [num for elem in maxZ for num in elem], index=data_sorted.index
     )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
     if epitope_map is not None:
-        maxZ = _collapse_residuals_to_epitope(maxZ, epitope_map)
-        deltaZ = _collapse_residuals_to_epitope(deltaZ, epitope_map)
+        maxZ_out = _collapse_residuals_to_epitope(maxZ, epitope_map)
+        deltaZ_out = _collapse_residuals_to_epitope(deltaZ, epitope_map)
+    else:
+        maxZ_out = maxZ
+        deltaZ_out = deltaZ
 
-    return x, yfit, maxZ, deltaZ
+    spline_df = pd.concat([
+        pd.DataFrame(
+            {"x": x, "yfit": yfit},
+            index=data_sorted.index,
+        ),
+        pd.DataFrame({"maxZ": maxZ_out, "deltaZ": deltaZ_out}),
+    ], axis=1)
+    spline_df.index.name = "feature-id"
+
+    return spline_df
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (not registered as QIIME 2 actions)
+# ---------------------------------------------------------------------------
 
 
 def process_scores(scores, pairs) -> pd.DataFrame:

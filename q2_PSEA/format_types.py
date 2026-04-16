@@ -42,9 +42,32 @@ PSEAAECountsDirFmt = model.SingleFileDirectoryFormat(
 )
 
 
+class SplineTSVFormat(model.TextFileFormat):
+    _REQUIRED_COLUMNS = {"x", "yfit", "maxZ", "deltaZ"}
+
+    def _validate_(self, level):
+        with self.open() as fh:
+            header_line = fh.readline().strip()
+            if not header_line:
+                raise ValidationError("Spline file must have a header line.")
+            cols = set(header_line.split("\t")[1:])  # first field is index
+            missing = self._REQUIRED_COLUMNS - cols
+            if missing:
+                raise ValidationError(
+                    f"Spline file is missing required columns: {missing}."
+                )
+
+
+SplineDirFmt = model.SingleFileDirectoryFormat(
+    "SplineDirFmt", "spline.tsv", SplineTSVFormat
+)
+
+
 __all__ = [
     "PSEAAECountsDirFmt",
     "PSEAAECountsTSVFormat",
     "PSEAPairsDirFmt",
     "PSEAPairsTSVFormat",
+    "SplineDirFmt",
+    "SplineTSVFormat",
 ]

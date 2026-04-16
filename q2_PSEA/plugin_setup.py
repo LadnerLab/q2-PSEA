@@ -16,6 +16,7 @@ import q2_PSEA
 import q2_PSEA.actions.splines as splines
 
 from q2_PSEA.actions.psea import (
+    _compute_pair_fit_and_residuals,
     count_antibody_events,
     create_fgsea_table_for_pair,
     run_iterative_process_single_pair,
@@ -34,8 +35,10 @@ from q2_PSEA.format_types import (
     PSEAAECountsTSVFormat,
     PSEAPairsTSVFormat,
     PSEAPairsDirFmt,
+    SplineDirFmt,
+    SplineTSVFormat,
 )
-from q2_PSEA.types import PSEAAECounts, PSEAPairs
+from q2_PSEA.types import PSEAAECounts, PSEAPairs, Spline
 from qiime2.plugin import (
     Bool,
     Collection,
@@ -69,13 +72,14 @@ plugin = Plugin(
 plugin.register_formats(
     PSEAAECountsDirFmt, PSEAAECountsTSVFormat,
     PSEAPairsTSVFormat, PSEAPairsDirFmt,
+    SplineDirFmt, SplineTSVFormat,
 )
 
 # ---------------------------------------------------------------------------
 # Register semantic types
 # ---------------------------------------------------------------------------
 
-plugin.register_semantic_types(PSEAAECounts, PSEAPairs)
+plugin.register_semantic_types(PSEAAECounts, PSEAPairs, Spline)
 
 # ---------------------------------------------------------------------------
 # Map semantic types -> directory formats
@@ -83,6 +87,9 @@ plugin.register_semantic_types(PSEAAECounts, PSEAPairs)
 
 plugin.register_semantic_type_to_format(PSEAAECounts, PSEAAECountsDirFmt)
 plugin.register_semantic_type_to_format(PSEAPairs, PSEAPairsDirFmt)
+plugin.register_semantic_type_to_format(
+    FeatureData[Spline], SplineDirFmt
+)
 
 # ---------------------------------------------------------------------------
 # Transformers
@@ -112,6 +119,71 @@ def _df_to_ae_counts_tsv(df: pd.DataFrame) -> PSEAAECountsTSVFormat:
     df.to_csv(str(result), sep="\t", index=False)
     return result
 
+
+@plugin.register_transformer
+def _spline_tsv_to_df(ff: SplineTSVFormat) -> pd.DataFrame:
+    return pd.read_csv(str(ff), sep="\t", index_col=0)
+
+
+@plugin.register_transformer
+def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
+    result = SplineTSVFormat()
+    df.to_csv(str(result), sep="\t", index=True)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Register _compute_pair_fit_and_residuals as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=_compute_pair_fit_and_residuals,
+    inputs={
+        "processed_scores": FeatureTable[Zscore],
+        "epitope_map": FeatureData[MappedEpitope],
+    },
+    parameters={
+        "sample_a": Str,
+        "sample_b": Str,
+        "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "degree": Int,
+        "dof": Int,
+    },
+    outputs=[("spline_fit", FeatureData[Spline])],
+    input_descriptions={
+        "processed_scores": (
+            "Log-scaled Z-score matrix (FeatureTable[Zscore])."
+        ),
+        "epitope_map": (
+            "Optional mapped-epitope table. When provided, maxZ and deltaZ"
+            " are collapsed from peptide to epitope level."
+        ),
+    },
+    parameter_descriptions={
+        "sample_a": "Name of the first sample in the pair.",
+        "sample_b": "Name of the second sample in the pair.",
+        "spline_type": "Spline method used to fit the Z-score scatter.",
+        "degree": (
+            "Polynomial degree for spline fitting (affects 'cubic' only)."
+        ),
+        "dof": (
+            "Degrees of freedom for spline fitting (affects 'cubic' only)."
+        ),
+    },
+    output_descriptions={
+        "spline_fit": (
+            "Spline fit and residuals for this sample pair, stored as a"
+            " four-column table (x, yfit, maxZ, deltaZ)."
+        ),
+    },
+    name="Compute Pair Spline Fit and Residuals",
+    description=(
+        "Fits a spline to the Z-score scatter plot for a single sample pair"
+        " and computes per-peptide (or per-epitope) residuals. Returns a"
+        " FeatureData[Spline] artifact containing the x coordinates, fitted"
+        " y values, maxZ, and deltaZ."
+    ),
+)
 
 # ---------------------------------------------------------------------------
 # Register count_antibody_events as a method
@@ -182,7 +254,7 @@ plugin.methods.register_function(
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
-        "precomputed_fit": FeatureData[PSEAScores],
+        "precomputed_fit": FeatureData[Spline],
     },
     parameters={
         "sample_a": Str,
@@ -241,9 +313,9 @@ plugin.methods.register_function(
         ),
         "mapped_peptide_sets": "Optional epitope-level GMT peptide sets.",
         "precomputed_fit": (
-            "Optional precomputed maxZ/deltaZ from a prior call, stored as a"
-            " two-column table (maxZ, deltaZ). When provided, spline fitting"
-            " is skipped."
+            "Optional precomputed spline fit from a prior call"
+            " (FeatureData[Spline] with x, yfit, maxZ, deltaZ columns)."
+            " When provided, spline fitting is skipped."
         ),
     },
     outputs=[("psea_table", FeatureData[PSEAScores])],
@@ -273,7 +345,7 @@ plugin.pipelines.register_function(
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
-        "precomputed_fit": FeatureData[PSEAScores],
+        "precomputed_fit": FeatureData[Spline],
     },
     parameters={
         "sample_a": Str,
@@ -323,8 +395,9 @@ plugin.pipelines.register_function(
         "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
         "mapped_peptide_sets": "Optional epitope-level GMT.",
         "precomputed_fit": (
-            "Optional precomputed maxZ/deltaZ from a prior call. When"
-            " provided, spline fitting is skipped."
+            "Optional precomputed spline fit from a prior call"
+            " (FeatureData[Spline] with x, yfit, maxZ, deltaZ columns)."
+            " When provided, spline fitting is skipped."
         ),
     },
     outputs=[
