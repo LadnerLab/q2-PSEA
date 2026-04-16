@@ -559,16 +559,16 @@ def make_psea_table(
             colors_file=species_colors,
         )
 
-        volcano_plot, = volcano(
-            pairs=pairs,
-            psea_tables=psea_tables,
-            xy_access=["NES", "p.adjust"],
-            taxa_access=taxa_access,
-            x_threshold=nes_thresh,
-            y_threshold=p_val_thresh,
-            xy_labels=["Enrichment score", "Adjusted p-values"],
-            colors_file=species_colors,
-            )
+    volcano_plot, = volcano(
+        pairs=pairs,
+        psea_tables=psea_tables,
+        xy_access=["NES", "p.adjust"],
+        taxa_access=taxa_access,
+        x_threshold=nes_thresh,
+        y_threshold=p_val_thresh,
+        xy_labels=["Enrichment score", "Adjusted p-values"],
+        colors_file=species_colors,
+    )
 
     ae_plot, = aeplots(
         pos_ae_counts=pos_ae_counts,
