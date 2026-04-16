@@ -637,6 +637,7 @@ def _compute_pair_fit_and_residuals(
         maxZ_out = maxZ
         deltaZ_out = deltaZ
 
+    # TODO: Why does it do it like this?
     spline_df = pd.concat([
         pd.DataFrame(
             {"x": x, "yfit": yfit},

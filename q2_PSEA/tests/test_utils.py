@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 
 import pandas as pd
@@ -7,7 +5,7 @@ from pandas.testing import assert_frame_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.utils import (
-    remove_peptides, remove_peptides_in_df_format, write_gmt_from_dict,
+    remove_peptides, remove_peptides_in_df_format,
     collapse_residuals_to_epitope
 )
 
@@ -118,25 +116,6 @@ class TestCollapseResidualsToEpitope(TestPluginBase):
         emap = self._emap({"ep1": ["pep1"]})
         result = collapse_residuals_to_epitope(pd.Series({"pep1": 0.7}), emap)
         self.assertIsInstance(result, pd.Series)
-
-
-class TestGmtRoundTrip(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_write_gmt_line_format(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".gmt", delete=False
-        ) as tmp:
-            tmp_path = tmp.name
-        try:
-            write_gmt_from_dict(tmp_path, {"sp1": ["pepA", "pepB"]})
-            with open(tmp_path) as fh:
-                line = fh.readline()
-            self.assertTrue(line.startswith("sp1\t\t"))
-            self.assertIn("pepA", line)
-            self.assertIn("pepB", line)
-        finally:
-            os.unlink(tmp_path)
 
 
 if __name__ == "__main__":

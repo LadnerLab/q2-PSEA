@@ -157,15 +157,6 @@ def remove_peptides(scores, peptide_sets) -> (pd.DataFrame, pd.DataFrame):
     return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets)
 
 
-def write_gmt_from_dict(outfile_name, gmt_dict) -> None:
-    with open(outfile_name, "w") as gmt_file:
-        for species in gmt_dict.keys():
-            gmt_file.write(f"{species}\t\t")
-            for peptide in gmt_dict[species]:
-                gmt_file.write(f"{peptide}\t")
-            gmt_file.write("\n")
-
-
 def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
     peptide_to_epitopes = {}
     for epitope, peptides in epitope_map["CodeName"].items():
