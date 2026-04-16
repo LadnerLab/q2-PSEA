@@ -251,10 +251,10 @@ plugin.methods.register_function(
     inputs={
         "processed_scores": FeatureTable[Zscore],
         "peptide_sets": GMT,
+        "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
         "mapped_processed_scores": FeatureTable[Zscore],
         "mapped_peptide_sets": GMT,
-        "precomputed_fit": FeatureData[Spline],
     },
     parameters={
         "sample_a": Str,

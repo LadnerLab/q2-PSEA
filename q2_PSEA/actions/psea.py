@@ -18,6 +18,7 @@ from q2_PSEA.format_types import PSEAPairsDirFmt
 def create_fgsea_table_for_pair(
     processed_scores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
+    precomputed_fit: pd.DataFrame,
     sample_a: str,
     sample_b: str,
     threshold: float,
@@ -29,7 +30,6 @@ def create_fgsea_table_for_pair(
     epitope_map: pd.DataFrame = None,
     mapped_processed_scores: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
-    precomputed_fit: pd.DataFrame = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
