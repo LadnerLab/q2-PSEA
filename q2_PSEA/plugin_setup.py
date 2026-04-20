@@ -20,7 +20,6 @@ from q2_PSEA.actions.psea import (
     count_antibody_events,
     create_fgsea_table_for_pair,
     process_scores,
-    run_iterative_process_single_pair,
     run_iterative_peptide_analysis,
     make_psea_table,
 )
@@ -359,90 +358,6 @@ plugin.methods.register_function(
 )
 
 # ---------------------------------------------------------------------------
-# Register run_iterative_process_single_pair as a pipeline
-# ---------------------------------------------------------------------------
-
-plugin.pipelines.register_function(
-    function=run_iterative_process_single_pair,
-    inputs={
-        "processed_scores": FeatureTable[Zscore],
-        "peptide_sets": GMT,
-        "epitope_map": FeatureData[MappedEpitope],
-        "mapped_processed_scores": FeatureTable[Zscore],
-        "mapped_peptide_sets": GMT,
-        "precomputed_fit": FeatureData[Spline],
-    },
-    parameters={
-        "sample_a": Str,
-        "sample_b": Str,
-        "threshold": Float,
-        "permutation_num": Int,
-        "min_size": Int,
-        "max_size": Int,
-        "seed": Int,
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
-        "tested_species": List[Str],
-        "species_taxa": Metadata,
-    },
-    parameter_descriptions={
-        "sample_a": "Name of the first sample in the pair.",
-        "sample_b": "Name of the second sample in the pair.",
-        "threshold": "Minimum Z-score for GSEA inclusion.",
-        "permutation_num": "Number of GSEA permutations.",
-        "min_size": "Minimum peptide-set size.",
-        "max_size": "Maximum peptide-set size.",
-        "seed": "Random seed for GSEA permutations.",
-        "p_val_thresh": (
-            "Adjusted p-value threshold for calling a species significant."
-        ),
-        "nes_thresh": (
-            "Absolute NES threshold for calling a species significant."
-        ),
-        "tested_species": (
-            "Species IDs already tested in prior iterations; used to avoid"
-            " re-testing the same species."
-        ),
-        "species_taxa": (
-            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
-        ),
-    },
-    input_descriptions={
-        "processed_scores": "Log-scaled Z-score matrix.",
-        "peptide_sets": "Current (possibly filtered) GMT for this pair.",
-        "epitope_map": "Optional mapped-epitope table.",
-        "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
-        "mapped_peptide_sets": "Optional epitope-level GMT.",
-        "precomputed_fit": (
-            "Optional precomputed spline fit from a prior call"
-            " (FeatureData[Spline] with x, yfit, maxZ, deltaZ columns)."
-            " When provided, spline fitting is skipped."
-        ),
-    },
-    outputs=[
-        ("psea_table", FeatureData[PSEAScores]),
-        ("updated_peptide_sets", GMT),
-    ],
-    output_descriptions={
-        "psea_table": (
-            "PSEA result table for this iteration of this pair."
-        ),
-        "updated_peptide_sets": (
-            "GMT with the leading-edge peptides of the most significant"
-            " new species removed from all other species."
-        ),
-    },
-    name="Run Iterative Process for Single Pair",
-    description=(
-        "One iteration of the iterative peptide-filtering procedure for a"
-        " single sample pair. Calls the registered"
-        " create_fgsea_table_for_pair method, identifies the top significant"
-        " untested species, and removes its leading-edge peptides from all"
-        " other species in the GMT."
-    ),
-)
-
-# ---------------------------------------------------------------------------
 # Register run_iterative_peptide_analysis as a pipeline
 # ---------------------------------------------------------------------------
 
@@ -502,8 +417,8 @@ plugin.pipelines.register_function(
     name="Run Iterative Peptide Analysis",
     description=(
         "Iteratively filter cross-reactive peptides across all sample pairs."
-        " Calls run_iterative_process_single_pair for each pair in each"
-        " iteration until no new significant species are found."
+        " Runs analysis for each pair in each iteration until no new"
+        " significant species are found."
     ),
 )
 
