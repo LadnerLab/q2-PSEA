@@ -57,28 +57,6 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         self.assertIn("psea_table", self.sig.outputs)
 
 
-class TestRunIterativePeptideAnalysis(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def setUp(self):
-        super().setUp()
-        self.action = self.plugin.pipelines["run_iterative_peptide_analysis"]
-        self.sig = self.action.signature
-
-    def test_registered_as_pipeline(self):
-        self.assertIn("run_iterative_peptide_analysis", self.plugin.pipelines)
-
-    def test_inputs_contain_pairs(self):
-        self.assertIn("pairs", self.sig.inputs)
-
-    def test_species_taxa_is_parameter_not_input(self):
-        self.assertIn("species_taxa", self.sig.parameters)
-        self.assertNotIn("species_taxa", self.sig.inputs)
-
-    def test_output_is_filtered_peptide_sets(self):
-        self.assertIn("filtered_peptide_sets", self.sig.outputs)
-
-
 class TestMakePseaTable(TestPluginBase):
     package = "q2_PSEA.tests"
 

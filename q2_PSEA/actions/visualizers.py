@@ -7,12 +7,10 @@ import os
 import pandas as pd
 import qiime2
 
-from q2_PSEA.format_types import PSEAPairsDirFmt
-
 
 def volcano(
     output_dir: str,
-    pairs: PSEAPairsDirFmt,
+    pairs: pd.DataFrame,
     psea_tables: pd.DataFrame = None,
     colors_file: qiime2.Metadata = None,
     x: list = None,
@@ -49,19 +47,15 @@ def volcano(
         else:
             taxa = [taxa]
 
-    unsorted_pairs = list()
-    pair_2_title = dict()
-    with open(str(pairs.path / "pairs.tsv"), "r") as fh:
-        fh.readline()
-        for line in fh.readlines():
-            line_tup = tuple(line.replace("\n", "").split("\t"))
-            pair = line_tup[0:2]
-            unsorted_pairs.append(f"{pair[0]}~{pair[1]}")
-
-            if len(line_tup) > 2:
-                pair_2_title[f"{pair[0]}~{pair[1]}"] = line_tup[2]
-            else:
-                pair_2_title[f"{pair[0]}~{pair[1]}"] = ""
+    pair_strs = pairs.apply(
+        lambda row: f"{row.iloc[0]}~{row.iloc[1]}", axis=1
+    )
+    unsorted_pairs = pair_strs.tolist()
+    pair_2_title = dict(zip(
+        pair_strs,
+        pairs.iloc[:, 2].astype(str) if len(pairs.columns) >= 3
+        else [""] * len(pair_strs),
+    ))
 
     pairs_list = sorted(unsorted_pairs)
 
@@ -225,7 +219,7 @@ def volcano(
 def zscatter(
     output_dir: str,
     zscores: pd.DataFrame,
-    pairs: PSEAPairsDirFmt,
+    pairs: pd.DataFrame,
     psea_tables: pd.DataFrame = None,
     colors_file: qiime2.Metadata = None,
     p_val_access: str = None,
@@ -255,19 +249,15 @@ def zscatter(
             " 'taxa_access'!"
         )
 
-    unsorted_pairs = list()
-    pair_2_title = dict()
-    with open(str(pairs.path / "pairs.tsv"), "r") as fh:
-        fh.readline()
-        for line in fh.readlines():
-            line_tup = tuple(line.replace("\n", "").split("\t"))
-            pair = line_tup[0:2]
-            unsorted_pairs.append(f"{pair[0]}~{pair[1]}")
-
-            if len(line_tup) > 2:
-                pair_2_title[f"{pair[0]}~{pair[1]}"] = line_tup[2]
-            else:
-                pair_2_title[f"{pair[0]}~{pair[1]}"] = ""
+    pair_strs = pairs.apply(
+        lambda row: f"{row.iloc[0]}~{row.iloc[1]}", axis=1
+    )
+    unsorted_pairs = pair_strs.tolist()
+    pair_2_title = dict(zip(
+        pair_strs,
+        pairs.iloc[:, 2].astype(str) if len(pairs.columns) >= 3
+        else [""] * len(pair_strs),
+    ))
 
     pairs_list = sorted(unsorted_pairs)
 

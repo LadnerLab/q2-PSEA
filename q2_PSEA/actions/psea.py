@@ -12,7 +12,6 @@ import time
 from math import log, pow
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
-from q2_PSEA.format_types import PSEAPairsDirFmt
 
 
 def create_fgsea_table_for_pair(
@@ -102,145 +101,6 @@ def create_fgsea_table_for_pair(
             table = ro.conversion.get_conversion().rpy2py(table)
 
     return table
-
-
-def run_iterative_peptide_analysis(
-    ctx,
-    processed_scores,
-    pairs,
-    peptide_sets,
-    threshold,
-    permutation_num,
-    min_size,
-    max_size,
-    spline_type,
-    degree,
-    seed,
-    p_val_thresh,
-    nes_thresh,
-    dof=None,
-    species_taxa=None,
-    epitope_map=None,
-    mapped_processed_scores=None,
-    mapped_peptide_sets=None,
-):
-    """QIIME 2 pipeline: iteratively filter cross-reactive peptides for every
-    sample pair.
-
-    Runs analysis once per pair per iteration until no new significant species
-    are discovered.
-
-    Returns
-    -------
-    filtered_peptide_sets : Collection[GMT]
-        One final filtered GMT artifact per pair, in the same order as the
-        rows of the pairs file.
-    """
-    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
-
-    pairs_dirfmt = pairs.view(PSEAPairsDirFmt)
-    pairs_df = pd.read_csv(
-        str(pairs_dirfmt.path / "pairs.tsv"), sep="\t", header=0
-    )
-    pairs_list = [
-        (str(row.iloc[0]), str(row.iloc[1]))
-        for _, row in pairs_df.iterrows()
-    ]
-
-    pair_gmt_dict = {pair: peptide_sets for pair in pairs_list}
-    sig_species_found_dict = {pair: True for pair in pairs_list}
-    tested_species_dict = {pair: set() for pair in pairs_list}
-
-    # Compute spline fit and residuals once per pair before iterating.
-    # Calling via ctx ensures provenance is captured and QIIME 2 handles
-    # data transformation automatically.
-    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
-    pair_fit_artifact = {}
-    for pair in pairs_list:
-        sample_a, sample_b = pair
-        spline_art, = compute_fit(
-            processed_scores=processed_scores,
-            sample_a=sample_a,
-            sample_b=sample_b,
-            spline_type=spline_type,
-            degree=degree,
-            dof=dof,
-            epitope_map=epitope_map,
-        )
-        pair_fit_artifact[pair] = spline_art
-
-    iteration_num = 1
-
-    while any(sig_species_found_dict.values()):
-        print(f"\nIteration: {iteration_num}")
-
-        for pair in pairs_list:
-            if not sig_species_found_dict[pair]:
-                continue
-
-            sample_a, sample_b = pair
-
-            iter_psea_table, = create_fgsea_table(
-                processed_scores=processed_scores,
-                peptide_sets=peptide_sets,
-                sample_a=sample_a,
-                sample_b=sample_b,
-                threshold=threshold,
-                permutation_num=permutation_num,
-                min_size=min_size,
-                max_size=max_size,
-                seed=seed,
-                species_taxa=species_taxa,
-                epitope_map=epitope_map,
-                mapped_processed_scores=mapped_processed_scores,
-                mapped_peptide_sets=mapped_peptide_sets,
-                precomputed_fit=pair_fit_artifact[pair],
-            )
-
-            # TODO: Maybe we also split this off into a helper and _ that
-            # --------------------------------------------------------------
-            table_df = iter_psea_table.view(pd.DataFrame)
-            table_df_sorted = \
-                table_df.sort_values(by=["p.adjust"], ascending=True)
-
-            gmt_df = peptide_sets.view(pd.DataFrame)
-
-            sig_found = False
-            for _, row in table_df_sorted.iterrows():
-                row_id = str(row["ID"])
-                if (
-                    row["p.adjust"] < p_val_thresh
-                    and abs(row["NES"]) > nes_thresh
-                    and row_id not in [str(s) for s in
-                                       tested_species_dict[pair]]
-                ):
-                    print(
-                        f"Found {row.get('species_name', row['ID'])} in"
-                        f" ({sample_a}, {sample_b}) to be significant"
-                    )
-
-                    tested_species_dict[pair].add(row_id)
-                    sig_found = True
-
-                    all_tested_peps = set(
-                        row["all_tested_peptides"].split("/")
-                    )
-                    mask = (
-                        (gmt_df["term"].astype(str) != row_id)
-                        & gmt_df["gene"].isin(all_tested_peps)
-                    )
-                    gmt_df = gmt_df[~mask].copy()
-                    break
-
-            sig_species_found_dict[pair] = sig_found
-            updated_gmt = ctx.make_artifact("GMT", gmt_df)
-            pair_gmt_dict[pair] = updated_gmt
-            # --------------------------------------------------------------
-
-        iteration_num += 1
-
-    print("\nEnd of Iterative Peptide Analysis\n")
-    return list(pair_gmt_dict.values())
 
 
 def count_antibody_events(
@@ -333,6 +193,7 @@ def make_psea_table(
     aeplots = ctx.get_action("psea", "aeplots")
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
     compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
+    update_gmt = ctx.get_action("psea", "_update_gmt")
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -340,10 +201,11 @@ def make_psea_table(
     # Parse pairs list
     # ------------------------------------------------------------------
     pairs_df = pairs.view(pd.DataFrame)
-    pairs_list = [
-        (str(row.iloc[0]), str(row.iloc[1]))
-        for _, row in pairs_df.iterrows()
-    ]
+    pairs_list = list(
+        pairs_df.apply(
+            lambda row: (str(row.iloc[0]), str(row.iloc[1])), axis=1
+        )
+    )
 
     # ------------------------------------------------------------------
     # Handle epitope collapsing
@@ -377,35 +239,79 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Determine per-pair peptide sets (iterative or flat)
     # ------------------------------------------------------------------
+    pair_pep_sets_dict = {pair: peptide_sets for pair in pairs_list}
     if iterative_analysis:
-        run_iterative = ctx.get_action(
-            "psea", "run_iterative_peptide_analysis"
-        )
-        filtered_gmts, = run_iterative(
-            processed_scores=processed_scores_art,
-            pairs=pairs,
-            peptide_sets=peptide_sets,
-            threshold=threshold,
-            permutation_num=permutation_num,
-            min_size=min_size,
-            max_size=max_size,
-            spline_type=spline_type,
-            degree=degree,
-            seed=seed,
-            p_val_thresh=p_val_thresh,
-            nes_thresh=nes_thresh,
-            dof=dof,
-            species_taxa=species_taxa,
-            epitope_map=mapped_epitope,
-            mapped_processed_scores=mapped_processed_scores_art,
-            mapped_peptide_sets=epitope_gmt,
-        )
+        tested_species_dict = {pair: set() for pair in pairs_list}
+        sig_species_found_dict = {pair: True for pair in pairs_list}
 
-        pair_pep_sets_dict = {
-            pair: gmt for pair, gmt in zip(pairs_list, filtered_gmts.values())
-        }
-    else:
-        pair_pep_sets_dict = {pair: peptide_sets for pair in pairs_list}
+        # Compute spline fit and residuals once per pair before iterating.
+        # Calling via ctx ensures provenance is captured and QIIME 2 handles
+        # data transformation automatically.
+        pair_fit_artifact = {}
+        for pair in pairs_list:
+            sample_a, sample_b = pair
+            spline_art, = compute_fit(
+                processed_scores=processed_scores_art,
+                sample_a=sample_a,
+                sample_b=sample_b,
+                spline_type=spline_type,
+                degree=degree,
+                dof=dof,
+                epitope_map=mapped_epitope,
+            )
+            pair_fit_artifact[pair] = spline_art
+
+        iteration_num = 1
+
+        while any(sig_species_found_dict.values()):
+            print(f"\nIteration: {iteration_num}")
+
+            for pair in pairs_list:
+                if not sig_species_found_dict[pair]:
+                    continue
+
+                sample_a, sample_b = pair
+
+                iter_psea_table, = create_fgsea_table(
+                    processed_scores=processed_scores_art,
+                    peptide_sets=pair_pep_sets_dict[pair],
+                    sample_a=sample_a,
+                    sample_b=sample_b,
+                    threshold=threshold,
+                    permutation_num=permutation_num,
+                    min_size=min_size,
+                    max_size=max_size,
+                    seed=seed,
+                    species_taxa=species_taxa,
+                    epitope_map=mapped_epitope,
+                    mapped_processed_scores=mapped_processed_scores_art,
+                    mapped_peptide_sets=epitope_gmt,
+                    precomputed_fit=pair_fit_artifact[pair],
+                )
+
+                table_df = iter_psea_table.view(pd.DataFrame)
+                sig_species_found_dict[pair] = bool(
+                    (
+                        (table_df["p.adjust"] < p_val_thresh)
+                        & (table_df["NES"].abs() > nes_thresh)
+                    ).any()
+                )
+
+                updated_gmt, updated_tested_species = _update_gmt(
+                    psea_table=iter_psea_table,
+                    peptide_sets=pair_pep_sets_dict[pair],
+                    tested_species=tested_species_dict[pair],
+                    p_val_thresh=p_val_thresh,
+                    nes_thresh=nes_thresh,
+                    sample_a=sample_a,
+                    sample_b=sample_b,
+                )
+                pair_pep_sets_dict[pair] = updated_gmt
+                tested_species_dict[pair] = updated_tested_species
+
+            iteration_num += 1
+
+        print("\nEnd of Iterative Peptide Analysis\n")
 
     # ------------------------------------------------------------------
     # Final per-pair PSEA analysis
@@ -510,6 +416,50 @@ def make_psea_table(
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables
+
+
+def _update_gmt(
+    psea_table: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    tested_species: set,
+    p_val_thresh: float,
+    nes_thresh: float,
+    sample_a: str,
+    sample_b: str,
+) -> pd.DataFrame:
+    """QIIME 2 method: filter cross-reactive peptides from a GMT for one pair.
+
+    Finds the most significant species in *psea_table* (lowest adjusted
+    p-value that also exceeds *nes_thresh*) and removes that species' tested
+    peptides from every other species entry in *peptide_sets*.
+
+    Returns
+    -------
+    pd.DataFrame
+        Updated GMT with cross-reactive peptides removed (stored as GMT).
+    """
+    table_df_sorted = psea_table.sort_values(by=["p.adjust"], ascending=True)
+
+    for _, row in table_df_sorted.iterrows():
+        row_id = str(row["ID"])
+        if (row["p.adjust"] < p_val_thresh and abs(row["NES"]) > nes_thresh
+            and row_id not in tested_species):
+
+            tested_species.add(row_id)
+
+            print(
+                f"Found {row.get('species_name', row['ID'])} in"
+                f" ({sample_a}, {sample_b}) to be significant"
+            )
+            all_tested_peps = set(row["all_tested_peptides"].split("/"))
+            mask = (
+                (peptide_sets["term"].astype(str) != row_id)
+                & peptide_sets["gene"].isin(all_tested_peps)
+            )
+            peptide_sets = peptide_sets[~mask].copy()
+            break
+
+    return peptide_sets, tested_species
 
 
 def _compute_pair_fit_and_residuals(

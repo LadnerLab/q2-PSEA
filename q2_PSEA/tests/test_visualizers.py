@@ -1,5 +1,4 @@
 import os
-import pathlib
 import tempfile
 import unittest
 
@@ -13,23 +12,6 @@ from q2_PSEA.actions.visualizers import aeplots, volcano, zscatter
 # ---------------------------------------------------------------------------
 # Helpers shared across visualizer test classes
 # ---------------------------------------------------------------------------
-
-class _FakePairsDirFmt:
-    """Minimal stand-in for PSEAPairsDirFmt in visualizer tests.
-
-    All three visualizers read ``pairs.path / "pairs.tsv"`` to discover the
-    ordered list of sample pairs.  The test data directory already contains a
-    ``pairs.tsv`` with header row and one data row ``sample1\\tsample2``,
-    producing the pair string ``"sample1~sample2"``.
-    """
-
-    def __init__(self, path):
-        self.path = pathlib.Path(path)
-
-
-def _data_dir(test_instance, filename="pairs.tsv"):
-    """Return the tests/data directory as a Path via get_data_path."""
-    return pathlib.Path(test_instance.get_data_path(filename)).parent
 
 
 def _volcano_psea_table():
@@ -59,7 +41,7 @@ class TestVolcano(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        self.pairs = _FakePairsDirFmt(_data_dir(self))
+        self.pairs = pd.read_csv(self.get_data_path("pairs.tsv"), sep="\t")
         # psea_tables dict: key must match the pair string from pairs.tsv
         self.psea_tables = {"sample1~sample2": _volcano_psea_table()}
 
@@ -220,7 +202,7 @@ class TestZscatter(TestPluginBase):
         self.zscores = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         ).T
-        self.pairs = _FakePairsDirFmt(_data_dir(self, "scores-vis.tsv"))
+        self.pairs = pd.read_csv(self.get_data_path("pairs.tsv"), sep="\t")
 
     def _call(self, output_dir, **kwargs):
         return zscatter(

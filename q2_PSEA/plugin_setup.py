@@ -17,10 +17,10 @@ import q2_PSEA.actions.splines as splines
 
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
+    _update_gmt,
     count_antibody_events,
     create_fgsea_table_for_pair,
     process_scores,
-    run_iterative_peptide_analysis,
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
@@ -220,6 +220,48 @@ plugin.methods.register_function(
 )
 
 # ---------------------------------------------------------------------------
+# Register _update_gmt as a method
+# ---------------------------------------------------------------------------
+
+plugin.methods.register_function(
+    function=_update_gmt,
+    inputs={
+        "psea_table": FeatureData[PSEAScores],
+        "peptide_sets": GMT,
+    },
+    parameters={
+        "p_val_thresh": Float,
+        "nes_thresh": Float,
+        "sample_a": Str,
+        "sample_b": Str,
+    },
+    outputs=[("updated_gmt", GMT)],
+    input_descriptions={
+        "psea_table": "PSEA result table for a single sample pair.",
+        "peptide_sets": "GMT peptide-set file to filter.",
+    },
+    parameter_descriptions={
+        "p_val_thresh": "Adjusted p-value threshold for significance.",
+        "nes_thresh": "Absolute NES threshold for significance.",
+        "sample_a": "Name of the first sample in the pair.",
+        "sample_b": "Name of the second sample in the pair.",
+    },
+    output_descriptions={
+        "updated_gmt": (
+            "GMT with cross-reactive peptides removed for the most significant"
+            " species in this pair."
+        ),
+    },
+    name="Update GMT",
+    description=(
+        "Finds the most significant species in the PSEA table for a single"
+        " sample pair and removes that species' tested peptides from all other"
+        " species entries in the GMT, reducing cross-reactivity in subsequent"
+        " iterative analysis passes."
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # Register count_antibody_events as a method
 # ---------------------------------------------------------------------------
 
@@ -354,71 +396,6 @@ plugin.methods.register_function(
         "Compute a PSEA enrichment table for a single sample pair by fitting"
         " a spline to the Z-score scatter, computing residuals, and running"
         " GSEA via the clusterProfiler R package."
-    ),
-)
-
-# ---------------------------------------------------------------------------
-# Register run_iterative_peptide_analysis as a pipeline
-# ---------------------------------------------------------------------------
-
-plugin.pipelines.register_function(
-    function=run_iterative_peptide_analysis,
-    inputs={
-        "processed_scores": FeatureTable[Zscore],
-        "pairs": PSEAPairs,
-        "peptide_sets": GMT,
-        "epitope_map": FeatureData[MappedEpitope],
-        "mapped_processed_scores": FeatureTable[Zscore],
-        "mapped_peptide_sets": GMT,
-    },
-    parameters={
-        "threshold": Float,
-        "permutation_num": Int,
-        "min_size": Int,
-        "max_size": Int,
-        "spline_type": Str % Choices(splines.SPLINE_TYPES),
-        "degree": Int,
-        "seed": Int,
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
-        "dof": Int,
-        "species_taxa": Metadata,
-    },
-    parameter_descriptions={
-        "threshold": "Minimum Z-score for GSEA inclusion.",
-        "permutation_num": "Number of GSEA permutations.",
-        "min_size": "Minimum peptide-set size.",
-        "max_size": "Maximum peptide-set size.",
-        "spline_type": "Spline method for Z-score fitting.",
-        "degree": "Polynomial degree for spline fitting.",
-        "seed": "Random seed for GSEA permutations.",
-        "p_val_thresh": "Adjusted p-value threshold for significance.",
-        "nes_thresh": "Absolute NES threshold for significance.",
-        "dof": "Degrees of freedom for spline fitting.",
-        "species_taxa": (
-            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
-        ),
-    },
-    input_descriptions={
-        "processed_scores": "Log-scaled Z-score matrix for all samples.",
-        "pairs": "TSV file listing sample pairs (one per row).",
-        "peptide_sets": "Initial GMT peptide sets.",
-        "epitope_map": "Optional mapped-epitope table.",
-        "mapped_processed_scores": "Optional epitope-level Z-score matrix.",
-        "mapped_peptide_sets": "Optional epitope-level GMT.",
-    },
-    outputs=[("filtered_peptide_sets", Collection[GMT])],
-    output_descriptions={
-        "filtered_peptide_sets": (
-            "One final filtered GMT artifact per pair, in the same order as"
-            " the rows of the pairs file."
-        ),
-    },
-    name="Run Iterative Peptide Analysis",
-    description=(
-        "Iteratively filter cross-reactive peptides across all sample pairs."
-        " Runs analysis for each pair in each iteration until no new"
-        " significant species are found."
     ),
 )
 

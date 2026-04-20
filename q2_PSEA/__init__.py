@@ -1,13 +1,11 @@
 #! /usr/bin/env python
 from q2_PSEA.actions.psea import (
     make_psea_table,
-    run_iterative_peptide_analysis,
     create_fgsea_table_for_pair,
 )
 
 __all__ = [
     "make_psea_table",
-    "run_iterative_peptide_analysis",
     "create_fgsea_table_for_pair",
 ]
 
