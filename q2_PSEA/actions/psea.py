@@ -297,6 +297,7 @@ def make_psea_table(
                     ).any()
                 )
 
+                # TODO: tested_species accumulator needs hooked up
                 updated_gmt, updated_tested_species = _update_gmt(
                     psea_table=iter_psea_table,
                     peptide_sets=pair_pep_sets_dict[pair],
@@ -448,7 +449,7 @@ def _update_gmt(
             tested_species.add(row_id)
 
             print(
-                f"Found {row.get('species_name', row['ID'])} in"
+                f"Found {row.get('species_name', row_id)} in"
                 f" ({sample_a}, {sample_b}) to be significant"
             )
             all_tested_peps = set(row["all_tested_peptides"].split("/"))
