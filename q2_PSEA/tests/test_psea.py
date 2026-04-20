@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import qiime2
-from pandas.testing import assert_frame_equal, assert_series_equal
+from pandas.testing import assert_series_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
@@ -17,7 +17,6 @@ from q2_PSEA.actions.psea import (
     create_fgsea_table_for_pair,
     process_scores,
     run_iterative_peptide_analysis,
-    run_iterative_process_single_pair,
     make_psea_table,
 )
 
@@ -246,8 +245,20 @@ class TestCreateFgseaTableForPair(TestPluginBase):
             self.get_data_path("peptide-sets.tsv"), sep="\t"
         )
 
+    def _default_fit(self):
+        n = len(self.scores)
+        idx = self.scores.index
+        return pd.DataFrame({
+            "x": np.linspace(0, 1, n),
+            "yfit": np.linspace(0, 1, n),
+            "maxZ": pd.Series(np.ones(n), index=idx),
+            "deltaZ": pd.Series(np.zeros(n), index=idx),
+        }, index=idx)
+
     def _call(self, precomputed_fit=None, **kwargs):
         """Invoke create_fgsea_table_for_pair with R fully mocked."""
+        if precomputed_fit is None:
+            precomputed_fit = self._default_fit()
         expected = _fake_psea_result()
         with (
             patch("q2_PSEA.actions.psea.INTERNAL") as mock_internal,
@@ -264,8 +275,6 @@ class TestCreateFgseaTableForPair(TestPluginBase):
                 permutation_num=100,
                 min_size=2,
                 max_size=500,
-                spline_type="py-smooth",
-                degree=3,
                 seed=42,
                 precomputed_fit=precomputed_fit,
                 **kwargs,
@@ -281,27 +290,11 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         mock_internal.psea.assert_called_once()
 
     def test_precomputed_fit_skips_spline(self):
-        n = len(self.scores)
-        idx = self.scores.index
-        fit_df = pd.DataFrame({
-            "x": np.linspace(0, 1, n),
-            "yfit": np.linspace(0, 1, n),
-            "maxZ": pd.Series(np.ones(n), index=idx),
-            "deltaZ": pd.Series(np.zeros(n), index=idx),
-        }, index=idx)
         with patch(
             "q2_PSEA.actions.psea._compute_pair_fit_and_residuals"
         ) as mock_fit:
-            self._call(precomputed_fit=fit_df)
-            mock_fit.assert_not_called()
-
-    def test_no_precomputed_fit_calls_spline(self):
-        with patch(
-            "q2_PSEA.actions.psea._compute_pair_fit_and_residuals",
-            wraps=_compute_pair_fit_and_residuals,
-        ) as mock_fit:
             self._call()
-            mock_fit.assert_called_once()
+            mock_fit.assert_not_called()
 
     def test_no_species_taxa_passes_empty_string_to_r(self):
         _, mock_internal = self._call()
@@ -314,97 +307,30 @@ class TestCreateFgseaTableForPair(TestPluginBase):
         species_arg = mock_internal.psea.call_args.args[3]
         self.assertNotEqual(species_arg, "")
 
-
-# ---------------------------------------------------------------------------
-# run_iterative_process_single_pair
-# ---------------------------------------------------------------------------
-
-def _gmt_df():
-    return pd.DataFrame(
-        {
-            "term": ["12345", "12345", "12345", "67890", "67890"],
-            "gene": ["pep1", "pep2", "pep3", "pep1", "pep4"],
-        }
-    )
-
-
-def _psea_table_df(sig=True):
-    return pd.DataFrame(
-        {
-            "ID": ["12345"],
-            "NES": [2.5 if sig else 0.3],
-            "p.adjust": [0.01 if sig else 0.9],
-            "all_tested_peptides": ["pep1/pep2"],
-        }
-    )
-
-
-class TestRunIterativeProcessSinglePair(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def _build_ctx(self, psea_table_df):
-        ctx = _MockCtx()
-        art = _MockArtifact(psea_table_df)
-        ctx.register_action(
-            "psea", "create_fgsea_table_for_pair", lambda **kw: (art,)
-        )
-        return ctx
-
-    def _run(self, table_df, gmt_df, **extra):
-        ctx = self._build_ctx(table_df)
-        return run_iterative_process_single_pair(
-            ctx,
-            processed_scores=_MockArtifact(pd.DataFrame()),
-            peptide_sets=_MockArtifact(gmt_df),
-            sample_a="sA",
-            sample_b="sB",
-            threshold=1.0,
-            permutation_num=100,
-            min_size=2,
-            max_size=500,
-            spline_type="py-smooth",
-            degree=3,
-            seed=42,
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
-            **extra,
-        )
-
-    def test_no_sig_species_gmt_unchanged(self):
-        gmt = _gmt_df()
-        _, updated = self._run(_psea_table_df(sig=False), gmt)
-        assert_frame_equal(updated._data, gmt)
-
-    def test_sig_species_removes_leading_edge_from_other_species(self):
-        _, updated = self._run(_psea_table_df(sig=True), _gmt_df())
-        result = updated._data
-        other = result[result["term"] == "67890"]
-        # pep1 is in the leading edge of 12345 → removed from 67890
-        self.assertNotIn("pep1", other["gene"].values)
-        # pep4 is not in the leading edge → stays in 67890
-        self.assertIn("pep4", other["gene"].values)
-        # All of 12345's peptides are untouched
-        own = result[result["term"] == "12345"]
-        self.assertEqual(set(own["gene"]), {"pep1", "pep2", "pep3"})
-
-    def test_already_tested_species_gmt_unchanged(self):
-        gmt = _gmt_df()
-        _, updated = self._run(
-            _psea_table_df(sig=True), gmt, tested_species=["12345"]
-        )
-        assert_frame_equal(updated._data, gmt)
-
-    def test_no_species_name_column_does_not_raise(self):
-        """Without species_taxa the table has no 'species_name' column;
-        the code must fall back to row['ID'] without KeyError."""
-        table_df = _psea_table_df(sig=True)
-        self.assertNotIn("species_name", table_df.columns)
-        self._run(table_df, _gmt_df())  # must not raise
-
-
 # ---------------------------------------------------------------------------
 # run_iterative_peptide_analysis
 # ---------------------------------------------------------------------------
+
+
+def _psea_table_df(sig=False):
+    """Return a minimal PSEA result DataFrame.
+
+    sig=False: no species pass the significance thresholds used in tests
+    (p_val_thresh=0.05, nes_thresh=1.0).
+    """
+    if sig:
+        return pd.DataFrame({
+            "ID": ["sp1"],
+            "enrichmentScore": [0.7],
+            "NES": [2.0],
+            "p.adjust": [0.01],
+            "core_enrichment": ["pep_00"],
+            "pvalue": [0.005],
+            "qvalue": [0.01],
+            "all_tested_peptides": ["pep_00/pep_01"],
+        })
+    return _fake_psea_df()
+
 
 class TestRunIterativePeptideAnalysis(TestPluginBase):
     package = "q2_PSEA.tests"
@@ -448,7 +374,6 @@ class TestRunIterativePeptideAnalysis(TestPluginBase):
     def _build_ctx(self, table_df):
         ctx = _MockCtx()
         psea_art = _MockArtifact(table_df)
-        gmt_art = _MockArtifact(self.gmt)
         spline_art = self._make_spline_art()
         ctx.register_action(
             "psea",
@@ -457,8 +382,8 @@ class TestRunIterativePeptideAnalysis(TestPluginBase):
         )
         ctx.register_action(
             "psea",
-            "run_iterative_process_single_pair",
-            lambda **kw: (psea_art, gmt_art),
+            "create_fgsea_table_for_pair",
+            lambda **kw: (psea_art,),
         )
         return ctx
 

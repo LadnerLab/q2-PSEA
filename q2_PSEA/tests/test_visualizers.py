@@ -215,11 +215,11 @@ class TestZscatter(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        # scores-vis.tsv has sample1 and sample2 columns matching pairs.tsv
-        # data
+        # scores-vis.tsv is features×samples on disk; zscatter expects
+        # samples×features (QIIME 2 FeatureTable[Zscore] orientation).
         self.zscores = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
-        )
+        ).T
         self.pairs = _FakePairsDirFmt(_data_dir(self, "scores-vis.tsv"))
 
     def _call(self, output_dir, **kwargs):

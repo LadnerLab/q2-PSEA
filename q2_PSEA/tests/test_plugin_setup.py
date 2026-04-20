@@ -2,7 +2,6 @@ import unittest
 
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_PSEA.actions.splines import SPLINE_TYPES
 from q2_PSEA.types import PSEAPairs
 
 
@@ -48,47 +47,14 @@ class TestCreateFgseaTableForPair(TestPluginBase):
 
     def test_required_parameters_present(self):
         for name in ("sample_a", "sample_b", "threshold", "permutation_num",
-                     "min_size", "max_size", "spline_type", "degree", "seed"):
+                     "min_size", "max_size", "seed"):
             self.assertIn(name, self.sig.parameters)
 
     def test_optional_parameters_present(self):
-        self.assertIn("dof", self.sig.parameters)
         self.assertIn("species_taxa", self.sig.parameters)
-
-    def test_spline_type_choices(self):
-        spline_param = str(self.sig.parameters["spline_type"])
-        for spline in SPLINE_TYPES:
-            self.assertIn(spline, spline_param)
 
     def test_output_is_psea_table(self):
         self.assertIn("psea_table", self.sig.outputs)
-
-
-class TestRunIterativeProcessSinglePair(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def setUp(self):
-        super().setUp()
-        self.action = \
-            self.plugin.pipelines["run_iterative_process_single_pair"]
-        self.sig = self.action.signature
-
-    def test_registered_as_pipeline(self):
-        self.assertIn(
-            "run_iterative_process_single_pair", self.plugin.pipelines
-        )
-
-    def test_species_taxa_is_parameter_not_input(self):
-        self.assertIn("species_taxa", self.sig.parameters)
-        self.assertNotIn("species_taxa", self.sig.inputs)
-
-    def test_iterative_parameters_present(self):
-        for name in ("p_val_thresh", "nes_thresh", "tested_species"):
-            self.assertIn(name, self.sig.parameters)
-
-    def test_outputs(self):
-        self.assertIn("psea_table", self.sig.outputs)
-        self.assertIn("updated_peptide_sets", self.sig.outputs)
 
 
 class TestRunIterativePeptideAnalysis(TestPluginBase):
