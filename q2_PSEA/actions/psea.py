@@ -149,7 +149,7 @@ def run_iterative_peptide_analysis(
 
     pair_gmt_dict = {pair: peptide_sets for pair in pairs_list}
     sig_species_found_dict = {pair: True for pair in pairs_list}
-    tested_species_dict = {pair: [] for pair in pairs_list}
+    tested_species_dict = {pair: set() for pair in pairs_list}
 
     # Compute spline fit and residuals once per pair before iterating.
     # Calling via ctx ensures provenance is captured and QIIME 2 handles
@@ -175,8 +175,6 @@ def run_iterative_peptide_analysis(
         print(f"\nIteration: {iteration_num}")
 
         for pair in pairs_list:
-            tested_species = []
-
             if not sig_species_found_dict[pair]:
                 continue
 
@@ -207,17 +205,23 @@ def run_iterative_peptide_analysis(
 
             gmt_df = peptide_sets.view(pd.DataFrame)
 
+            sig_found = False
             for _, row in table_df_sorted.iterrows():
                 row_id = str(row["ID"])
                 if (
                     row["p.adjust"] < p_val_thresh
                     and abs(row["NES"]) > nes_thresh
-                    and row_id not in [str(s) for s in tested_species]
+                    and row_id not in [str(s) for s in
+                                       tested_species_dict[pair]]
                 ):
                     print(
                         f"Found {row.get('species_name', row['ID'])} in"
                         f" ({sample_a}, {sample_b}) to be significant"
                     )
+
+                    tested_species_dict[pair].add(row_id)
+                    sig_found = True
+
                     all_tested_peps = set(
                         row["all_tested_peptides"].split("/")
                     )
@@ -228,29 +232,10 @@ def run_iterative_peptide_analysis(
                     gmt_df = gmt_df[~mask].copy()
                     break
 
-            updated_gmt = ctx.make_artifact("GMT", gmt_df)
-            # --------------------------------------------------------------
-
-            table_df = iter_psea_table.view(pd.DataFrame)
-            table_df_sorted = table_df.sort_values(
-                by=["p.adjust"], ascending=True
-            )
-
-            sig_found = False
-            for _, row in table_df_sorted.iterrows():
-                row_id = str(row["ID"])
-                if (
-                    row["p.adjust"] < p_val_thresh
-                    and abs(row["NES"]) > nes_thresh
-                    and row_id
-                    not in [str(s) for s in tested_species_dict[pair]]
-                ):
-                    sig_found = True
-                    tested_species_dict[pair].append(row_id)
-                    break
-
             sig_species_found_dict[pair] = sig_found
+            updated_gmt = ctx.make_artifact("GMT", gmt_df)
             pair_gmt_dict[pair] = updated_gmt
+            # --------------------------------------------------------------
 
         iteration_num += 1
 
