@@ -26,9 +26,6 @@ def create_fgsea_table_for_pair(
     max_size: int,
     seed: int,
     species_taxa: qiime2.Metadata = None,
-    epitope_map: pd.DataFrame = None,
-    mapped_processed_scores: pd.DataFrame = None,
-    mapped_peptide_sets: pd.DataFrame = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -43,12 +40,6 @@ def create_fgsea_table_for_pair(
     species_taxa : PSEASpeciesTaxaDirFmt, optional
         Directory format containing species-taxa.tsv; passed as a file path
         to the underlying R function.
-    epitope_map : pd.DataFrame, optional
-        Mapped-epitope table (from FeatureData[MappedEpitope]).
-    mapped_processed_scores : pd.DataFrame, optional
-        Epitope-level processed scores (from FeatureTable[Zscore]).
-    mapped_peptide_sets : pd.DataFrame, optional
-        Epitope-level GMT table (from GMT).
 
     Returns
     -------
@@ -58,18 +49,12 @@ def create_fgsea_table_for_pair(
     print(f"Working on pair ({sample_a}, {sample_b})...")
 
     processed_scores = processed_scores.transpose()
-    if mapped_processed_scores is not None:
-        mapped_processed_scores = mapped_processed_scores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
     deltaZ_all = precomputed_fit["deltaZ"].dropna()
 
-    if epitope_map is not None:
-        filtered_scores, peptide_sets_for_analysis = \
-            utils.remove_peptides(mapped_processed_scores, mapped_peptide_sets)
-    else:
-        filtered_scores, peptide_sets_for_analysis = \
-            utils.remove_peptides(processed_scores, peptide_sets)
+    filtered_scores, peptide_sets_for_analysis = \
+        utils.remove_peptides(processed_scores, peptide_sets)
 
     idx = filtered_scores.index
     maxZ = maxZ_all.reindex(idx)
@@ -201,6 +186,8 @@ def make_psea_table(
     # Parse pairs list
     # ------------------------------------------------------------------
     pairs_df = pairs.view(pd.DataFrame)
+    # TODO: This needs to either be done differently or turned into a
+    # transformer
     pairs_list = list(
         pairs_df.apply(
             lambda row: (str(row.iloc[0]), str(row.iloc[1])), axis=1
@@ -212,7 +199,6 @@ def make_psea_table(
     # ------------------------------------------------------------------
     mapped_epitope = None
     epitope_zscore = None
-    epitope_gmt = None
 
     if epitope is not None:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
@@ -222,7 +208,7 @@ def make_psea_table(
         epitope_zscore, = create_epitope_zscore(scores, mapped_epitope)
 
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
-        epitope_gmt, = create_epitope_gmt(epitope, collapse)
+        peptide_sets, = create_epitope_gmt(epitope, collapse)
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
@@ -273,7 +259,8 @@ def make_psea_table(
                 sample_a, sample_b = pair
 
                 iter_psea_table, = create_fgsea_table(
-                    processed_scores=processed_scores_art,
+                    processed_scores=mapped_processed_scores_art if epitope is
+                    not None else processed_scores_art,
                     peptide_sets=pair_pep_sets_dict[pair],
                     sample_a=sample_a,
                     sample_b=sample_b,
@@ -283,13 +270,34 @@ def make_psea_table(
                     max_size=max_size,
                     seed=seed,
                     species_taxa=species_taxa,
-                    epitope_map=mapped_epitope,
-                    mapped_processed_scores=mapped_processed_scores_art,
-                    mapped_peptide_sets=epitope_gmt,
                     precomputed_fit=pair_fit_artifact[pair],
                 )
 
                 table_df = iter_psea_table.view(pd.DataFrame)
+                table_df_sorted = table_df.sort_values(by=["p.adjust"], ascending=True)
+                peptide_sets = pair_pep_sets_dict[pair].view(pd.DataFrame)
+
+                # sig_found = False
+                # for _, row in table_df_sorted.iterrows():
+                #     row_id = str(row["ID"])
+                #     if (row["p.adjust"] < p_val_thresh and abs(row["NES"]) > nes_thresh
+                #         and row_id not in tested_species_dict[pair]):
+                #         sig_found = True
+                #         tested_species_dict[pair].add(row_id)
+
+                #         print(
+                #             f"Found {row.get('species_name', row_id)} in"
+                #             f" ({sample_a}, {sample_b}) to be significant"
+                #         )
+                #         all_tested_peps = set(row["all_tested_peptides"].split("/"))
+                #         mask = (
+                #             (peptide_sets["term"].astype(str) != row_id)
+                #             & peptide_sets["gene"].isin(all_tested_peps)
+                #         )
+                #         peptide_sets = peptide_sets[~mask].copy()
+                #         break
+                # from q2_pepsirf.format_types import GMT
+                # updated_gmt = ctx.make_artifact(GMT, peptide_sets, view_type=pd.DataFrame)
                 sig_species_found_dict[pair] = bool(
                     (
                         (table_df["p.adjust"] < p_val_thresh)
@@ -307,6 +315,7 @@ def make_psea_table(
                     sample_a=sample_a,
                     sample_b=sample_b,
                 )
+                # sig_species_found_dict[pair] = sig_found
                 pair_pep_sets_dict[pair] = updated_gmt
                 tested_species_dict[pair] = updated_tested_species
 
@@ -341,7 +350,8 @@ def make_psea_table(
         yfit = spline_df["yfit"].dropna().to_numpy()
 
         psea_table, = create_fgsea_table(
-            processed_scores=processed_scores_art,
+            processed_scores=mapped_processed_scores_art if epitope is not None
+            else processed_scores_art,
             peptide_sets=pair_pep_sets_dict[pair],
             sample_a=sample_a,
             sample_b=sample_b,
@@ -351,9 +361,6 @@ def make_psea_table(
             max_size=max_size,
             seed=seed,
             species_taxa=species_taxa,
-            epitope_map=mapped_epitope,
-            mapped_processed_scores=mapped_processed_scores_art,
-            mapped_peptide_sets=epitope_gmt,
             precomputed_fit=spline_art,
         )
         psea_tables[table_prefix] = psea_table
@@ -419,10 +426,11 @@ def make_psea_table(
     return scatter_plot, volcano_plot, ae_plot, psea_tables
 
 
+# TODO: I need to do some refactoring so this actually works. Currently without
+# tested_species accumulating this just runs forever
 def _update_gmt(
     psea_table: pd.DataFrame,
     peptide_sets: pd.DataFrame,
-    tested_species: set,
     p_val_thresh: float,
     nes_thresh: float,
     sample_a: str,

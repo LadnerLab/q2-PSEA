@@ -328,9 +328,6 @@ plugin.methods.register_function(
         "processed_scores": FeatureTable[Zscore],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
-        "epitope_map": FeatureData[MappedEpitope],
-        "mapped_processed_scores": FeatureTable[Zscore],
-        "mapped_peptide_sets": GMT,
     },
     parameters={
         "sample_a": Str,
@@ -371,13 +368,6 @@ plugin.methods.register_function(
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
         ),
         "peptide_sets": "GMT peptide-set file mapping species to peptides.",
-        "epitope_map": (
-            "Optional mapped-epitope table for epitope-level collapsing."
-        ),
-        "mapped_processed_scores": (
-            "Optional epitope-level processed Z-score matrix."
-        ),
-        "mapped_peptide_sets": "Optional epitope-level GMT peptide sets.",
         "precomputed_fit": (
             "Optional precomputed spline fit from a prior call"
             " (FeatureData[Spline] with x, yfit, maxZ, deltaZ columns)."
