@@ -230,6 +230,8 @@ def run_iterative_process_single_pair(
 
                 gmt_df = gmt_df[~mask]
                 tested_species.add(row_id)
+                # TODO: I don't love calling make_artifact, but I also don't
+                # love the changes needed to get rid of it here
                 updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
                 break
         else:
