@@ -21,7 +21,6 @@ from q2_PSEA.actions.psea import (
     create_fgsea_table_for_pair,
     process_scores,
     run_iterative_process_single_pair,
-    run_iterative_peptide_analysis,
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
@@ -370,7 +369,6 @@ plugin.pipelines.register_function(
         "seed": Int,
         "p_val_thresh": Float,
         "nes_thresh": Float,
-        "tested_species": List[Str],
         "species_taxa": Metadata,
     },
     parameter_descriptions={
@@ -387,10 +385,6 @@ plugin.pipelines.register_function(
         "nes_thresh": (
             "Absolute NES threshold for calling a species significant."
         ),
-        "tested_species": (
-            "Species IDs already tested in prior iterations; used to avoid"
-            " re-testing the same species."
-        ),
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),
@@ -404,13 +398,9 @@ plugin.pipelines.register_function(
         ),
     },
     outputs=[
-        ("psea_table", FeatureData[PSEAScores]),
         ("updated_peptide_sets", GMT),
     ],
     output_descriptions={
-        "psea_table": (
-            "PSEA result table for this iteration of this pair."
-        ),
         "updated_peptide_sets": (
             "GMT with the leading-edge peptides of the most significant"
             " new species removed from all other species."
@@ -425,61 +415,6 @@ plugin.pipelines.register_function(
         " other species in the GMT."
     ),
 )
-
-# ---------------------------------------------------------------------------
-# Register run_iterative_peptide_analysis as a pipeline
-# ---------------------------------------------------------------------------
-
-plugin.pipelines.register_function(
-    function=run_iterative_peptide_analysis,
-    inputs={
-        "processed_scores": FeatureTable[Zscore],
-        "pairs": PSEAPairs,
-        "peptide_sets": GMT,
-        "prefit_splines": Collection[FeatureData[Spline]],
-    },
-    parameters={
-        "threshold": Float,
-        "permutation_num": Int,
-        "min_size": Int,
-        "max_size": Int,
-        "seed": Int,
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
-        "species_taxa": Metadata,
-    },
-    parameter_descriptions={
-        "threshold": "Minimum Z-score for GSEA inclusion.",
-        "permutation_num": "Number of GSEA permutations.",
-        "min_size": "Minimum peptide-set size.",
-        "max_size": "Maximum peptide-set size.",
-        "seed": "Random seed for GSEA permutations.",
-        "p_val_thresh": "Adjusted p-value threshold for significance.",
-        "nes_thresh": "Absolute NES threshold for significance.",
-        "species_taxa": (
-            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
-        ),
-    },
-    input_descriptions={
-        "processed_scores": "Log-scaled Z-score matrix for all samples.",
-        "pairs": "TSV file listing sample pairs (one per row).",
-        "peptide_sets": "Initial GMT peptide sets.",
-    },
-    outputs=[("filtered_peptide_sets", Collection[GMT])],
-    output_descriptions={
-        "filtered_peptide_sets": (
-            "One final filtered GMT artifact per pair, in the same order as"
-            " the rows of the pairs file."
-        ),
-    },
-    name="Run Iterative Peptide Analysis",
-    description=(
-        "Iteratively filter cross-reactive peptides across all sample pairs."
-        " Calls run_iterative_process_single_pair for each pair in each"
-        " iteration until no new significant species are found."
-    ),
-)
-
 
 # ---------------------------------------------------------------------------
 # Register make_psea_table as a pipeline
