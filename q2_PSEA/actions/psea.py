@@ -227,7 +227,8 @@ def run_iterative_process_single_pair(
                     (gmt_df["term"].astype(str) != row_id)
                     & gmt_df["gene"].isin(all_tested_peps)
                 )
-                gmt_df = gmt_df[~mask].copy()
+
+                gmt_df = gmt_df[~mask]
                 tested_species.add(row_id)
                 updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
                 break
