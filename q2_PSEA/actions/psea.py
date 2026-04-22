@@ -232,18 +232,15 @@ def run_iterative_peptide_analysis(
     processed_scores,
     pairs,
     peptide_sets,
+    prefit_splines,
     threshold,
     permutation_num,
     min_size,
     max_size,
-    spline_type,
-    degree,
     seed,
     p_val_thresh,
     nes_thresh,
-    dof=None,
     species_taxa=None,
-    epitope_map=None,
 ):
     """QIIME 2 pipeline: iteratively filter cross-reactive peptides for every
     sample pair.
@@ -260,33 +257,16 @@ def run_iterative_peptide_analysis(
     run_single_pair = ctx.get_action(
         "psea", "run_iterative_process_single_pair"
     )
-    compute_fit = ctx.get_action(
-        "psea", "_compute_pair_fit_and_residuals"
-    )
 
     pairs_df = pairs.view(pd.DataFrame)
     pairs_list = [
-        (str(row.iloc[0]), str(row.iloc[1]))
+        f"{str(row.iloc[0])}~{str(row.iloc[1])}"
         for _, row in pairs_df.iterrows()
     ]
 
     pair_gmt_dict = {pair: peptide_sets for pair in pairs_list}
     sig_species_found_dict = {pair: True for pair in pairs_list}
     tested_species_dict = {pair: [] for pair in pairs_list}
-
-    # Compute spline fit and residuals once per pair before iterating
-    pair_fit_artifact = {}
-    for pair in pairs_list:
-        sample_a, sample_b = pair
-        pair_fit_artifact[pair], = compute_fit(
-            processed_scores,
-            sample_a,
-            sample_b,
-            spline_type,
-            degree=degree,
-            dof=dof,
-            epitope_map=epitope_map,
-        )
 
     iteration_num = 1
 
@@ -297,8 +277,7 @@ def run_iterative_peptide_analysis(
             if not sig_species_found_dict[pair]:
                 continue
 
-            sample_a, sample_b = pair
-
+            sample_a, sample_b = pair.split("~")
             psea_table, updated_gmt = run_single_pair(
                 processed_scores=processed_scores,
                 peptide_sets=pair_gmt_dict[pair],
@@ -316,7 +295,7 @@ def run_iterative_peptide_analysis(
                     tested_species_dict[pair] != [] else None
                 ),
                 species_taxa=species_taxa,
-                precomputed_fit=pair_fit_artifact[pair],
+                precomputed_fit=prefit_splines[pair],
             )
 
             table_df = psea_table.view(pd.DataFrame)
@@ -343,7 +322,7 @@ def run_iterative_peptide_analysis(
         iteration_num += 1
 
     print("\nEnd of Iterative Peptide Analysis\n")
-    return list(pair_gmt_dict.values())
+    return pair_gmt_dict
 
 
 def make_psea_table(
@@ -385,7 +364,7 @@ def make_psea_table(
     # transformer
     pairs_list = list(
         pairs_df.apply(
-            lambda row: (str(row.iloc[0]), str(row.iloc[1])), axis=1
+            lambda row: f"{str(row.iloc[0])}~{str(row.iloc[1])}", axis=1
         )
     )
 
@@ -417,45 +396,9 @@ def make_psea_table(
             scores=epitope_zscore, pairs=pairs
         )
 
-    # ------------------------------------------------------------------
-    # Determine per-pair peptide sets (iterative or flat)
-    # ------------------------------------------------------------------
-    if iterative_analysis:
-        run_iterative = ctx.get_action(
-            "psea", "run_iterative_peptide_analysis"
-        )
-        filtered_gmts, = run_iterative(
-            processed_scores=processed_scores_art,
-            pairs=pairs,
-            peptide_sets=peptide_sets,
-            threshold=threshold,
-            permutation_num=permutation_num,
-            min_size=min_size,
-            max_size=max_size,
-            spline_type=spline_type,
-            degree=degree,
-            seed=seed,
-            p_val_thresh=p_val_thresh,
-            nes_thresh=nes_thresh,
-            dof=dof,
-            species_taxa=species_taxa,
-        )
-
-        pair_pep_sets_dict = {
-            pair: gmt for pair, gmt in zip(pairs_list, filtered_gmts.values())
-        }
-    else:
-        pair_pep_sets_dict = {pair: peptide_sets for pair in pairs_list}
-
-    # ------------------------------------------------------------------
-    # Final per-pair PSEA analysis
-    # ------------------------------------------------------------------
-    pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
-    psea_tables = {}
-
+    pair_splines = {}
     for pair in pairs_list:
-        sample_a, sample_b = pair
-        table_prefix = f"{sample_a}~{sample_b}"
+        sample_a, sample_b = pair.split("~")
 
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
@@ -468,6 +411,48 @@ def make_psea_table(
             dof=dof,
             epitope_map=mapped_epitope,
         )
+
+        pair_splines[pair] = spline_art
+
+    # ------------------------------------------------------------------
+    # Determine per-pair peptide sets (iterative or flat)
+    # ------------------------------------------------------------------
+    if iterative_analysis:
+        run_iterative = ctx.get_action(
+            "psea", "run_iterative_peptide_analysis"
+        )
+        pair_pep_sets_dict, = run_iterative(
+            processed_scores=processed_scores_art,
+            pairs=pairs,
+            peptide_sets=peptide_sets,
+            prefit_splines=pair_splines,
+            threshold=threshold,
+            permutation_num=permutation_num,
+            min_size=min_size,
+            max_size=max_size,
+            seed=seed,
+            p_val_thresh=p_val_thresh,
+            nes_thresh=nes_thresh,
+            species_taxa=species_taxa,
+        )
+
+    else:
+        pair_pep_sets_dict = {
+            pair: peptide_sets for pair in pairs_list
+        }
+
+    # ------------------------------------------------------------------
+    # Final per-pair PSEA analysis
+    # ------------------------------------------------------------------
+    pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
+    psea_tables = {}
+
+    for pair in pairs_list:
+        sample_a, sample_b = pair.split("~")
+
+        # Compute spline fit once per pair; reuse it for both the scatter
+        # plot data and as the precomputed_fit input to create_fgsea_table.
+        spline_art = pair_splines[pair]
 
         spline_df = spline_art.view(pd.DataFrame)
         x = spline_df["x"].dropna().to_numpy()
@@ -487,11 +472,11 @@ def make_psea_table(
             species_taxa=species_taxa,
             precomputed_fit=spline_art,
         )
-        psea_tables[table_prefix] = psea_table
+        psea_tables[pair] = psea_table
 
         pair_spline_dict["x"].extend(x.tolist())
         pair_spline_dict["y"].extend(yfit.tolist())
-        pair_spline_dict["pair"].extend([table_prefix] * len(x))
+        pair_spline_dict["pair"].extend([pair] * len(x))
 
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
@@ -573,8 +558,8 @@ def _compute_pair_fit_and_residuals(
     processed_scores = processed_scores.transpose()
     dof = ro.NULL if dof is None else dof
 
-    pair = (sample_a, sample_b)
-    data_sorted = processed_scores.loc[:, list(pair)].sort_values(by=sample_a)
+    pair = [sample_a, sample_b]
+    data_sorted = processed_scores.loc[:, pair].sort_values(by=sample_a)
     x = data_sorted.loc[:, sample_a].to_numpy()
     y = data_sorted.loc[:, sample_b].to_numpy()
 
@@ -589,7 +574,7 @@ def _compute_pair_fit_and_residuals(
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.smooth_spline(x, y)
 
-    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, list(pair)], 1)
+    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
     maxZ = pd.Series(
         [num for elem in maxZ for num in elem], index=data_sorted.index
     )

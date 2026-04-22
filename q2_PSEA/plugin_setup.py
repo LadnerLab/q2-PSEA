@@ -436,19 +436,16 @@ plugin.pipelines.register_function(
         "processed_scores": FeatureTable[Zscore],
         "pairs": PSEAPairs,
         "peptide_sets": GMT,
-        "epitope_map": FeatureData[MappedEpitope],
+        "prefit_splines": Collection[FeatureData[Spline]],
     },
     parameters={
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
         "max_size": Int,
-        "spline_type": Str % Choices(splines.SPLINE_TYPES),
-        "degree": Int,
         "seed": Int,
         "p_val_thresh": Float,
         "nes_thresh": Float,
-        "dof": Int,
         "species_taxa": Metadata,
     },
     parameter_descriptions={
@@ -456,12 +453,9 @@ plugin.pipelines.register_function(
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
         "max_size": "Maximum peptide-set size.",
-        "spline_type": "Spline method for Z-score fitting.",
-        "degree": "Polynomial degree for spline fitting.",
         "seed": "Random seed for GSEA permutations.",
         "p_val_thresh": "Adjusted p-value threshold for significance.",
         "nes_thresh": "Absolute NES threshold for significance.",
-        "dof": "Degrees of freedom for spline fitting.",
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),
@@ -470,7 +464,6 @@ plugin.pipelines.register_function(
         "processed_scores": "Log-scaled Z-score matrix for all samples.",
         "pairs": "TSV file listing sample pairs (one per row).",
         "peptide_sets": "Initial GMT peptide sets.",
-        "epitope_map": "Optional mapped-epitope table.",
     },
     outputs=[("filtered_peptide_sets", Collection[GMT])],
     output_descriptions={
