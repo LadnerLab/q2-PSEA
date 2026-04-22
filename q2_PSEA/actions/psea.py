@@ -259,10 +259,11 @@ def run_iterative_peptide_analysis(
     )
 
     pairs_df = pairs.view(pd.DataFrame)
-    pairs_list = [
-        f"{str(row.iloc[0])}~{str(row.iloc[1])}"
-        for _, row in pairs_df.iterrows()
-    ]
+    pairs_list = list(
+        pairs_df.apply(
+            lambda row: f"{str(row.iloc[0])}~{str(row.iloc[1])}", axis=1
+        )
+    )
 
     pair_gmt_dict = {pair: peptide_sets for pair in pairs_list}
     sig_species_found_dict = {pair: True for pair in pairs_list}
