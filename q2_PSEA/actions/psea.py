@@ -292,6 +292,9 @@ def make_psea_table(
     mapped_epitope = None
     epitope_zscore = None
 
+    # TODO: This is slow to do every time. Should introduce the ability to use
+    # cached processed results to make_psea_table. In theory, the only one we
+    # always need the unmapped version of is zscores
     if epitope is not None:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         mapped_epitope, = create_epitope_map(epitope, collapse)
@@ -339,7 +342,8 @@ def make_psea_table(
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = run_iterative(
-                processed_scores=processed_scores_art,
+                processed_scores=mapped_processed_scores_art if epitope is
+                not None else processed_scores_art,
                 peptide_sets=peptide_sets,
                 precomputed_fit=spline_art,
                 sample_a=sample_a,
