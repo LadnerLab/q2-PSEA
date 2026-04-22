@@ -187,7 +187,7 @@ def run_iterative_process_single_pair(
     tested_species = set()
     iteration = 1
     sig_found = True
-    while(sig_found):
+    while (sig_found):
         print(f"\nIteration: {iteration} for pair: ({sample_a}, {sample_b})")
         gmt_df = updated_peptide_sets.view(pd.DataFrame)
 
