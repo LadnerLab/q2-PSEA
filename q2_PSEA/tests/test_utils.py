@@ -5,8 +5,9 @@ from pandas.testing import assert_frame_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.utils import (
-    remove_peptides, remove_peptides_in_df_format,
-    collapse_residuals_to_epitope
+    collapse_residuals_to_epitope,
+    remove_peptides,
+    remove_peptides_in_df_format,
 )
 
 
@@ -23,10 +24,9 @@ class TestRemovePeptidesInDfFormat(TestPluginBase):
         )
 
     def test_removes_peptides_absent_from_gmt(self):
-        # scores has pep_00..pep_14; gmt covers pep_00..pep_08 via sp1..sp3
+        # scores has pep_00..pep_14; gmt covers pep_00..pep_08
         filtered, _ = remove_peptides_in_df_format(self.scores, self.gmt)
-        expected_peps = set(self.gmt["gene"].unique())
-        self.assertEqual(set(filtered.index), expected_peps)
+        self.assertEqual(set(filtered.index), set(self.gmt["gene"].unique()))
 
     def test_peptides_in_gmt_are_retained(self):
         filtered, _ = remove_peptides_in_df_format(self.scores, self.gmt)
@@ -41,14 +41,12 @@ class TestRemovePeptidesInDfFormat(TestPluginBase):
                 self.assertNotIn(pep, filtered.index)
 
     def test_returns_original_gmt_unchanged(self):
-        _, returned_gmt = remove_peptides_in_df_format(self.scores, self.gmt)
-        assert_frame_equal(returned_gmt, self.gmt)
+        _, returned = remove_peptides_in_df_format(self.scores, self.gmt)
+        assert_frame_equal(returned, self.gmt)
 
     def test_no_overlap_returns_empty_filtered(self):
-        gmt_no_overlap = pd.DataFrame(
-            {"term": ["sp_x"], "gene": ["pep_nonexistent"]}
-        )
-        filtered, _ = remove_peptides_in_df_format(self.scores, gmt_no_overlap)
+        gmt_none = pd.DataFrame({"term": ["sp_x"], "gene": ["pep_nonexistent"]})
+        filtered, _ = remove_peptides_in_df_format(self.scores, gmt_none)
         self.assertEqual(len(filtered), 0)
 
     def test_values_preserved_for_retained_peptides(self):
@@ -69,14 +67,14 @@ class TestRemovePeptidesDispatch(TestPluginBase):
             self.get_data_path("peptide-sets.tsv"), sep="\t"
         )
 
-    def test_dispatches_df_format_when_given_dataframe(self):
+    def test_dispatches_df_format_for_dataframe_input(self):
         filtered, _ = remove_peptides(self.scores, self.gmt)
         self.assertIsInstance(filtered, pd.DataFrame)
         self.assertEqual(set(filtered.index), set(self.gmt["gene"].unique()))
 
-    def test_unsupported_string_format_raises(self):
+    def test_unsupported_string_extension_raises(self):
         with self.assertRaises(AssertionError):
-            remove_peptides(self.scores, "file.unknown")
+            remove_peptides(self.scores, "file.xyz")
 
 
 class TestCollapseResidualsToEpitope(TestPluginBase):
@@ -92,7 +90,7 @@ class TestCollapseResidualsToEpitope(TestPluginBase):
         self.assertAlmostEqual(result["ep1"], 0.5)
         self.assertAlmostEqual(result["ep2"], -0.3)
 
-    def test_multiple_peptides_keeps_max_abs(self):
+    def test_multiple_peptides_keeps_max_abs_residual(self):
         emap = self._emap({"ep1": ["pep1", "pep2"]})
         res = pd.Series({"pep1": 0.5, "pep2": -0.8})
         result = collapse_residuals_to_epitope(res, emap)
@@ -105,7 +103,7 @@ class TestCollapseResidualsToEpitope(TestPluginBase):
         self.assertIn("pep_orphan", result.index)
         self.assertAlmostEqual(result["pep_orphan"], 0.9)
 
-    def test_peptide_in_multiple_epitopes(self):
+    def test_peptide_in_multiple_epitopes_carries_max_abs(self):
         emap = self._emap({"ep1": ["pep1", "pep2"], "ep2": ["pep1", "pep3"]})
         res = pd.Series({"pep1": 1.0, "pep2": 0.2, "pep3": 0.5})
         result = collapse_residuals_to_epitope(res, emap)

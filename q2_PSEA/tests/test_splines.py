@@ -29,14 +29,13 @@ class TestSmoothSpline(TestPluginBase):
         yfit = smooth_spline(x, y)
         self.assertTrue(np.all(np.isfinite(yfit)))
 
-    def test_follows_linear_trend(self):
-        """RMSE from the noiseless signal should be well under 1 unit."""
+    def test_follows_linear_trend_within_tolerance(self):
         x, y = _linear_data(n=60)
         yfit = smooth_spline(x, y)
         rmse = float(np.sqrt(np.mean((yfit - 2.0 * x) ** 2)))
         self.assertLess(rmse, 1.0)
 
-    def test_larger_dataset_no_errors(self):
+    def test_larger_dataset_runs_without_error(self):
         rng = np.random.default_rng(99)
         x = np.sort(rng.uniform(-5, 5, 100))
         y = x ** 2 + rng.normal(0, 0.5, 100)
