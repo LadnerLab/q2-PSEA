@@ -126,22 +126,11 @@ def enriched_subtypes(
             scores: pd.DataFrame, subtypes: pd.DataFrame, p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
-            split_column: str = None,
             peptide_library: str = 'IN2'
         ) -> pd.DataFrame:
     default_keys = ['species', 'subspecies', 'species-epitope', ]
 
-    # NOTE: This will definitely work if Category is chosen as split column
-    # which was the intended usage. If a column that is formatted wildly
-    # different from that is chosen, things may get hairy.
-    #
-    # Here we assume that a split column will have cells that are either a
-    # single value or a list of values of the same length as the list of
-    # peptides for its row
-    if split_column is not None:
-        keys = _get_keys(subtypes, split_column, default_keys)
-    else:
-        keys = default_keys
+    keys = _get_keys(subtypes, "Category", default_keys)
 
     filtered_scores = _filter_scores(
         scores, p_value, enrichment_score, include_negative_enrichment
@@ -175,12 +164,12 @@ def enriched_subtypes(
                     # Since this is uncollapsed, we know we are looking at one
                     # individual peptide. There won't be a list of subtypes and
                     # all that here, so index is 0
-                    found_split_value = _find_split_value(
-                        hit, split_column, index=0
+                    found_category = _find_split_value(
+                        hit, "Category", index=0
                     )
                     _count_enriched(
                         counts, species, species_subtype, epitope,
-                        found_split_value
+                        found_category
                     )
                 hits.apply(_count_uncollapsed, axis=1)
             else:
@@ -190,12 +179,12 @@ def enriched_subtypes(
                 for index, subtype in enumerate(hit['Subtype']):
                     species_subtype = f'{species}:{subtype}'
 
-                    found_split_value = _find_split_value(
-                        hit, split_column, index
+                    found_category = _find_split_value(
+                        hit, "Category", index
                     )
                     _count_enriched(
                         counts, species, species_subtype, epitope,
-                        found_split_value
+                        found_category
                     )
 
     filtered_scores.apply(_count, axis=1)
@@ -251,26 +240,26 @@ def _find_split_value(hit, split_column, index):
 
 
 def _count_enriched(counts, species, species_subtype, epitope,
-                    found_split_value):
+                    found_category):
     # Track species and split value if relevant
-    split_species = f'{found_split_value}species'
-    found_split_species = f'{found_split_value}{species}'
+    split_species = f'{found_category}species'
+    found_split_species = f'{found_category}{species}'
 
     if found_split_species not in counts[split_species]:
         counts[split_species][found_split_species] = 0
     counts[split_species][found_split_species] += 1
 
     # Track subspecies and split value if relevant
-    split_subtype = f'{found_split_value}subspecies'
-    found_split_subtype = f'{found_split_value}{species_subtype}'
+    split_subtype = f'{found_category}subspecies'
+    found_split_subtype = f'{found_category}{species_subtype}'
 
     if found_split_subtype not in counts[split_subtype]:
         counts[split_subtype][found_split_subtype] = 0
     counts[split_subtype][found_split_subtype] += 1
 
     # Track species and epitope including split value if relevant
-    split_species_epitope = f'{found_split_value}species-epitope'
-    found_split_species_epitope = f'{found_split_value}{species}-{epitope}'
+    split_species_epitope = f'{found_category}species-epitope'
+    found_split_species_epitope = f'{found_category}{species}-{epitope}'
 
     if found_split_species_epitope not in counts[split_species_epitope]:
         counts[split_species_epitope][found_split_species_epitope] = 0
