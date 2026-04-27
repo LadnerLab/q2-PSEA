@@ -97,7 +97,9 @@ class TestEpitopeZscore(TestPluginBase):
         # scores.tsv has features as rows; the view of FeatureTable[Zscore]
         # has samples as rows. epitope_zscore expects samples as rows.
         import qiime2
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         self.zscores = art.view(pd.DataFrame)
         self.epitope_map = pd.DataFrame(
@@ -185,8 +187,12 @@ class TestFilterScores(TestPluginBase):
 
     def test_concatenates_multiple_pair_tables(self):
         scores = {
-            "pairA": pd.DataFrame([{"p.adjust": 0.01, "enrichmentScore": 2.0}]),
-            "pairB": pd.DataFrame([{"p.adjust": 0.01, "enrichmentScore": 2.0}]),
+            "pairA": pd.DataFrame(
+                [{"p.adjust": 0.01, "enrichmentScore": 2.0}]
+            ),
+            "pairB": pd.DataFrame(
+                [{"p.adjust": 0.01, "enrichmentScore": 2.0}]
+            ),
         }
         result = _filter_scores(scores, 0.05, 1.0, True)
         self.assertEqual(len(result), 2)
@@ -252,7 +258,9 @@ class TestCountEnriched(TestPluginBase):
             "Viral-subspecies": {},
             "Viral-species-epitope": {},
         }
-        _count_enriched(counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "Viral-")
+        _count_enriched(
+            counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "Viral-"
+        )
         self.assertIn("Viral-InfluenzaA", counts["Viral-species"])
 
 
@@ -316,7 +324,9 @@ class TestEnrichedSubtypes(TestPluginBase):
             "species_name": "InfluenzaA",
         }])
         with self.assertRaises(KeyError):
-            enriched_subtypes(scores, self._subtypes(), split_column="NotAColumn")
+            enriched_subtypes(
+                scores, self._subtypes(), split_column="NotAColumn"
+            )
 
 
 if __name__ == "__main__":

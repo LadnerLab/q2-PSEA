@@ -9,7 +9,6 @@ from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
-    count_antibody_events,
     process_scores,
 )
 
@@ -56,28 +55,36 @@ class TestProcessScoresIntegration(TestPluginBase):
         self.assertSetEqual(set(result.index), {"sA", "sB"})
 
     def test_all_peptides_retained(self):
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         result = self._run()
         # FeatureTable[Zscore] view: samples as index, features as columns
         self.assertEqual(set(result.columns), set(raw.index))
 
     def test_zero_input_maps_to_zero(self):
         # raw z-score of 0 → 8+0=8; log2(8)-3 = 0
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         raw.iloc[:, :] = 0.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         result = self._run(scores=art)
         self.assertTrue(np.allclose(result.values, 0.0))
 
     def test_very_negative_input_clamps_at_negative_three(self):
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         raw.iloc[:, :] = -100.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         result = self._run(scores=art)
         self.assertTrue(np.allclose(result.values, -3.0))
 
     def test_known_value_transformed_correctly(self):
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         raw.iloc[:, :] = 5.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         result = self._run(scores=art)
@@ -85,7 +92,9 @@ class TestProcessScoresIntegration(TestPluginBase):
         self.assertTrue(np.allclose(result.values, expected))
 
     def test_two_pairs_selects_four_samples(self):
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         pairs_two = _load_pairs_art(self.get_data_path("pairs-two.tsv"))
         result, = self.method(scores=art, pairs=pairs_two)
@@ -107,7 +116,9 @@ class TestComputePairFitIntegration(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        raw = pd.read_csv(self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
 
@@ -137,14 +148,18 @@ class TestComputePairFitIntegration(TestPluginBase):
             self.assertIn(col, df.columns)
 
     def test_x_and_yfit_have_one_value_per_peptide(self):
-        raw = pd.read_csv(self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
         df = self._run().view(pd.DataFrame)
         n = len(raw)
         self.assertEqual(df["x"].dropna().shape[0], n)
         self.assertEqual(df["yfit"].dropna().shape[0], n)
 
     def test_maxz_and_deltaz_have_one_value_per_peptide(self):
-        raw = pd.read_csv(self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
         df = self._run().view(pd.DataFrame)
         n = len(raw)
         self.assertEqual(df["maxZ"].dropna().shape[0], n)
@@ -184,7 +199,9 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        raw = pd.read_csv(self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
         self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
@@ -225,7 +242,8 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
     def test_output_has_expected_columns(self):
         df = self._run().view(pd.DataFrame)
         for col in ("ID", "enrichmentScore", "NES", "p.adjust",
-                    "core_enrichment", "pvalue", "qvalue", "all_tested_peptides"):
+                    "core_enrichment", "pvalue", "qvalue",
+                    "all_tested_peptides"):
             self.assertIn(col, df.columns)
 
     def test_p_adjust_values_are_valid_probabilities(self):
@@ -322,8 +340,12 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         self.assertEqual(len(neg), 0)
 
     def test_multiple_pairs_accumulate_events(self):
-        art1 = self._make_psea_art([{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}])
-        art2 = self._make_psea_art([{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}])
+        art1 = self._make_psea_art(
+            [{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}]
+        )
+        art2 = self._make_psea_art(
+            [{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}]
+        )
         pos, _ = self.method(
             psea_tables={"pairA": art1, "pairB": art2},
             p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID",
@@ -377,7 +399,9 @@ class TestProcessScoresDirect(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         # process_scores expects samples×features view; import features-as-rows
         # then retrieve the samples×features view
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
@@ -393,15 +417,21 @@ class TestProcessScoresDirect(TestPluginBase):
 
     def test_all_peptides_retained(self):
         result = process_scores(self.scores_view, self._pairs(("sA", "sB")))
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         self.assertEqual(set(result.index), set(raw.index))
 
     def test_known_value_log_scaled(self):
         expected = log(13.0, 2) - 3  # log2(8+5) - 3
-        raw = pd.read_csv(self.get_data_path("scores.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
         raw.iloc[:, :] = 5.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        result = process_scores(art.view(pd.DataFrame), self._pairs(("sA", "sB")))
+        result = process_scores(
+            art.view(pd.DataFrame), self._pairs(("sA", "sB"))
+        )
         self.assertTrue(np.allclose(result.values, expected))
 
 
@@ -414,7 +444,9 @@ class TestComputePairFitDirect(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        raw = pd.read_csv(self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0)
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         self.view = art.view(pd.DataFrame)
 

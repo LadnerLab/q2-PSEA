@@ -2,7 +2,7 @@ import unittest
 
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_PSEA.types import PSEAPairs, PSEAAECounts, Spline
+from q2_PSEA.types import PSEAPairs, PSEAAECounts
 
 
 class TestSemanticTypes(TestPluginBase):
@@ -71,7 +71,9 @@ class TestPipelinesRegistered(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def test_run_iterative_process_registered(self):
-        self.assertIn("run_iterative_process_single_pair", self.plugin.pipelines)
+        self.assertIn(
+            "run_iterative_process_single_pair", self.plugin.pipelines
+        )
 
     def test_make_psea_table_registered(self):
         self.assertIn("make_psea_table", self.plugin.pipelines)

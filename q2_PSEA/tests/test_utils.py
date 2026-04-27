@@ -45,7 +45,9 @@ class TestRemovePeptidesInDfFormat(TestPluginBase):
         assert_frame_equal(returned, self.gmt)
 
     def test_no_overlap_returns_empty_filtered(self):
-        gmt_none = pd.DataFrame({"term": ["sp_x"], "gene": ["pep_nonexistent"]})
+        gmt_none = pd.DataFrame(
+            {"term": ["sp_x"], "gene": ["pep_nonexistent"]}
+        )
         filtered, _ = remove_peptides_in_df_format(self.scores, gmt_none)
         self.assertEqual(len(filtered), 0)
 

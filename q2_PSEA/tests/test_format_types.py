@@ -3,7 +3,9 @@ import unittest
 from qiime2.plugin import ValidationError
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_PSEA.format_types import PSEAPairsTSVFormat, PSEAAECountsTSVFormat, SplineTSVFormat
+from q2_PSEA.format_types import (
+    PSEAPairsTSVFormat, PSEAAECountsTSVFormat, SplineTSVFormat
+)
 
 
 def _write(fmt_cls, content):
@@ -84,7 +86,8 @@ class TestSplineTSVFormat(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def test_valid_spline_content(self):
-        content = "feature-id\tx\tyfit\tmaxZ\tdeltaZ\npep_00\t0.1\t0.1\t0.5\t0.0\n"
+        content = \
+            "feature-id\tx\tyfit\tmaxZ\tdeltaZ\npep_00\t0.1\t0.1\t0.5\t0.0\n"
         fmt = _write(SplineTSVFormat, content)
         fmt.validate()
 
