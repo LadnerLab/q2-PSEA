@@ -123,7 +123,9 @@ def _create_EpitopeID_row(epitope, collapse):
 
 
 def enriched_subtypes(
-            scores: pd.DataFrame, subtypes: pd.DataFrame, p_value: float = .05,
+            scores: pd.DataFrame,
+            subtypes: pd.DataFrame,
+            p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
             peptide_library: str = 'IN2'
