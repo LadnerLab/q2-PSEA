@@ -81,7 +81,6 @@ def _create_EpitopeID_row(epitope, collapse):
     epitope['ClusterID'] = epitope['ClusterID'].str.split(';')
     epitope['EpitopeWindow'] = epitope['EpitopeWindow'].str.split(';')
 
-    # TODO: This is likely quite inefficient, do in a better way
     epitope = epitope.explode(
         ['Species', 'Subtype', 'SpeciesID', 'ClusterID', 'EpitopeWindow']
     )
