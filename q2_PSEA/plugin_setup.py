@@ -796,11 +796,9 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=taxa_to_epitope,
     inputs={
-        'epitope': FeatureData[Epitope],
+        'epitope': FeatureData[MappedEpitope],
     },
-    parameters={
-        'collapse': Str % Choices(['Bacterial', 'Viral', 'Both'])
-    },
+    parameters={},
     outputs=[
         ('epitope_gmt', GMT),
     ],

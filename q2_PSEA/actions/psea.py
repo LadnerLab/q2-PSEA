@@ -314,10 +314,9 @@ def make_psea_table(
         mapped_zscores, = create_epitope_zscore(scores, epitope_map)
 
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
-        mapped_gmt, = create_epitope_gmt(epitope, collapse)
+        mapped_gmt, = create_epitope_gmt(epitope_map)
     elif epitope_map is not None:
         collapsed = True
-
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores

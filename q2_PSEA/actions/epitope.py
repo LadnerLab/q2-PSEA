@@ -61,16 +61,17 @@ def epitope_zscore(
     return result
 
 
-def taxa_to_epitope(
-            epitope: pd.DataFrame, collapse: str = 'Viral'
-        ) -> pd.DataFrame:
-    mapped = _create_EpitopeID_row(epitope, collapse)
-    mapped = mapped.reset_index()
-    mapped = mapped[['SpeciesID', 'EpitopeID']]
+def taxa_to_epitope(epitope: pd.DataFrame) -> pd.DataFrame:
+    epitope = epitope.reset_index()
+    epitope = epitope[['SpeciesID', 'EpitopeID']]
+    epitope = epitope.explode('SpeciesID')
+    epitope.drop_duplicates(inplace=True)
     # This matches the spec .gmt files are read into in q2-PSEA
-    mapped = mapped.rename(columns={'SpeciesID': 'term', 'EpitopeID': 'gene'})
+    epitope = epitope.rename(
+        columns={'SpeciesID': 'term', 'EpitopeID': 'gene'}
+    )
 
-    return mapped
+    return epitope
 
 
 def _create_EpitopeID_row(epitope, collapse):
