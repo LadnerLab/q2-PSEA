@@ -24,26 +24,6 @@ def create_epitope_map(
             'EpitopeID').agg(list).reset_index()
     epitope.set_index('EpitopeID', inplace=True)
 
-    # def validate_categories(row):
-    #     '''
-    #     Ensure the categories column is actually valid. After aggregating some
-    #     rows will have a list of multiple categories, these should just be the
-    #     same category multiple times.
-
-    #     1. Ensure that is the case
-    #     2. Make it just a single value not a list
-    #     '''
-    #     category_set = set(row['Category'])
-    #     if len(category_set) > 1:
-    #         raise ValueError(
-    #             'Collapsed epitope mapped some subtypes to one category and '
-    #             f'some to another. Offending row is: {row}'
-    #         )
-
-    #     return row['Category'][0]
-
-    # epitope['Category'] = epitope.apply(validate_categories, axis=1)
-
     return epitope
 
 
