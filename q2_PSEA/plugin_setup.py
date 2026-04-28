@@ -427,6 +427,9 @@ plugin.pipelines.register_function(
         "pairs": PSEAPairs,
         "peptide_sets": GMT,
         "epitope": FeatureData[Epitope],
+        "epitope_map": FeatureData[MappedEpitope],
+        "mapped_zscores": FeatureTable[Zscore],
+        "mapped_gmt": GMT
     },
     parameters={
         "threshold": Float,
@@ -503,6 +506,21 @@ plugin.pipelines.register_function(
             "Optional epitope table. When provided, peptide-level residuals"
             " are collapsed to the epitope level before GSEA."
         ),
+        "epitope_map": (
+            "Optional already collapsed epitope table. When provided, this"
+            " table is used in GSEA."
+            "NOTE: Must be passed with mapped_zscores and mapped_gmt."
+        ),
+        "mapped_zscores": (
+            "Optional already collapsed zscores. When provided, these"
+            " scores are used in GSEA but NOT for spline fitting."
+            "NOTE: Must be passed with eptiope_map and mapped_gmt."
+        ),
+        "mapped_gmt": (
+            "Optional already collapsed epitope peptide sets. When provided,"
+            " these peptides are used in GSEA."
+            "NOTE: Must be passed with epitope_map and mapped_zscores."
+        )
     },
     outputs=[
         ("scatter_plot", Visualization),

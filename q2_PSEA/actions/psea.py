@@ -215,8 +215,7 @@ def run_iterative_process_single_pair(
             if (
                 row["p.adjust"] < p_val_thresh
                 and abs(row["NES"]) > nes_thresh
-                and row_id
-                not in [s for s in tested_species]
+                and row_id not in tested_species
             ):
                 print(
                     f"Found {row.get('species_name', row['ID'])} in"
@@ -230,6 +229,7 @@ def run_iterative_process_single_pair(
 
                 gmt_df = gmt_df[~mask]
                 tested_species.add(row_id)
+
                 # TODO: I don't love calling make_artifact, but I also don't
                 # love the changes needed to get rid of it here
                 updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
@@ -252,6 +252,9 @@ def make_psea_table(
     species_taxa=None,
     species_colors=None,
     epitope=None,
+    epitope_map=None,
+    mapped_zscores=None,
+    mapped_gmt=None,
     collapse="Viral",
     p_val_thresh=0.05,
     nes_thresh=1,
@@ -265,6 +268,14 @@ def make_psea_table(
     seed=149,
 ):
     start_time = time.perf_counter()
+
+
+    if any([epitope_map, mapped_zscores, mapped_gmt]) \
+            and not all([epitope_map, mapped_zscores, mapped_gmt]):
+        raise ValueError(
+            "Please pass either all of 'epitope_map',"" 'mapped_zscores',"
+            " and 'mapped_gmt' or none of them"
+        )
 
     volcano = ctx.get_action("psea", "volcano")
     zscatter = ctx.get_action("psea", "zscatter")
@@ -292,31 +303,31 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing
     # ------------------------------------------------------------------
-    mapped_epitope = None
-    epitope_zscore = None
+    collapsed = False
+    if epitope is not None and epitope_map is None:
+        collapsed = True
 
-    # TODO: This is slow to do every time. Should introduce the ability to use
-    # cached processed results to make_psea_table. In theory, the only one we
-    # always need the unmapped version of is zscores
-    if epitope is not None:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        mapped_epitope, = create_epitope_map(epitope, collapse)
+        epitope_map, = create_epitope_map(epitope, collapse)
 
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
-        epitope_zscore, = create_epitope_zscore(scores, mapped_epitope)
+        mapped_zscores, = create_epitope_zscore(scores, epitope_map)
 
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
-        peptide_sets, = create_epitope_gmt(epitope, collapse)
+        mapped_gmt, = create_epitope_gmt(epitope, collapse)
+    elif epitope_map is not None:
+        collapsed = True
+
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
     # ------------------------------------------------------------------
-    processed_scores_art, = process_scores_action(scores=scores, pairs=pairs)
+    processed_scores, = process_scores_action(scores=scores, pairs=pairs)
 
-    mapped_processed_scores_art = None
-    if epitope is not None:
-        mapped_processed_scores_art, = process_scores_action(
-            scores=epitope_zscore, pairs=pairs
+    processed_mapped_scores = None
+    if collapsed:
+        processed_mapped_scores, = process_scores_action(
+            scores=mapped_zscores, pairs=pairs
         )
 
     pair_splines = {}
@@ -329,13 +340,13 @@ def make_psea_table(
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
         spline_art, = compute_fit(
-            processed_scores=processed_scores_art,
+            processed_scores=processed_scores,
             sample_a=sample_a,
             sample_b=sample_b,
             spline_type=spline_type,
             degree=degree,
             dof=dof,
-            epitope_map=mapped_epitope,
+            epitope_map=epitope_map,
         )
 
         pair_splines[pair] = spline_art
@@ -345,9 +356,9 @@ def make_psea_table(
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = run_iterative(
-                processed_scores=mapped_processed_scores_art if epitope is
-                not None else processed_scores_art,
-                peptide_sets=peptide_sets,
+                processed_scores=processed_mapped_scores if collapsed else
+                processed_scores,
+                peptide_sets=mapped_gmt if collapsed else peptide_sets,
                 precomputed_fit=spline_art,
                 sample_a=sample_a,
                 sample_b=sample_b,
@@ -362,7 +373,8 @@ def make_psea_table(
             )
 
         else:
-            pair_pep_sets_dict[pair] = peptide_sets
+            pair_pep_sets_dict[pair] = \
+                mapped_gmt if collapsed else peptide_sets
 
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
@@ -372,8 +384,8 @@ def make_psea_table(
         yfit = spline_df["yfit"].dropna().to_numpy()
 
         psea_table, = create_fgsea_table(
-            processed_scores=mapped_processed_scores_art if epitope is not None
-            else processed_scores_art,
+            processed_scores=processed_mapped_scores if collapsed else
+            processed_scores,
             peptide_sets=pair_pep_sets_dict[pair],
             sample_a=sample_a,
             sample_b=sample_b,
@@ -409,8 +421,7 @@ def make_psea_table(
 
         scatter_plot, = zscatter(
             zscores=(
-                mapped_processed_scores_art if epitope is not None
-                else processed_scores_art
+                processed_mapped_scores if collapsed else processed_scores
             ),
             pairs=pairs,
             spline_file=spline_file,
