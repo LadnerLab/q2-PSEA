@@ -56,17 +56,20 @@ def epitope_zscore(
     observations = list(epitope_map.index)
 
     data = []
-    for _, row in epitope_map.iterrows():
+
+    def get_max_z_scores_per_sample(row):
         max_z_scores_per_sample = []
+        sample_zscores = zscores.columns[zscores.columns.isin(row['CodeName'])]
 
-        # Filter the scores dataframe to only include columns corresponding to
-        # the peptides we're looking at
-        z_scores = zscores.columns[zscores.columns.isin(row['CodeName'])]
-
-        for _, row in zscores[z_scores.values].iterrows():
-            max_z_scores_per_sample.append(max(row.values, key=abs))
+        zscores[sample_zscores.values].apply(
+            lambda row: max_z_scores_per_sample.append(
+                max(row.values, key=abs)
+            ), axis=1
+        )
 
         data.append(max_z_scores_per_sample)
+
+    epitope_map.apply(get_max_z_scores_per_sample, axis=1)
 
     data = np.array(data)
     table = Table(data, observations, samples)
@@ -207,13 +210,16 @@ def _filter_scores(scores, p_value, enrichment_score,
 
 
 def _count_enriched(counts, species_id, species_name, epitope, subtype):
-    # On these first two levels, epitope and subtype are the same
     if species_id not in counts['epitope']:
         counts['epitope'][species_id] = {}
+
+    if species_id not in counts['subtype']:
         counts['subtype'][species_id] = {}
 
     if species_name not in counts['epitope'][species_id]:
         counts['epitope'][species_id][species_name] = {}
+
+    if species_name not in counts['subtype'][species_id]:
         counts['subtype'][species_id][species_name] = {}
 
     if epitope not in counts['epitope'][species_id][species_name]:
