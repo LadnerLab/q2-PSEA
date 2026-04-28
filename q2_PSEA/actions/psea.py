@@ -242,6 +242,7 @@ def run_iterative_process_single_pair(
     return updated_peptide_sets
 
 
+# TODO: Cannot run in parallel, need to debug that
 def make_psea_table(
     ctx,
     scores,
