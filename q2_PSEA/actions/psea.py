@@ -333,14 +333,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Parse pairs list
     # ------------------------------------------------------------------
-    pairs_df = pairs.view(pd.DataFrame)
-    # TODO: This needs to either be done differently or turned into a
-    # transformer
-    pairs_list = list(
-        pairs_df.apply(
-            lambda row: f"{str(row.iloc[0])}~{str(row.iloc[1])}", axis=1
-        )
-    )
+    pairs_list = pairs.view(list)
 
     # ------------------------------------------------------------------
     # Handle epitope collapsing

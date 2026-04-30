@@ -109,6 +109,18 @@ def _df_to_psea_pairs_tsv(df: pd.DataFrame) -> PSEAPairsTSVFormat:
     df.to_csv(str(result), sep="\t", index=False)
     return result
 
+@plugin.register_transformer
+def _psea_pairs_tsv_to_list(ff: PSEAPairsTSVFormat) -> list:
+    pairs = []
+    with open(str(ff)) as fh:
+        # Skip header
+        fh.readline()
+        for line in fh.readlines():
+            # rstrip to ensure newline is gone then replace tabs with ~ for
+            # pair name
+            pairs.append(line.rstrip().replace("\t", "~"))
+
+    return pairs
 
 @plugin.register_transformer
 def _ae_counts_tsv_to_df(ff: PSEAAECountsTSVFormat) -> pd.DataFrame:
