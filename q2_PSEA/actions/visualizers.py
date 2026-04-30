@@ -22,13 +22,8 @@ def volcano(
     y_threshold: float = 0.05,
     log: bool = True,
     xy_labels: list = ["x", "y"],
-    vis_outputs_dir: str = None,
-) -> None:
+ ) -> None:
     alt.data_transformers.disable_max_rows()
-
-    if vis_outputs_dir:
-        plot_output_dir = os.path.join(vis_outputs_dir, "volcano_plots")
-        os.mkdir(plot_output_dir)
 
     if psea_tables is not None:
         x = []
@@ -169,52 +164,6 @@ def volcano(
 
     final_chart.save(os.path.join(output_dir, "index.html"))
 
-    if vis_outputs_dir:
-        volcano_pair_df = {
-            group: df for group, df in volcano_df.groupby("pair")
-        }
-        if taxa:
-            highlight_pair_df = {
-                group: df for group, df in highlight_df.groupby("pair")
-            }
-
-        for pair in pairs_list:
-            final_chart = None
-            if pair in volcano_pair_df.keys():
-                volcano_chart = alt.Chart(
-                    volcano_pair_df[pair],
-                    title=alt.TitleParams(pair, anchor="middle"),
-                ).mark_circle(size=50, color="black").encode(
-                    x=alt.X("x:Q", title=xy_labels[0]),
-                    y=alt.Y("y:Q", title=xy_labels[1], sort=sort),
-                )
-                final_chart = volcano_chart
-
-            if taxa and pair in highlight_pair_df.keys():
-                highlight_chart = alt.Chart(
-                    highlight_pair_df[pair]
-                ).mark_circle(size=60, filled=True, opacity=1.0).encode(
-                    x=alt.X("x:Q", title=xy_labels[0]),
-                    y=alt.Y("y:Q", title=xy_labels[1], sort=sort),
-                    color=alt.Color(
-                        "taxa:N", scale=color_scale, legend=legend
-                    ),
-                    tooltip="taxa",
-                )
-                if final_chart is not None:
-                    final_chart = alt.layer(
-                        final_chart, highlight_chart
-                    ).resolve_scale(color="independent")
-                else:
-                    final_chart = highlight_chart
-
-            if final_chart is not None:
-                final_chart.save(
-                    os.path.join(plot_output_dir, f"{pair}_volcano.html")
-                )
-            else:
-                print(f"Skipped volcano plot for {pair}")
-
 
 def zscatter(
     output_dir: str,
@@ -227,13 +176,8 @@ def zscatter(
     taxa_access: str = None,
     spline_file: str = None,
     highlight_threshold: float = 0.05,
-    vis_outputs_dir: str = None,
 ) -> None:
     alt.data_transformers.disable_max_rows()
-
-    if vis_outputs_dir:
-        plot_output_dir = os.path.join(vis_outputs_dir, "scatter_plots")
-        os.mkdir(plot_output_dir)
 
     if psea_tables is not None:
         assert p_val_access, (
@@ -438,86 +382,6 @@ def zscatter(
 
     final_chart.save(os.path.join(output_dir, "index.html"))
 
-    if vis_outputs_dir:
-        heatmap_pair_df = {
-            pair: df for pair, df in heatmap_df.groupby("pair")
-        }
-        if spline_file:
-            spline_pair_df = {
-                pair: df for pair, df in spline_df.groupby("pair")
-            }
-        if psea_tables is not None:
-            highlight_pair_df = {
-                pair: df for pair, df in highlight_df.groupby("pair")
-            }
-
-        for pair in pairs_list:
-            final_chart = None
-            if pair in heatmap_pair_df.keys():
-                heatmap_chart = alt.Chart(
-                    heatmap_pair_df[pair],
-                    width=chart_width,
-                    height=chart_height,
-                    title=alt.TitleParams(pair, anchor="middle"),
-                ).mark_rect().encode(
-                    alt.X("bin_x_start:Q", title="Time Point 1"),
-                    alt.X2("bin_x_end:Q"),
-                    alt.Y("bin_y_start:Q", title="Time Point 2"),
-                    alt.Y2("bin_y_end:Q"),
-                    alt.Color(
-                        "count:Q",
-                        scale=alt.Scale(scheme="greys"),
-                        legend=alt.Legend(title="Point Frequency"),
-                    ),
-                )
-                final_chart = heatmap_chart
-
-            if spline_file and pair in spline_pair_df.keys():
-                spline_chart = alt.Chart(
-                    spline_pair_df[pair]
-                ).mark_square(size=20).encode(
-                    x=alt.X("x:Q"),
-                    y=alt.Y("y:Q"),
-                    color=alt.Color(
-                        "x:N",
-                        scale=alt.Scale(range=["#FF0000"]),
-                        legend=None,
-                    ),
-                )
-                if final_chart is not None:
-                    final_chart = alt.layer(final_chart, spline_chart)
-                else:
-                    final_chart = spline_chart
-
-            if highlight_df is not None and pair in highlight_pair_df.keys():
-                highlight_chart = alt.Chart(
-                    highlight_pair_df[pair]
-                ).mark_point(filled=True, size=60).encode(
-                    x=alt.X("x:Q"),
-                    y=alt.Y("y:Q"),
-                    color=alt.Color(
-                        "taxa:N", scale=color_scale, legend=legend
-                    ),
-                    shape=shape,
-                    tooltip=["peptide", "taxa"],
-                )
-                if final_chart is not None:
-                    final_chart = alt.layer(
-                        final_chart, highlight_chart
-                    ).resolve_scale(
-                        color="independent",
-                        shape="independent",
-                    )
-                else:
-                    final_chart = highlight_chart
-
-            if final_chart is not None:
-                final_chart.save(
-                    os.path.join(plot_output_dir, f"{pair}_scatter.html")
-                )
-            else:
-                print(f"Skipped scatter plot for {pair}")
-
 
 def aeplots(
     output_dir: str,
@@ -526,7 +390,6 @@ def aeplots(
     colors_file: qiime2.Metadata = None,
     xy_access: list = ["Events", "Species"],
     xy_labels: list = ["Number of AEs in cohort", "Species"],
-    vis_outputs_dir: str = None,
 ) -> None:
     alt.data_transformers.disable_max_rows()
 
@@ -593,5 +456,3 @@ def aeplots(
     ).resolve_scale(y="independent")
 
     final_chart.save(os.path.join(output_dir, "index.html"))
-    if vis_outputs_dir:
-        final_chart.save(os.path.join(vis_outputs_dir, "aeplots.html"))

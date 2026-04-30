@@ -356,7 +356,7 @@ plugin.methods.register_function(
 # Register run_iterative_process_single_pair as a pipeline
 # ---------------------------------------------------------------------------
 
-plugin.pipelines.register_function(
+plugin.methods.register_function(
     function=run_iterative_process_single_pair,
     inputs={
         "processed_scores": FeatureTable[Zscore],
@@ -587,7 +587,6 @@ plugin.visualizers.register_function(
         "log": Bool,
         "xy_labels": List[Str],
         "colors_file": Metadata,
-        "vis_outputs_dir": Str,
     },
     input_descriptions={
         "pairs": (
@@ -627,10 +626,6 @@ plugin.visualizers.register_function(
         "colors_file": (
             "Optional Metadata mapping species names (IDs) to HEX color codes."
         ),
-        "vis_outputs_dir": (
-            "Optional directory to write per-pair HTML files outside of the"
-            " QIIME 2 visualization."
-        ),
     },
     name="Volcano Visualizer",
     description=(
@@ -668,7 +663,6 @@ plugin.visualizers.register_function(
         "taxa_access": Str,
         "highlight_threshold": Float,
         "colors_file": Metadata,
-        "vis_outputs_dir": Str,
     },
     parameter_descriptions={
         "spline_file": (
@@ -686,10 +680,6 @@ plugin.visualizers.register_function(
         ),
         "colors_file": (
             "Optional Metadata mapping species names (IDs) to HEX color codes."
-        ),
-        "vis_outputs_dir": (
-            "Optional directory to write per-pair HTML files outside of the"
-            " QIIME 2 visualization."
         ),
     },
     name="Z Score Scatter Visualization",
@@ -724,7 +714,6 @@ plugin.visualizers.register_function(
         "xy_access": List[Str],
         "xy_labels": List[Str],
         "colors_file": Metadata,
-        "vis_outputs_dir": Str,
     },
     parameter_descriptions={
         "xy_access": (
@@ -734,10 +723,6 @@ plugin.visualizers.register_function(
         "xy_labels": "Axis labels for x and y, respectively.",
         "colors_file": (
             "Optional Metadata mapping species names (IDs) to HEX color codes."
-        ),
-        "vis_outputs_dir": (
-            "Optional directory to write an HTML file outside of the QIIME 2"
-            " visualization."
         ),
     },
     name="Antibody Events Plots Visualizer",
