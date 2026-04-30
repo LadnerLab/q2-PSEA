@@ -160,12 +160,12 @@ def enriched_subtypes(
     filtered_scores.apply(_count, axis=1)
     for key, value in counts.items():
         df = pd.DataFrame.from_dict(
-            {(species_id, species_name, epitope_subtype): count
-              for species_id, inner in value.items()
-              for species_name, inner_inner in inner.items()
-              for epitope_subtype, count in inner_inner.items()
-            },
-            orient='index'
+            {
+                (species_id, species_name, epitope_subtype): count
+                for species_id, inner in value.items()
+                for species_name, inner_inner in inner.items()
+                for epitope_subtype, count in inner_inner.items()
+            }, orient='index'
         )
         df.index = pd.MultiIndex.from_tuples(
             df.index,
