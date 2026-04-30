@@ -376,7 +376,6 @@ def make_psea_table(
 
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
-        print(pair)
         sample_a, sample_b = pair.split("~")
 
         # Compute spline fit once per pair; reuse it for both the scatter
