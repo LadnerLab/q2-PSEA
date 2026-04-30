@@ -109,6 +109,7 @@ def _df_to_psea_pairs_tsv(df: pd.DataFrame) -> PSEAPairsTSVFormat:
     df.to_csv(str(result), sep="\t", index=False)
     return result
 
+
 @plugin.register_transformer
 def _psea_pairs_tsv_to_list(ff: PSEAPairsTSVFormat) -> list:
     pairs = []
@@ -121,6 +122,7 @@ def _psea_pairs_tsv_to_list(ff: PSEAPairsTSVFormat) -> list:
             pairs.append(line.rstrip().replace("\t", "~"))
 
     return pairs
+
 
 @plugin.register_transformer
 def _ae_counts_tsv_to_df(ff: PSEAAECountsTSVFormat) -> pd.DataFrame:
@@ -668,7 +670,7 @@ plugin.visualizers.register_function(
             "Per-pair PSEA result tables used to highlight leading-edge"
             " peptides for significant taxa."
         ),
-        "splines" : "Collection of splines per pair."
+        "splines": "Collection of splines per pair."
     },
     parameters={
         "p_val_access": Str,

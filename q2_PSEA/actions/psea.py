@@ -164,10 +164,10 @@ def run_iterative_process_single_pair(
     seed: int,
     p_val_thresh: float,
     nes_thresh: float,
-    epitope_map: pd.DataFrame=None,
-    mapped_peptide_sets: pd.DataFrame=None,
-    precomputed_fit: pd.DataFrame=None,
-    species_taxa: qiime2.Metadata=None,
+    epitope_map: pd.DataFrame = None,
+    mapped_peptide_sets: pd.DataFrame = None,
+    precomputed_fit: pd.DataFrame = None,
+    species_taxa: qiime2.Metadata = None,
 ) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
@@ -231,7 +231,7 @@ def _filter_peptide_sets(
             nes_thresh: int,
             sample_a: str,
             sample_b: str,
-            epitope_map: pd.DataFrame=None,
+            epitope_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
     psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
 
