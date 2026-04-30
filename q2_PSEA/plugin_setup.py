@@ -51,6 +51,8 @@ from qiime2.plugin import (
     Str,
     Visualization,
     Choices,
+    Properties,
+    TypeMatch,
 )
 
 
@@ -136,14 +138,16 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
 # Register process_scores as a method
 # ---------------------------------------------------------------------------
 
+PROCESS_SCORES_MATCH = TypeMatch([Zscore, Zscore % Properties("mapped")])
+
 plugin.methods.register_function(
     function=process_scores,
     inputs={
-        "scores": FeatureTable[Zscore],
+        "scores": FeatureTable[PROCESS_SCORES_MATCH],
         "pairs": PSEAPairs,
     },
     parameters={},
-    outputs=[("processed_scores", FeatureTable[Zscore])],
+    outputs=[("processed_scores", FeatureTable[PROCESS_SCORES_MATCH])],
     input_descriptions={
         "scores": "Z-score matrix (FeatureTable[Zscore]).",
         "pairs": (
@@ -359,7 +363,7 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
-        "mapped_peptide_sets": GMT,
+        "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
         "sample_a": Str,
@@ -401,7 +405,7 @@ plugin.pipelines.register_function(
         "epitope_map": (
             "Optional epitope map passed in if data is collapsed to epitope"
             " level"
-        ),''
+        ),
         "mapped_peptide_sets": (
             "Optional mapped peptide sets passed in if data is collapsed to"
             " epitope level."
@@ -438,8 +442,8 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "epitope": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
-        "mapped_zscores": FeatureTable[Zscore],
-        "mapped_gmt": GMT
+        "mapped_zscores": FeatureTable[Zscore % Properties("mapped")],
+        "mapped_gmt": GMT % Properties("mapped")
     },
     parameters={
         "threshold": Float,
@@ -780,7 +784,7 @@ plugin.methods.register_function(
     },
     parameters={},
     outputs=[
-        ('epitope_zscore', FeatureTable[Zscore]),
+        ('epitope_zscore', FeatureTable[Zscore % Properties("mapped")]),
     ],
     input_descriptions={
         'zscores': 'FeatureTable containing the code names of peptides and '
@@ -810,7 +814,7 @@ plugin.methods.register_function(
     },
     parameters={},
     outputs=[
-        ('epitope_gmt', GMT),
+        ('epitope_gmt', GMT % Properties("mapped")),
     ],
     input_descriptions={
         'epitope': 'Feature table containing at least SpeciesID, ClusterID, '
