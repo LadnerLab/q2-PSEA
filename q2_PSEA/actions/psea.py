@@ -438,6 +438,8 @@ def make_psea_table(
             precomputed_fit=spline_art,
         )
 
+        psea_tables[pair] = psea_table
+
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
     # ------------------------------------------------------------------
