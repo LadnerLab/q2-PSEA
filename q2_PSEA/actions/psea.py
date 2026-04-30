@@ -283,7 +283,6 @@ def _get_mapped_peps(epitope_df, all_tested_features):
     return epitopes
 
 
-# TODO: Cannot run in parallel, need to debug that
 def make_psea_table(
     ctx,
     scores,
@@ -412,7 +411,6 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
-        # TODO: Calc new splines here?
         psea_tables[pair], = create_fgsea_table(
             processed_scores=processed_mapped_scores if collapsed else
             processed_scores,
@@ -472,7 +470,7 @@ def make_psea_table(
     )
 
     end_time = time.perf_counter()
-    # TODO: This becomes meaningless
+    # TODO: This becomes meaningless when running in parallel
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables
