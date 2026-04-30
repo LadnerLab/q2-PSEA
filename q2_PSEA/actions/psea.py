@@ -153,23 +153,22 @@ def count_antibody_events(
 
 
 def run_iterative_process_single_pair(
-    ctx,
-    processed_scores,
-    peptide_sets,
-    sample_a,
-    sample_b,
-    threshold,
-    permutation_num,
-    min_size,
-    max_size,
-    seed,
-    p_val_thresh,
-    nes_thresh,
-    epitope_map=None,
-    mapped_peptide_sets=None,
-    precomputed_fit=None,
-    species_taxa=None,
-):
+    processed_scores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    sample_a: str,
+    sample_b: str,
+    threshold: float,
+    permutation_num: int,
+    min_size: int,
+    max_size: int,
+    seed: int,
+    p_val_thresh: float,
+    nes_thresh: float,
+    epitope_map: pd.DataFrame=None,
+    mapped_peptide_sets: pd.DataFrame=None,
+    precomputed_fit: pd.DataFrame=None,
+    species_taxa: qiime2.Metadata=None,
+) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
 
@@ -182,22 +181,19 @@ def run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
-    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
-
-    if epitope_map:
-        epitope_df = epitope_map.view(pd.DataFrame)
-    updated_peptide_sets = \
-        mapped_peptide_sets if mapped_peptide_sets else peptide_sets
-    gmt_df = mapped_peptide_sets.view(pd.DataFrame)
+    updated_peptide_sets = (
+        mapped_peptide_sets if mapped_peptide_sets is not None
+        else peptide_sets
+    )
 
     tested_species = set()
     iteration = 1
     sig_found = True
-
     while (sig_found):
         print(f"\nIteration: {iteration} for pair: ({sample_a}, {sample_b})")
 
-        psea_table, = create_fgsea_table(
+        # Called as a raw Python function not a QIIME 2 Method
+        psea_table = create_fgsea_table_for_pair(
             processed_scores=processed_scores,
             peptide_sets=updated_peptide_sets,
             sample_a=sample_a,
@@ -211,48 +207,69 @@ def run_iterative_process_single_pair(
             precomputed_fit=precomputed_fit,
         )
 
-        table_df = psea_table.view(pd.DataFrame)
-        table_df_sorted = table_df.sort_values(
-            by=["p.adjust"], ascending=True
+        updated_peptide_sets, tested_species, sig_found = _filter_peptide_sets(
+            psea_table,
+            updated_peptide_sets,
+            tested_species,
+            p_val_thresh,
+            nes_thresh,
+            sample_a,
+            sample_b,
+            epitope_map=epitope_map
         )
-
-        for _, row in table_df_sorted.iterrows():
-            row_id = str(row["ID"])
-            if (
-                row["p.adjust"] < p_val_thresh
-                and abs(row["NES"]) > nes_thresh
-                and row_id not in tested_species
-            ):
-                print(
-                    f"Found {row.get('species_name', row['ID'])} in"
-                    f" ({sample_a}, {sample_b}) to be significant"
-                )
-                all_tested_peps = set(row["all_tested_peptides"].split("/"))
-
-                # TODO: In principle this should work, but I'm not seeing it
-                # filter anything
-                if epitope_map:
-                    all_tested_peps = _get_mapped_peps(
-                        epitope_df, all_tested_peps
-                    )
-
-                mask = (
-                    (gmt_df["term"].astype(str) != row_id)
-                    & gmt_df["gene"].isin(all_tested_peps)
-                )
-
-                gmt_df = gmt_df[~mask]
-                tested_species.add(row_id)
-                # TODO: I don't love calling make_artifact, but I also don't
-                # love the changes needed to get rid of it here
-                updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
-                break
-        else:
-            sig_found = False
 
         iteration += 1
 
     return updated_peptide_sets
+
+
+def _filter_peptide_sets(
+            psea_table: pd.DataFrame,
+            updated_peptide_sets: pd.DataFrame,
+            tested_species: set,
+            p_val_thresh: int,
+            nes_thresh: int,
+            sample_a: str,
+            sample_b: str,
+            epitope_map: pd.DataFrame=None,
+        ) -> tuple[pd.DataFrame, set, bool]:
+    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
+
+    sig_found = True
+    for _, row in psea_table.iterrows():
+        row_id = str(row["ID"])
+        if (
+            row["p.adjust"] < p_val_thresh
+            and abs(row["NES"]) > nes_thresh
+            and row_id not in tested_species
+        ):
+            print(
+                f"Found {row.get('species_name', row['ID'])} in"
+                f" ({sample_a}, {sample_b}) to be significant"
+            )
+            all_tested_peps = set(row["all_tested_peptides"].split("/"))
+
+            # TODO: In principle this should work, but I'm not seeing it
+            # filter anything
+            #
+            # Write unit test
+            if epitope_map is not None:
+                all_tested_peps = _get_mapped_peps(
+                    epitope_map, all_tested_peps
+                )
+
+            mask = (
+                (updated_peptide_sets["term"].astype(str) != row_id)
+                & updated_peptide_sets["gene"].isin(all_tested_peps)
+            )
+
+            updated_peptide_sets = updated_peptide_sets[~mask]
+            tested_species.add(row_id)
+            break
+    else:
+        sig_found = False
+
+    return updated_peptide_sets, tested_species, sig_found
 
 
 # TODO: optimize this.
@@ -357,7 +374,9 @@ def make_psea_table(
     pair_pep_sets_dict = {}
     pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
     psea_tables = {}
+    # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
+        print(pair)
         sample_a, sample_b = pair.split("~")
 
         # Compute spline fit once per pair; reuse it for both the scatter
@@ -403,6 +422,7 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
+        # TODO: This is a blocking operation, need to ditch it
         spline_df = spline_art.view(pd.DataFrame)
         x = spline_df["x"].dropna().to_numpy()
         yfit = spline_df["yfit"].dropna().to_numpy()
@@ -449,7 +469,7 @@ def make_psea_table(
                 processed_mapped_scores if collapsed else processed_scores
             ),
             pairs=pairs,
-            spline_file=spline_file,
+            spline_file=pair_splines,
             p_val_access="p.adjust",
             le_peps_access="core_enrichment",
             taxa_access=taxa_access,
@@ -478,6 +498,7 @@ def make_psea_table(
     )
 
     end_time = time.perf_counter()
+    # TODO: This becomes meaningless
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables
