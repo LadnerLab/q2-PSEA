@@ -373,7 +373,7 @@ def make_psea_table(
 
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
-        spline_art, = compute_fit(
+        pair_splines[pair], = compute_fit(
             processed_scores=processed_scores,
             sample_a=sample_a,
             sample_b=sample_b,
@@ -383,8 +383,6 @@ def make_psea_table(
             epitope_map=epitope_map,
         )
 
-        pair_splines[pair] = spline_art
-
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
@@ -393,7 +391,7 @@ def make_psea_table(
                 processed_scores=processed_mapped_scores if collapsed else
                 processed_scores,
                 peptide_sets=peptide_sets,
-                precomputed_fit=spline_art,
+                precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
                 mapped_peptide_sets=mapped_gmt,
                 sample_a=sample_a,
@@ -415,7 +413,7 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         # TODO: Calc new splines here?
-        psea_table, = create_fgsea_table(
+        psea_tables[pair], = create_fgsea_table(
             processed_scores=processed_mapped_scores if collapsed else
             processed_scores,
             peptide_sets=pair_pep_sets_dict[pair],
@@ -427,10 +425,8 @@ def make_psea_table(
             max_size=max_size,
             seed=seed,
             species_taxa=species_taxa,
-            precomputed_fit=spline_art,
+            precomputed_fit=pair_splines[pair],
         )
-
-        psea_tables[pair] = psea_table
 
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
