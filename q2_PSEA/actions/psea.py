@@ -372,8 +372,8 @@ def make_psea_table(
 
     pair_splines = {}
     pair_pep_sets_dict = {}
-    pair_spline_dict = {"x": list(), "y": list(), "pair": list()}
     psea_tables = {}
+
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
         print(pair)
@@ -422,11 +422,6 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
-        # TODO: This is a blocking operation, need to ditch it
-        spline_df = spline_art.view(pd.DataFrame)
-        x = spline_df["x"].dropna().to_numpy()
-        yfit = spline_df["yfit"].dropna().to_numpy()
-
         # TODO: Calc new splines here?
         psea_table, = create_fgsea_table(
             processed_scores=processed_mapped_scores if collapsed else
@@ -442,11 +437,6 @@ def make_psea_table(
             species_taxa=species_taxa,
             precomputed_fit=spline_art,
         )
-        psea_tables[pair] = psea_table
-
-        pair_spline_dict["x"].extend(x.tolist())
-        pair_spline_dict["y"].extend(yfit.tolist())
-        pair_spline_dict["pair"].extend([pair] * len(x))
 
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
@@ -458,25 +448,19 @@ def make_psea_table(
         taxa_access=taxa_access,
     )
 
-    with tempfile.TemporaryDirectory() as spline_tempdir:
-        spline_file = os.path.join(spline_tempdir, "spline_data.tsv")
-        pd.DataFrame(pair_spline_dict).to_csv(
-            spline_file, sep="\t", index=False
-        )
-
-        scatter_plot, = zscatter(
-            zscores=(
-                processed_mapped_scores if collapsed else processed_scores
-            ),
-            pairs=pairs,
-            spline_file=pair_splines,
-            p_val_access="p.adjust",
-            le_peps_access="core_enrichment",
-            taxa_access=taxa_access,
-            psea_tables=psea_tables,
-            highlight_threshold=p_val_thresh,
-            colors_file=species_colors,
-        )
+    scatter_plot, = zscatter(
+        zscores=(
+            processed_mapped_scores if collapsed else processed_scores
+        ),
+        pairs=pairs,
+        splines=pair_splines,
+        p_val_access="p.adjust",
+        le_peps_access="core_enrichment",
+        taxa_access=taxa_access,
+        psea_tables=psea_tables,
+        highlight_threshold=p_val_thresh,
+        colors_file=species_colors,
+    )
 
     volcano_plot, = volcano(
         pairs=pairs,
@@ -549,6 +533,7 @@ def _compute_pair_fit_and_residuals(
     )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
+    # TODO: Do we also need to map x and y?
     if epitope_map is not None:
         maxZ_out = utils.collapse_residuals_to_epitope(maxZ, epitope_map)
         deltaZ_out = utils.collapse_residuals_to_epitope(deltaZ, epitope_map)

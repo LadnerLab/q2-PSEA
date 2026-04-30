@@ -644,6 +644,7 @@ plugin.visualizers.register_function(
         "zscores": FeatureTable[Zscore],
         "pairs": PSEAPairs,
         "psea_tables": Collection[FeatureData[PSEAScores]],
+        "splines": Collection[FeatureData[Spline]],
     },
     input_descriptions={
         "zscores": "Matrix of Z scores.",
@@ -655,9 +656,9 @@ plugin.visualizers.register_function(
             "Per-pair PSEA result tables used to highlight leading-edge"
             " peptides for significant taxa."
         ),
+        "splines" : "Collection of splines per pair."
     },
     parameters={
-        "spline_file": Str,
         "p_val_access": Str,
         "le_peps_access": Str,
         "taxa_access": Str,
@@ -665,9 +666,6 @@ plugin.visualizers.register_function(
         "colors_file": Metadata,
     },
     parameter_descriptions={
-        "spline_file": (
-            "TSV file with spline results (x, y, pair columns)."
-        ),
         "p_val_access": (
             "Column name in psea_tables compared to 'highlight_threshold'"
             " for highlighting."

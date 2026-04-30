@@ -170,11 +170,11 @@ def zscatter(
     zscores: pd.DataFrame,
     pairs: pd.DataFrame,
     psea_tables: pd.DataFrame = None,
+    splines: pd.DataFrame = None,
     colors_file: qiime2.Metadata = None,
     p_val_access: str = None,
     le_peps_access: str = None,
     taxa_access: str = None,
-    spline_file: str = None,
     highlight_threshold: float = 0.05,
 ) -> None:
     alt.data_transformers.disable_max_rows()
@@ -298,21 +298,22 @@ def zscatter(
     )
     final_chart = alt.layer(heatmap_chart)
 
-    if spline_file:
-        spline_df = pd.read_csv(spline_file, sep="\t")
-        spline_df = pd.DataFrame(spline_df)
-        spline_chart = alt.Chart(spline_df).mark_square(size=20).encode(
-            x=alt.X("x:Q"),
-            y=alt.Y("y:Q"),
-            color=alt.Color(
-                "x:N",
-                scale=alt.Scale(range=["#FF0000"]),
-                legend=None,
-            ),
-        ).transform_filter(
-            sample_select
-        )
-        final_chart = alt.layer(final_chart, spline_chart)
+    if splines:
+        for pair, spline_df in splines.items():
+            spline_df.dropna(inplace=True)
+            spline_df["pair"] = pair
+            spline_chart = alt.Chart(spline_df).mark_square(size=20).encode(
+                x=alt.X("x:Q"),
+                y=alt.Y("yfit:Q"),
+                color=alt.Color(
+                    "x:N",
+                    scale=alt.Scale(range=["#FF0000"]),
+                    legend=None,
+                ),
+            ).transform_filter(
+                sample_select
+            )
+            final_chart = alt.layer(final_chart, spline_chart)
 
     color_scale = alt.Scale(range=[
         "#E69F00", "#56B4E9", "#009E73",
