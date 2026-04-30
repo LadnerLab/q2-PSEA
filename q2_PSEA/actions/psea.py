@@ -165,6 +165,8 @@ def run_iterative_process_single_pair(
     seed,
     p_val_thresh,
     nes_thresh,
+    epitope_map=None,
+    mapped_peptide_sets=None,
     precomputed_fit=None,
     species_taxa=None,
 ):
@@ -180,16 +182,20 @@ def run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
-
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
 
-    updated_peptide_sets = peptide_sets
+    if epitope_map:
+        epitope_df = epitope_map.view(pd.DataFrame)
+    updated_peptide_sets = \
+        mapped_peptide_sets if mapped_peptide_sets else peptide_sets
+    gmt_df = mapped_peptide_sets.view(pd.DataFrame)
+
     tested_species = set()
     iteration = 1
     sig_found = True
+
     while (sig_found):
         print(f"\nIteration: {iteration} for pair: ({sample_a}, {sample_b})")
-        gmt_df = updated_peptide_sets.view(pd.DataFrame)
 
         psea_table, = create_fgsea_table(
             processed_scores=processed_scores,
@@ -222,6 +228,14 @@ def run_iterative_process_single_pair(
                     f" ({sample_a}, {sample_b}) to be significant"
                 )
                 all_tested_peps = set(row["all_tested_peptides"].split("/"))
+
+                # TODO: In principle this should work, but I'm not seeing it
+                # filter anything
+                if epitope_map:
+                    all_tested_peps = _get_mapped_peps(
+                        epitope_df, all_tested_peps
+                    )
+
                 mask = (
                     (gmt_df["term"].astype(str) != row_id)
                     & gmt_df["gene"].isin(all_tested_peps)
@@ -229,7 +243,6 @@ def run_iterative_process_single_pair(
 
                 gmt_df = gmt_df[~mask]
                 tested_species.add(row_id)
-
                 # TODO: I don't love calling make_artifact, but I also don't
                 # love the changes needed to get rid of it here
                 updated_peptide_sets = ctx.make_artifact("GMT", gmt_df)
@@ -240,6 +253,17 @@ def run_iterative_process_single_pair(
         iteration += 1
 
     return updated_peptide_sets
+
+
+# TODO: optimize this.
+def _get_mapped_peps(epitope_df, all_tested_features):
+    epitopes = set()
+    for _, row in epitope_df.iterrows():
+        for tested in all_tested_features:
+            if tested in row['CodeName']:
+                epitopes.add(row.name)
+
+    return epitopes
 
 
 # TODO: Cannot run in parallel, need to debug that
@@ -269,7 +293,6 @@ def make_psea_table(
 ):
     start_time = time.perf_counter()
 
-
     if any([epitope_map, mapped_zscores, mapped_gmt]) \
             and not all([epitope_map, mapped_zscores, mapped_gmt]):
         raise ValueError(
@@ -277,14 +300,16 @@ def make_psea_table(
             " and 'mapped_gmt' or none of them"
         )
 
+    process_scores_action = ctx.get_action("psea", "process_scores")
+    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
+    run_iterative = ctx.get_action("psea", "run_iterative_process_single_pair")
+    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
+
+    count_ae = ctx.get_action("psea", "count_antibody_events")
+
     volcano = ctx.get_action("psea", "volcano")
     zscatter = ctx.get_action("psea", "zscatter")
     aeplots = ctx.get_action("psea", "aeplots")
-    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
-    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
-    run_iterative = ctx.get_action("psea", "run_iterative_process_single_pair")
-    count_ae = ctx.get_action("psea", "count_antibody_events")
-    process_scores_action = ctx.get_action("psea", "process_scores")
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -308,12 +333,11 @@ def make_psea_table(
         collapsed = True
 
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        epitope_map, = create_epitope_map(epitope, collapse)
-
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
-        mapped_zscores, = create_epitope_zscore(scores, epitope_map)
-
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
+
+        epitope_map, = create_epitope_map(epitope, collapse)
+        mapped_zscores, = create_epitope_zscore(scores, epitope_map)
         mapped_gmt, = create_epitope_gmt(epitope_map)
     elif epitope_map is not None:
         collapsed = True
@@ -357,8 +381,10 @@ def make_psea_table(
             pair_pep_sets_dict[pair], = run_iterative(
                 processed_scores=processed_mapped_scores if collapsed else
                 processed_scores,
-                peptide_sets=mapped_gmt if collapsed else peptide_sets,
+                peptide_sets=peptide_sets,
                 precomputed_fit=spline_art,
+                epitope_map=epitope_map,
+                mapped_peptide_sets=mapped_gmt,
                 sample_a=sample_a,
                 sample_b=sample_b,
                 threshold=threshold,
@@ -370,7 +396,6 @@ def make_psea_table(
                 nes_thresh=nes_thresh,
                 species_taxa=species_taxa,
             )
-
         else:
             pair_pep_sets_dict[pair] = \
                 mapped_gmt if collapsed else peptide_sets
@@ -382,6 +407,7 @@ def make_psea_table(
         x = spline_df["x"].dropna().to_numpy()
         yfit = spline_df["yfit"].dropna().to_numpy()
 
+        # TODO: Calc new splines here?
         psea_table, = create_fgsea_table(
             processed_scores=processed_mapped_scores if collapsed else
             processed_scores,

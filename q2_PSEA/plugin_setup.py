@@ -358,6 +358,8 @@ plugin.pipelines.register_function(
         "processed_scores": FeatureTable[Zscore],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
+        "epitope_map": FeatureData[MappedEpitope],
+        "mapped_peptide_sets": GMT,
     },
     parameters={
         "sample_a": Str,
@@ -396,6 +398,14 @@ plugin.pipelines.register_function(
             "Optional precomputed maxZ/deltaZ from a prior call. When"
             " provided, spline fitting is skipped."
         ),
+        "epitope_map": (
+            "Optional epitope map passed in if data is collapsed to epitope"
+            " level"
+        ),''
+        "mapped_peptide_sets": (
+            "Optional mapped peptide sets passed in if data is collapsed to"
+            " epitope level."
+        )
     },
     outputs=[
         ("updated_peptide_sets", GMT),

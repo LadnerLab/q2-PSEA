@@ -129,6 +129,8 @@ def enriched_subtypes(
     def _count(row):
         enriched_elements = row['core_enrichment'].split('/')
         species_id = row.name
+        # TODO: This blows up if the psea tables were created without
+        # species_to_taxa
         species_name = row['species_name']
 
         for enriched in enriched_elements:
@@ -172,6 +174,7 @@ def enriched_subtypes(
             )
         )
 
+        # TODO: This explodes if nothing passed the filter
         df.columns = ['Counts']
         counts[key] = df
 
