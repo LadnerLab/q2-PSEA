@@ -346,6 +346,8 @@ def create_fgsea_table_for_pair(
     # TODO: optimize with a dictionary, if possible
     if spline_type == "py-smooth":
         yfit = splines.smooth_spline(x, y)
+    elif spline_type == "linear":
+        yfit = splines.linear_regression(x, y)
     elif spline_type == "cubic":
         yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
     else:
