@@ -52,7 +52,7 @@ from qiime2.plugin import (
     Visualization,
     Choices,
     Properties,
-    TypeMatch,
+    TypeMap,
 )
 
 
@@ -152,16 +152,19 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
 # Register process_scores as a method
 # ---------------------------------------------------------------------------
 
-PROCESS_SCORES_MATCH = TypeMatch([Zscore, Zscore % Properties("mapped")])
+PROCESS_SCORES_IN, PROCESS_SCORES_OUT= TypeMap({
+    Zscore: Zscore % Properties("processed"),
+    Zscore % Properties("mapped"): Zscore % Properties("mapped", "processed")
+})
 
 plugin.methods.register_function(
     function=process_scores,
     inputs={
-        "scores": FeatureTable[PROCESS_SCORES_MATCH],
+        "scores": FeatureTable[PROCESS_SCORES_IN],
         "pairs": PSEAPairs,
     },
     parameters={},
-    outputs=[("processed_scores", FeatureTable[PROCESS_SCORES_MATCH])],
+    outputs=[("processed_scores", FeatureTable[PROCESS_SCORES_OUT])],
     input_descriptions={
         "scores": "Z-score matrix (FeatureTable[Zscore]).",
         "pairs": (
@@ -191,7 +194,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=_compute_pair_fit_and_residuals,
     inputs={
-        "processed_scores": FeatureTable[Zscore],
+        "processed_scores": FeatureTable[Zscore % Properties("processed")],
         "epitope_map": FeatureData[MappedEpitope],
     },
     parameters={
@@ -301,7 +304,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=create_fgsea_table_for_pair,
     inputs={
-        "processed_scores": FeatureTable[Zscore],
+        "processed_scores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
     },
@@ -373,7 +376,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=run_iterative_process_single_pair,
     inputs={
-        "processed_scores": FeatureTable[Zscore],
+        "processed_scores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
@@ -655,7 +658,7 @@ plugin.visualizers.register_function(
 plugin.visualizers.register_function(
     function=zscatter,
     inputs={
-        "zscores": FeatureTable[Zscore],
+        "zscores": FeatureTable[Zscore % Properties("processed")],
         "pairs": PSEAPairs,
         "psea_tables": Collection[FeatureData[PSEAScores]],
         "splines": Collection[FeatureData[Spline]],
