@@ -104,7 +104,9 @@ class TestProcessScoresIntegration(TestPluginBase):
 
     def test_output_is_feature_table_zscore(self):
         result, = self.method(scores=self.scores_art, pairs=self.pairs_art)
-        self.assertEqual(str(result.type), "FeatureTable[Zscore]")
+        self.assertEqual(
+            str(result.type), "FeatureTable[Zscore % Properties('processed')]"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -9,8 +9,6 @@ from qiime2.plugin.testing import TestPluginBase
 from q2_PSEA.actions.epitope import (
     _count_enriched,
     _filter_scores,
-    _find_split_value,
-    _get_keys,
     create_epitope_map,
     enriched_subtypes,
     epitope_zscore,
@@ -56,21 +54,6 @@ class TestCreateEpitopeMap(TestPluginBase):
     def test_both_collapse_includes_bacterial(self):
         result = create_epitope_map(self.epitope.copy(), collapse="Both")
         self.assertIn("sp003_C3_W3", result.index)
-
-    def test_category_conflict_raises_value_error(self):
-        bad = pd.DataFrame(
-            {
-                "SpeciesID": ["sp001", "sp001"],
-                "ClusterID": ["C1", "C1"],
-                "EpitopeWindow": ["W1", "W1"],
-                "Species": ["InfluenzaA", "EColi"],
-                "Subtype": ["H1N1", "K12"],
-                "Category": ["Viral", "Bacterial"],
-            },
-            index=pd.Index(["pep_A", "pep_B"], name="CodeName"),
-        )
-        with self.assertRaises(ValueError):
-            create_epitope_map(bad, collapse="Both")
 
     def test_semicolon_entries_exploded_into_separate_rows(self):
         multi = pd.DataFrame(
@@ -142,32 +125,36 @@ class TestTaxaToEpitope(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        self.epitope = pd.read_csv(
+        raw = pd.read_csv(
             self.get_data_path("epitope.tsv"), sep="\t", index_col=0
         )
+        self.epitope_map_viral = create_epitope_map(
+            raw.copy(), collapse="Viral"
+        )
+        self.epitope_map_both = create_epitope_map(raw.copy(), collapse="Both")
 
     def test_returns_dataframe(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Viral")
+        result = taxa_to_epitope(self.epitope_map_viral.copy())
         self.assertIsInstance(result, pd.DataFrame)
 
     def test_columns_are_term_and_gene(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Viral")
+        result = taxa_to_epitope(self.epitope_map_viral.copy())
         self.assertListEqual(list(result.columns), ["term", "gene"])
 
     def test_term_contains_species_ids(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Viral")
+        result = taxa_to_epitope(self.epitope_map_viral.copy())
         self.assertIn("sp001", result["term"].values)
 
     def test_gene_contains_viral_epitope_ids(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Viral")
+        result = taxa_to_epitope(self.epitope_map_viral.copy())
         self.assertIn("sp001_C1_W1", result["gene"].values)
 
     def test_bacterial_gene_is_original_index_when_collapse_viral(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Viral")
+        result = taxa_to_epitope(self.epitope_map_viral.copy())
         self.assertIn("pep_03", result["gene"].values)
 
     def test_both_collapse_gives_bacterial_epitope_id(self):
-        result = taxa_to_epitope(self.epitope.copy(), collapse="Both")
+        result = taxa_to_epitope(self.epitope_map_both.copy())
         self.assertIn("sp003_C3_W3", result["gene"].values)
 
 
@@ -203,65 +190,27 @@ class TestFilterScores(TestPluginBase):
         self.assertEqual(len(result), 0)
 
 
-class TestGetKeys(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_returns_product_of_split_values_and_default_keys(self):
-        subtypes = pd.DataFrame({"Category": ["Viral", "Bacterial"]})
-        result = _get_keys(subtypes, "Category", ["species", "subspecies"])
-        self.assertIn("Viral-species", result)
-        self.assertIn("Bacterial-subspecies", result)
-        self.assertEqual(len(result), 4)
-
-    def test_raises_key_error_for_missing_column(self):
-        subtypes = pd.DataFrame({"Category": ["Viral"]})
-        with self.assertRaises(KeyError):
-            _get_keys(subtypes, "NotAColumn", ["species"])
-
-
-class TestFindSplitValue(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_returns_empty_string_when_no_split_column(self):
-        hit = pd.Series({"Category": "Viral"})
-        self.assertEqual(_find_split_value(hit, None, 0), "")
-
-    def test_returns_scalar_value_with_trailing_dash(self):
-        hit = pd.Series({"Category": "Viral"})
-        self.assertEqual(_find_split_value(hit, "Category", 0), "Viral-")
-
-    def test_returns_indexed_list_element_with_trailing_dash(self):
-        hit = pd.Series({"Category": ["Viral", "Bacterial"]})
-        self.assertEqual(_find_split_value(hit, "Category", 1), "Bacterial-")
-
-
 class TestCountEnriched(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def _empty(self):
-        return {"species": {}, "subspecies": {}, "species-epitope": {}}
+        return {"epitope": {}, "subtype": {}}
 
-    def test_initializes_species_key(self):
+    def test_initializes_epitope_key(self):
         counts = self._empty()
-        _count_enriched(counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "")
-        self.assertEqual(counts["species"]["InfluenzaA"], 1)
+        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 1)
 
     def test_second_call_increments_count(self):
         counts = self._empty()
-        _count_enriched(counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "")
-        _count_enriched(counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "")
-        self.assertEqual(counts["species"]["InfluenzaA"], 2)
+        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 2)
 
-    def test_split_value_prefix_applied(self):
-        counts = {
-            "Viral-species": {},
-            "Viral-subspecies": {},
-            "Viral-species-epitope": {},
-        }
-        _count_enriched(
-            counts, "InfluenzaA", "InfluenzaA:H1N1", "ep1", "Viral-"
-        )
-        self.assertIn("Viral-InfluenzaA", counts["Viral-species"])
+    def test_tracks_subtype_separately(self):
+        counts = self._empty()
+        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        self.assertEqual(counts["subtype"]["sp001"]["InfluenzaA"]["H1N1"], 1)
 
 
 class TestEnrichedSubtypes(TestPluginBase):
@@ -280,53 +229,15 @@ class TestEnrichedSubtypes(TestPluginBase):
             index=pd.Index(["sp001_C1_W1", "sp002_C2_W2"], name="EpitopeID"),
         )
 
-    def test_returns_dict_with_three_default_keys(self):
-        scores = self._scores([{
-            "p.adjust": 0.9,
-            "enrichmentScore": 0.0,
-            "core_enrichment": "sp001_C1_W1",
-            "species_name": "InfluenzaA",
-        }])
-        result = enriched_subtypes(scores, self._subtypes())
-        self.assertEqual(
-            set(result.keys()), {"species", "subspecies", "species-epitope"}
-        )
-
-    def test_no_significant_rows_returns_empty_dataframes(self):
-        scores = self._scores([{
-            "p.adjust": 0.9,
-            "enrichmentScore": 0.0,
-            "core_enrichment": "sp001_C1_W1",
-            "species_name": "InfluenzaA",
-        }])
-        result = enriched_subtypes(scores, self._subtypes())
-        for val in result.values():
-            self.assertEqual(len(val), 0)
-
-    def test_split_column_multiplies_keys(self):
-        scores = self._scores([{
-            "p.adjust": 0.9,
-            "enrichmentScore": 0.0,
-            "core_enrichment": "sp001_C1_W1",
-            "species_name": "InfluenzaA",
-        }])
-        result = enriched_subtypes(
-            scores, self._subtypes(), split_column="Category"
-        )
-        self.assertIn("Viral-species", result)
-        self.assertIn("Viral-subspecies", result)
-
-    def test_invalid_split_column_raises_key_error(self):
+    def test_returns_dict_with_two_default_keys(self):
         scores = self._scores([{
             "p.adjust": 0.01,
             "enrichmentScore": 2.0,
             "core_enrichment": "sp001_C1_W1",
             "species_name": "InfluenzaA",
         }])
-        with self.assertRaises(KeyError):
-            enriched_subtypes(
-                scores, self._subtypes(), split_column="NotAColumn"
-            )
+        result = enriched_subtypes(scores, self._subtypes())
+        self.assertEqual(set(result.keys()), {"epitope", "subtype"})
 
 
 if __name__ == "__main__":
