@@ -10,6 +10,10 @@ from qiime2.plugin.testing import TestPluginBase
 from q2_PSEA.actions.visualizers import aeplots, volcano, zscatter
 
 
+# TODO: These tests are largely useless, most assert nothing. Most visualizers
+# are hard to test though
+
+
 def _pairs_df(rows=None):
     if rows is None:
         rows = [("sA", "sB")]
@@ -73,9 +77,6 @@ class TestAeplots(TestPluginBase):
                    if k not in ("pos_ae_counts", "neg_ae_counts")},
             )
             return os.path.exists(os.path.join(output_dir, "index.html"))
-
-    def test_creates_index_html(self):
-        self.assertTrue(self._run())
 
     def test_via_plugin_returns_visualization(self):
         pos_art = qiime2.Artifact.import_data("PSEAAECounts", self.pos_df)

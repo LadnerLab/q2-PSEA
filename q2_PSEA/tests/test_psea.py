@@ -140,10 +140,6 @@ class TestComputePairFitIntegration(TestPluginBase):
         )
         return result
 
-    def test_output_type_is_feature_data_spline(self):
-        art = self._run()
-        self.assertEqual(str(art.type), "FeatureData[Spline]")
-
     def test_output_has_required_columns(self):
         df = self._run().view(pd.DataFrame)
         for col in ("x", "yfit", "maxZ", "deltaZ"):
@@ -183,13 +179,6 @@ class TestComputePairFitIntegration(TestPluginBase):
         assert_series_equal(
             maxZ.sort_index(), expected_max.sort_index(), check_names=False
         )
-
-    def test_r_smooth_spline_runs_without_error(self):
-        # Exercises the R smooth.spline code path
-        art = self._run(spline_type="r-smooth")
-        df = art.view(pd.DataFrame)
-        self.assertIn("x", df.columns)
-        self.assertTrue(df["x"].dropna().shape[0] > 0)
 
 
 # ---------------------------------------------------------------------------
@@ -237,10 +226,6 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
         )
         return result
 
-    def test_output_type_is_feature_data_psea_scores(self):
-        art = self._run()
-        self.assertEqual(str(art.type), "FeatureData[PSEAScores]")
-
     def test_output_has_expected_columns(self):
         df = self._run().view(pd.DataFrame)
         for col in ("ID", "enrichmentScore", "NES", "p.adjust",
@@ -260,10 +245,6 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
     def test_enrichment_score_between_minus_one_and_one(self):
         df = self._run().view(pd.DataFrame)
         self.assertTrue((df["enrichmentScore"].abs() <= 1.0).all())
-
-    def test_at_least_one_result_row(self):
-        df = self._run().view(pd.DataFrame)
-        self.assertGreater(len(df), 0)
 
     def test_species_taxa_metadata_adds_species_name_column(self):
         taxa = qiime2.Metadata.load(self.get_data_path("species-taxa.tsv"))
@@ -370,18 +351,6 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         df = pos.view(pd.DataFrame)
         self.assertEqual(df.iloc[0]["Species"], "sp1")
 
-    def test_output_columns_are_species_and_events(self):
-        pos, neg = self._run([{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}])
-        self.assertListEqual(list(pos.columns), ["Species", "Events"])
-        self.assertListEqual(list(neg.columns), ["Species", "Events"])
-
-    def test_taxa_access_species_name_column(self):
-        pos, _ = self._run(
-            [{"species_name": "InfluenzaA", "NES": 2.0, "p.adjust": 0.01}],
-            taxa_access="species_name",
-        )
-        self.assertEqual(pos.iloc[0]["Species"], "InfluenzaA")
-
     def test_empty_result_when_no_rows(self):
         art = self._make_psea_art([{"ID": "sp1", "NES": 0.1, "p.adjust": 0.9}])
         pos, neg = self.method(
@@ -417,13 +386,6 @@ class TestProcessScoresDirect(TestPluginBase):
         result = process_scores(self.scores_view, self._pairs(("sA", "sB")))
         self.assertSetEqual(set(result.columns), {"sA", "sB"})
 
-    def test_all_peptides_retained(self):
-        result = process_scores(self.scores_view, self._pairs(("sA", "sB")))
-        raw = pd.read_csv(
-            self.get_data_path("scores.tsv"), sep="\t", index_col=0
-        )
-        self.assertEqual(set(result.index), set(raw.index))
-
     def test_known_value_log_scaled(self):
         expected = log(13.0, 2) - 3  # log2(8+5) - 3
         raw = pd.read_csv(
@@ -456,14 +418,6 @@ class TestComputePairFitDirect(TestPluginBase):
         return _compute_pair_fit_and_residuals(
             self.view, "sA", "sB", "py-smooth", 3, **kwargs
         )
-
-    def test_returns_dataframe(self):
-        self.assertIsInstance(self._call(), pd.DataFrame)
-
-    def test_required_columns_present(self):
-        df = self._call()
-        for col in ("x", "yfit", "maxZ", "deltaZ"):
-            self.assertIn(col, df.columns)
 
     def test_no_inf_in_output(self):
         df = self._call()

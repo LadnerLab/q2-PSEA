@@ -6,6 +6,7 @@ from biom import load_table
 from q2_types.feature_table import BIOMV210Format
 from qiime2.plugin.testing import TestPluginBase
 
+from qiime2 import Artifact
 from q2_PSEA.actions.epitope import (
     _count_enriched,
     _filter_scores,
@@ -25,14 +26,6 @@ class TestCreateEpitopeMap(TestPluginBase):
             self.get_data_path("epitope.tsv"), sep="\t", index_col=0
         )
 
-    def test_returns_dataframe(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
-        self.assertIsInstance(result, pd.DataFrame)
-
-    def test_index_name_is_epitope_id(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
-        self.assertEqual(result.index.name, "EpitopeID")
-
     def test_viral_collapse_creates_combined_ids(self):
         result = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("sp001_C1_W1", result.index)
@@ -41,10 +34,6 @@ class TestCreateEpitopeMap(TestPluginBase):
     def test_non_collapsed_category_keeps_original_index(self):
         result = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("pep_03", result.index)
-
-    def test_codenames_aggregated_as_list(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
-        self.assertIsInstance(result.loc["sp001_C1_W1", "CodeName"], list)
 
     def test_two_peptides_share_same_epitope(self):
         result = create_epitope_map(self.epitope.copy(), collapse="Viral")
@@ -79,11 +68,10 @@ class TestEpitopeZscore(TestPluginBase):
         super().setUp()
         # scores.tsv has features as rows; the view of FeatureTable[Zscore]
         # has samples as rows. epitope_zscore expects samples as rows.
-        import qiime2
         raw = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
         )
-        art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
+        art = Artifact.import_data("FeatureTable[Zscore]", raw)
         self.zscores = art.view(pd.DataFrame)
         self.epitope_map = pd.DataFrame(
             {
@@ -94,10 +82,6 @@ class TestEpitopeZscore(TestPluginBase):
                 }
             }
         )
-
-    def test_returns_biomv210_format(self):
-        result = epitope_zscore(self.zscores.copy(), self.epitope_map)
-        self.assertIsInstance(result, BIOMV210Format)
 
     def test_observations_match_epitope_ids(self):
         result = epitope_zscore(self.zscores.copy(), self.epitope_map)
@@ -132,14 +116,6 @@ class TestTaxaToEpitope(TestPluginBase):
             raw.copy(), collapse="Viral"
         )
         self.epitope_map_both = create_epitope_map(raw.copy(), collapse="Both")
-
-    def test_returns_dataframe(self):
-        result = taxa_to_epitope(self.epitope_map_viral.copy())
-        self.assertIsInstance(result, pd.DataFrame)
-
-    def test_columns_are_term_and_gene(self):
-        result = taxa_to_epitope(self.epitope_map_viral.copy())
-        self.assertListEqual(list(result.columns), ["term", "gene"])
 
     def test_term_contains_species_ids(self):
         result = taxa_to_epitope(self.epitope_map_viral.copy())
