@@ -20,7 +20,7 @@ from q2_PSEA.actions.psea import (
     count_antibody_events,
     create_fgsea_table_for_pair,
     process_scores,
-    run_iterative_process_single_pair,
+    _run_iterative_process_single_pair,
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
@@ -370,11 +370,11 @@ plugin.methods.register_function(
 
 
 # ---------------------------------------------------------------------------
-# Register run_iterative_process_single_pair as a pipeline
+# Register _run_iterative_process_single_pair as a pipeline
 # ---------------------------------------------------------------------------
 
 plugin.methods.register_function(
-    function=run_iterative_process_single_pair,
+    function=_run_iterative_process_single_pair,
     inputs={
         "processed_scores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,

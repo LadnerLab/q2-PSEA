@@ -130,7 +130,9 @@ def enriched_subtypes(
         enriched_elements = row['core_enrichment'].split('/')
         species_id = row.name
         # TODO: This blows up if the psea tables were created without
-        # species_to_taxa
+        # species_to_taxa. We could use a property, but I don't think that
+        # actually helps here... Probably just check up top if this column
+        # exists?
         species_name = row['species_name']
 
         for enriched in enriched_elements:
@@ -174,7 +176,9 @@ def enriched_subtypes(
             )
         )
 
-        # TODO: This explodes if nothing passed the filter
+        # TODO: This explodes if nothing passed the filter. Need to catch that
+        # error and raise a better one. I think it probably should be an error
+        # not an empty ARtifact
         df.columns = ['Counts']
         counts[key] = df
 

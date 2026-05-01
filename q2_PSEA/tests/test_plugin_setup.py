@@ -72,7 +72,7 @@ class TestPipelinesRegistered(TestPluginBase):
 
     def test_run_iterative_process_registered(self):
         self.assertIn(
-            "run_iterative_process_single_pair", self.plugin.pipelines
+            "_run_iterative_process_single_pair", self.plugin.pipelines
         )
 
     def test_make_psea_table_registered(self):

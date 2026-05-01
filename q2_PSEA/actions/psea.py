@@ -152,7 +152,7 @@ def count_antibody_events(
     return pos_ae_df, neg_ae_df
 
 
-def run_iterative_process_single_pair(
+def _run_iterative_process_single_pair(
     processed_scores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
     sample_a: str,
