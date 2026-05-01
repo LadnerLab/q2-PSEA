@@ -152,7 +152,7 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
 # Register process_scores as a method
 # ---------------------------------------------------------------------------
 
-PROCESS_SCORES_IN, PROCESS_SCORES_OUT= TypeMap({
+PROCESS_SCORES_IN, PROCESS_SCORES_OUT = TypeMap({
     Zscore: Zscore % Properties("processed"),
     Zscore % Properties("mapped"): Zscore % Properties("mapped", "processed")
 })
