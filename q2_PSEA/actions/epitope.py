@@ -5,6 +5,7 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,16 +16,22 @@ from q2_types.feature_table import BIOMV210Format
 
 def create_epitope_map(
             epitope: pd.DataFrame, collapse: str = 'Viral'
-        ) -> pd.DataFrame:
+        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     epitope = _create_EpitopeID_row(epitope, collapse)
     epitope = epitope.reset_index()
 
-    epitope = \
+    epitope_map = \
         epitope.groupby(
             'EpitopeID').agg(list).reset_index()
-    epitope.set_index('EpitopeID', inplace=True)
+    epitope_map.set_index('EpitopeID', inplace=True)
 
-    return epitope
+    peptide_map = \
+        epitope.groupby(
+            'CodeName').agg(list).reset_index()
+    peptide_map = peptide_map[['CodeName', 'EpitopeID']]
+    peptide_map.set_index('CodeName', inplace=True)
+
+    return epitope_map, peptide_map
 
 
 def epitope_zscore(

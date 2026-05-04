@@ -8,6 +8,7 @@ from q2_pepsirf.format_types import (
     Enriched,
     Epitope,
     MappedEpitope,
+    MappedPeptide,
     GMT,
     Zscore,
 )
@@ -380,6 +381,7 @@ plugin.methods.register_function(
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
+        "peptide_map": FeatureData[MappedPeptide],
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
@@ -421,7 +423,11 @@ plugin.methods.register_function(
         ),
         "epitope_map": (
             "Optional epitope map passed in if data is collapsed to epitope"
-            " level"
+            " level."
+        ),
+        "peptide_map": (
+            "Optional peptide map passed in if data is collapsed to peptide"
+            " level."
         ),
         "mapped_peptide_sets": (
             "Optional mapped peptide sets passed in if data is collapsed to"
@@ -459,6 +465,7 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "epitope": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
+        "peptide_map": FeatureData[MappedPeptide],
         "mapped_zscores": FeatureTable[Zscore % Properties("mapped")],
         "mapped_gmt": GMT % Properties("mapped")
     },
@@ -539,8 +546,15 @@ plugin.pipelines.register_function(
         ),
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
-            " table is used in GSEA."
+            " table is used in GSEA. Maps epitopes to peptides and species."
             "NOTE: Must be passed with mapped_zscores and mapped_gmt."
+        ),
+        "peptide_map": (
+            "Optional already collapsed epitope table. When provided, this "
+            " table is used to aid in filtering species in iterative analysis"
+            " in GSEA. Maps peptides to epitopes."
+            "NOTE: Must be passed with epitope_map, mapped_zscores, mapped_gmt"
+            ", and iterative analysis."
         ),
         "mapped_zscores": (
             "Optional already collapsed zscores. When provided, these"
@@ -758,14 +772,17 @@ plugin.methods.register_function(
         'collapse': Str % Choices(['Bacterial', 'Viral', 'Both'])
     },
     outputs=[
-        ('epitope_map', FeatureData[MappedEpitope])
+        ('epitope_map', FeatureData[MappedEpitope]),
+        ('peptide_map', FeatureData[MappedPeptide])
     ],
     input_descriptions={'epitope': 'FeatureTable containing at least '
                         'CodeName, SpeciesID, ClusterID, EpitopeWindow, '
                         'Species, and Subtype columns'},
     parameter_descriptions={},
-    output_descriptions={'epitope_map': 'FeatureTable containing columns '
-                         'described in action descriptions.'},
+    output_descriptions={
+        'epitope_map': 'FeatureTable mapping epitopes to peptides and species',
+        'peptide_map': 'FeatureTable mapping peptides to epitopes'
+    },
     name='create epitope map',
     description='Creates the fully defined epitope name '
                 'species_clusterID_EpitopeWindow mapped to peptide code names '

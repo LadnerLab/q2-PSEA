@@ -165,6 +165,7 @@ def _run_iterative_process_single_pair(
     p_val_thresh: float,
     nes_thresh: float,
     epitope_map: pd.DataFrame = None,
+    peptide_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
     precomputed_fit: pd.DataFrame = None,
     species_taxa: qiime2.Metadata = None,
@@ -215,7 +216,8 @@ def _run_iterative_process_single_pair(
             nes_thresh,
             sample_a,
             sample_b,
-            epitope_map=epitope_map
+            epitope_map=epitope_map,
+            peptide_map=peptide_map
         )
 
         iteration += 1
@@ -232,6 +234,7 @@ def _filter_peptide_sets(
             sample_a: str,
             sample_b: str,
             epitope_map: pd.DataFrame = None,
+            peptide_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
     psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
 
@@ -247,20 +250,20 @@ def _filter_peptide_sets(
                 f"Found {row.get('species_name', row['ID'])} in"
                 f" ({sample_a}, {sample_b}) to be significant"
             )
-            all_tested_peps = set(row["all_tested_peptides"].split("/"))
+            all_tested_features = set(row["all_tested_peptides"].split("/"))
 
             # TODO: In principle this should work, but I'm not seeing it
             # filter anything
             #
-            # Write unit test
-            if epitope_map is not None:
-                all_tested_peps = _get_mapped_peps(
-                    epitope_map, all_tested_peps
+            # Write unittest
+            if peptide_map is not None:
+                all_tested_features = _get_mapped_features(
+                    epitope_map, peptide_map, all_tested_features
                 )
 
             mask = (
                 (updated_peptide_sets["term"].astype(str) != row_id)
-                & updated_peptide_sets["gene"].isin(all_tested_peps)
+                & updated_peptide_sets["gene"].isin(all_tested_features)
             )
 
             updated_peptide_sets = updated_peptide_sets[~mask]
@@ -272,15 +275,38 @@ def _filter_peptide_sets(
     return updated_peptide_sets, tested_species, sig_found
 
 
-# TODO: optimize this.
-def _get_mapped_peps(epitope_df, all_tested_features):
-    epitopes = set()
-    for _, row in epitope_df.iterrows():
-        for tested in all_tested_features:
-            if tested in row['CodeName']:
-                epitopes.add(row.name)
+def _get_mapped_features(epitope_map, peptide_map, all_tested_features):
+    """
+    This function is only run if we are using epitope mapping. An epitope maps
+    to one peptide and one species; however, multiple epitopes from multiple
+    species can map to the same peptide. We need to map epitopes we hit back
+    to peptides so we can get all the epitopes that map to that peptide.
 
-    return epitopes
+    Parameters
+    ----------
+    epitope_map : pd.DataFrame
+        Maps epitopes to peptides.
+    peptide_map : pd.DataFrame
+        Maps peptides to epitopes.
+    all_tested_features : set[str]
+        A set of all features, epitopes or peptides that have been tested so
+        far.
+
+    Returns
+    -------
+    set[str]
+        All features the peptide we tested map to
+    """
+    expanded = set()
+
+    for tested_feature in all_tested_features:
+        codenames = epitope_map.loc[tested_feature, 'CodeName']
+        for codename in codenames:
+            expanded = expanded.union(
+                set(peptide_map.loc[codename, 'EpitopeID'])
+            )
+
+    return expanded
 
 
 def make_psea_table(
@@ -293,6 +319,7 @@ def make_psea_table(
     species_colors=None,
     epitope=None,
     epitope_map=None,
+    peptide_map=None,
     mapped_zscores=None,
     mapped_gmt=None,
     collapse="Viral",
@@ -309,16 +336,31 @@ def make_psea_table(
 ):
     start_time = time.perf_counter()
 
-    if any([epitope_map, mapped_zscores, mapped_gmt]) \
-            and not all([epitope_map, mapped_zscores, mapped_gmt]):
+    collapsed = False
+    map_provided = False
+
+    if any([epitope_map, mapped_zscores, mapped_gmt]):
+        collapsed = True
+        map_provided = True
+        if not all([epitope_map, mapped_zscores, mapped_gmt]):
+            raise ValueError(
+                "Please pass either all of 'epitope_map', 'mapped_zscores',"
+                " and 'mapped_gmt' or none of them."
+            )
+    elif epitope:
+        collapsed = True
+
+    if collapsed and not map_provided and iterative_analysis \
+            and not peptide_map:
         raise ValueError(
-            "Please pass either all of 'epitope_map',"" 'mapped_zscores',"
-            " and 'mapped_gmt' or none of them"
+            "If doing mapped iterative analysis, you must pass in a"
+            " peptide_map, or not provide mapped Artifacts and allow this"
+            " pipeline to do the mapping."
         )
 
     process_scores_action = ctx.get_action("psea", "process_scores")
     compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
-    run_iterative = ctx.get_action("psea", "run_iterative_process_single_pair")
+    run_iterative = ctx.get_action("psea", "_run_iterative_process_single_pair")
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
 
     count_ae = ctx.get_action("psea", "count_antibody_events")
@@ -337,19 +379,14 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing
     # ------------------------------------------------------------------
-    collapsed = False
-    if epitope is not None and epitope_map is None:
-        collapsed = True
-
+    if collapsed and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map, = create_epitope_map(epitope, collapse)
+        epitope_map, peptide_map = create_epitope_map(epitope, collapse)
         mapped_zscores, = create_epitope_zscore(scores, epitope_map)
         mapped_gmt, = create_epitope_gmt(epitope_map)
-    elif epitope_map is not None:
-        collapsed = True
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
@@ -392,6 +429,7 @@ def make_psea_table(
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
+                peptide_map=peptide_map,
                 mapped_peptide_sets=mapped_gmt,
                 sample_a=sample_a,
                 sample_b=sample_b,
