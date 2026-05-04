@@ -11,7 +11,7 @@ from q2_PSEA.actions.epitope import (
     _count_enriched,
     _filter_scores,
     create_epitope_map,
-    enriched_subtypes,
+    count_enriched,
     epitope_zscore,
     taxa_to_epitope,
 )
@@ -212,7 +212,7 @@ class TestEnrichedSubtypes(TestPluginBase):
             "core_enrichment": "sp001_C1_W1",
             "species_name": "InfluenzaA",
         }])
-        result = enriched_subtypes(scores, self._subtypes())
+        result = count_enriched(scores, self._subtypes())
         self.assertEqual(set(result.keys()), {"epitope", "subtype"})
 
 

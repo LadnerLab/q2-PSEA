@@ -29,7 +29,7 @@ from q2_PSEA.actions.epitope import (
     create_epitope_map,
     epitope_zscore,
     taxa_to_epitope,
-    enriched_subtypes,
+    count_enriched,
 )
 from q2_PSEA.format_types import (
     PSEAAECountsDirFmt,
@@ -251,8 +251,8 @@ plugin.methods.register_function(
         "psea_tables": Collection[FeatureData[PSEAScores]],
     },
     parameters={
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
+        "p_value": Float,
+        "enrichment_score": Float,
         "taxa_access": Str,
     },
     outputs=[
@@ -266,11 +266,11 @@ plugin.methods.register_function(
         ),
     },
     parameter_descriptions={
-        "p_val_thresh": (
+        "p_value": (
             "Adjusted p-value threshold; taxa below this value are counted"
             " as significant events."
         ),
-        "nes_thresh": (
+        "enrichment_score": (
             "Absolute NES threshold; taxa whose absolute NES exceeds this"
             " value are counted as significant events."
         ),
@@ -392,8 +392,9 @@ plugin.methods.register_function(
         "min_size": Int,
         "max_size": Int,
         "seed": Int,
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
+        "p_value": Float,
+        "enrichment_score": Float,
+        "include_negative_enrichment": Bool,
         "species_taxa": Metadata,
     },
     parameter_descriptions={
@@ -404,12 +405,15 @@ plugin.methods.register_function(
         "min_size": "Minimum peptide-set size.",
         "max_size": "Maximum peptide-set size.",
         "seed": "Random seed for GSEA permutations.",
-        "p_val_thresh": (
+        "p_value": (
             "Adjusted p-value threshold for calling a species significant."
         ),
-        "nes_thresh": (
+        "enrichment_score": (
             "Absolute NES threshold for calling a species significant."
         ),
+        "include_negative_enrichment": (
+            "Whether to include negative enrichment or not."
+        )
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),
@@ -472,8 +476,9 @@ plugin.pipelines.register_function(
     parameters={
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
-        "p_val_thresh": Float,
-        "nes_thresh": Float,
+        "p_value": Float,
+        "enrichment_score": Float,
+        "include_negative_enrichment": Bool,
         "min_size": Int,
         "max_size": Int,
         "permutation_num": Int,
@@ -493,11 +498,14 @@ plugin.pipelines.register_function(
             "Category to collapse to epitope level. Only used when the"
             " epitope input is provided."
         ),
-        "p_val_thresh": (
+        "p_value": (
             "Adjusted p-value threshold for significance in volcano and"
             " scatter plots."
         ),
-        "nes_thresh": "Absolute NES threshold for significance.",
+        "enrichment_score": "Absolute NES threshold for significance.",
+        "include_negative_enrichment": (
+            "Whether or not to include negative enrichment."
+        ),
         "min_size": "Minimum peptide-set size for GSEA.",
         "max_size": "Maximum peptide-set size for GSEA.",
         "permutation_num": (
@@ -572,6 +580,7 @@ plugin.pipelines.register_function(
         ("volcano_plot", Visualization),
         ("ae_plots", Visualization),
         ("psea_tables", Collection[FeatureData[PSEAScores]]),
+        ("enrichment_tables", Collection[FeatureData[Enriched]])
     ],
     output_descriptions={
         "scatter_plot": (
@@ -587,6 +596,10 @@ plugin.pipelines.register_function(
             "Per-pair PSEA result tables containing enrichment scores,"
             " p-values, and leading-edge peptides."
         ),
+        "enrichment_tables": (
+            "Tables showing counts of enriched epitopes per subspecies, and"
+            " enriched subspecies per epitope."
+        )
     },
     name="Make PSEA Table",
     description=(
@@ -851,7 +864,7 @@ plugin.methods.register_function(
 # ---------------------------------------------------------------------------
 
 plugin.methods.register_function(
-    function=enriched_subtypes,
+    function=count_enriched,
     inputs={
         'scores': Collection[FeatureData[PSEAScores]],
         'subtypes': FeatureData[MappedEpitope],
@@ -860,7 +873,6 @@ plugin.methods.register_function(
         'p_value': Float % Range(0, None),
         'enrichment_score': Float % Range(0, None),
         'include_negative_enrichment': Bool,
-        'peptide_library': Str,
     },
     outputs=[
         ('enriched', Collection[FeatureData[Enriched]]),

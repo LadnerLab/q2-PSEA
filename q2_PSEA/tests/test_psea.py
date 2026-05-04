@@ -276,12 +276,12 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         df = pd.DataFrame(rows)
         return qiime2.Artifact.import_data("FeatureData[PSEAScores]", df)
 
-    def _run(self, rows, taxa_access="ID", p_val_thresh=0.05, nes_thresh=1.0):
+    def _run(self, rows, taxa_access="ID", p_value=0.05, enrichment_score=1.0):
         art = self._make_psea_art(rows)
         pos, neg = self.method(
             psea_tables={"pair1": art},
-            p_val_thresh=p_val_thresh,
-            nes_thresh=nes_thresh,
+            p_value=p_value,
+            enrichment_score=enrichment_score,
             taxa_access=taxa_access,
         )
         return pos.view(pd.DataFrame), neg.view(pd.DataFrame)
@@ -292,8 +292,8 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         ])
         pos, neg = self.method(
             psea_tables={"p1": art},
-            p_val_thresh=0.05,
-            nes_thresh=1.0,
+            p_value=0.05,
+            enrichment_score=1.0,
             taxa_access="ID",
         )
         self.assertEqual(str(pos.type), "PSEAAECounts")
@@ -332,7 +332,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         )
         pos, _ = self.method(
             psea_tables={"pairA": art1, "pairB": art2},
-            p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID",
+            p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         df = pos.view(pd.DataFrame)
         self.assertEqual(df.iloc[0]["Events"], 2)
@@ -347,7 +347,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         ])
         pos, _ = self.method(
             psea_tables={"pA": art1, "pB": art2},
-            p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID",
+            p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         df = pos.view(pd.DataFrame)
         self.assertEqual(df.iloc[0]["Species"], "sp1")
@@ -356,7 +356,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         art = self._make_psea_art([{"ID": "sp1", "NES": 0.1, "p.adjust": 0.9}])
         pos, neg = self.method(
             psea_tables={"p1": art},
-            p_val_thresh=0.05, nes_thresh=1.0, taxa_access="ID",
+            p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         self.assertEqual(len(pos.view(pd.DataFrame)), 0)
         self.assertEqual(len(neg.view(pd.DataFrame)), 0)

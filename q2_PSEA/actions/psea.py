@@ -92,15 +92,15 @@ def create_fgsea_table_for_pair(
 
 def count_antibody_events(
     psea_tables: pd.DataFrame,
-    p_val_thresh: float,
-    nes_thresh: float,
+    p_value: float,
+    enrichment_score: float,
     taxa_access: str,
 ) -> (pd.DataFrame, pd.DataFrame):
     """QIIME 2 method: count positive- and negative-NES antibody events.
 
     Iterates over every PSEA table in *psea_tables*. A taxon is counted as one
-    event for a given pair when its adjusted p-value is below *p_val_thresh*
-    and the absolute value of its NES exceeds *nes_thresh*. Positive and
+    event for a given pair when its adjusted p-value is below *p_value*
+    and the absolute value of its NES exceeds *enrichment_score*. Positive and
     negative NES events are tallied separately.
 
     Returns
@@ -119,8 +119,8 @@ def count_antibody_events(
         for _, row in table_df.iterrows():
             taxa = row[taxa_access]
             if (
-                row["p.adjust"] < p_val_thresh
-                and abs(row["NES"]) > nes_thresh
+                row["p.adjust"] < p_value
+                and abs(row["NES"]) > enrichment_score
             ):
                 if row["NES"] > 0:
                     pos_count[taxa] = pos_count.get(taxa, 0) + 1
@@ -162,8 +162,9 @@ def _run_iterative_process_single_pair(
     min_size: int,
     max_size: int,
     seed: int,
-    p_val_thresh: float,
-    nes_thresh: float,
+    p_value: float,
+    enrichment_score: float,
+    include_negative_enrichment: bool = True,
     epitope_map: pd.DataFrame = None,
     peptide_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
@@ -212,8 +213,9 @@ def _run_iterative_process_single_pair(
             psea_table,
             updated_peptide_sets,
             tested_species,
-            p_val_thresh,
-            nes_thresh,
+            p_value,
+            enrichment_score,
+            include_negative_enrichment,
             sample_a,
             sample_b,
             epitope_map=epitope_map,
@@ -229,8 +231,9 @@ def _filter_peptide_sets(
             psea_table: pd.DataFrame,
             updated_peptide_sets: pd.DataFrame,
             tested_species: set,
-            p_val_thresh: int,
-            nes_thresh: int,
+            p_value: int,
+            enrichment_score: int,
+            include_negative_enrichment: bool,
             sample_a: str,
             sample_b: str,
             epitope_map: pd.DataFrame = None,
@@ -242,8 +245,9 @@ def _filter_peptide_sets(
     for _, row in psea_table.iterrows():
         row_id = str(row["ID"])
         if (
-            row["p.adjust"] < p_val_thresh
-            and abs(row["NES"]) > nes_thresh
+            row["p.adjust"] < p_value
+            and (abs(row["NES"]) > enrichment_score if include_negative_enrichment
+                 else row["NES"] > enrichment_score)
             and row_id not in tested_species
         ):
             print(
@@ -323,8 +327,9 @@ def make_psea_table(
     mapped_zscores=None,
     mapped_gmt=None,
     collapse="Viral",
-    p_val_thresh=0.05,
-    nes_thresh=1,
+    p_value=0.05,
+    enrichment_score=1,
+    include_negative_enrichment=True,
     min_size=15,
     max_size=2000,
     permutation_num=10000,
@@ -364,6 +369,7 @@ def make_psea_table(
         "psea", "_run_iterative_process_single_pair"
     )
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
+    count_enriched = ctx.get_action("psea", "count_enriched")
 
     count_ae = ctx.get_action("psea", "count_antibody_events")
 
@@ -440,8 +446,9 @@ def make_psea_table(
                 min_size=min_size,
                 max_size=max_size,
                 seed=seed,
-                p_val_thresh=p_val_thresh,
-                nes_thresh=nes_thresh,
+                p_value=p_value,
+                enrichment_score=enrichment_score,
+                include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
             )
         else:
@@ -471,8 +478,8 @@ def make_psea_table(
     # ------------------------------------------------------------------
     pos_ae_counts, neg_ae_counts = count_ae(
         psea_tables=psea_tables,
-        p_val_thresh=p_val_thresh,
-        nes_thresh=nes_thresh,
+        p_value=p_value,
+        enrichment_score=enrichment_score,
         taxa_access=taxa_access,
     )
 
@@ -486,7 +493,7 @@ def make_psea_table(
         le_peps_access="core_enrichment",
         taxa_access=taxa_access,
         psea_tables=psea_tables,
-        highlight_threshold=p_val_thresh,
+        highlight_threshold=p_value,
         colors_file=species_colors,
     )
 
@@ -495,8 +502,8 @@ def make_psea_table(
         psea_tables=psea_tables,
         xy_access=["NES", "p.adjust"],
         taxa_access=taxa_access,
-        x_threshold=nes_thresh,
-        y_threshold=p_val_thresh,
+        x_threshold=enrichment_score,
+        y_threshold=p_value,
         xy_labels=["Enrichment score", "Adjusted p-values"],
         colors_file=species_colors,
     )
@@ -509,11 +516,19 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
+    enrichment_tables, = count_enriched(
+        scores=psea_tables,
+        subtypes=epitope_map,
+        p_value=p_value,
+        enrichment_score=enrichment_score,
+        include_negative_enrichment=include_negative_enrichment
+    )
+
     end_time = time.perf_counter()
     # TODO: This becomes meaningless when running in parallel
     print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
-    return scatter_plot, volcano_plot, ae_plot, psea_tables
+    return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
 
 
 def _compute_pair_fit_and_residuals(

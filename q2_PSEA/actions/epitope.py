@@ -116,16 +116,15 @@ def _create_EpitopeID_row(epitope, collapse):
 # TODO: Need to fix the formatting so the indices aren't duplicated in output
 # files, This will need to happen in transformation in both directions. df to
 # tsv we need to dedup. tsv to DataFrame need to redup so pd can read it
-def enriched_subtypes(
-            scores: pd.DataFrame,
-            subtypes: pd.DataFrame,
+def count_enriched(
+            psea_scores: pd.DataFrame,
+            epitope_map: pd.DataFrame,
             p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
-            peptide_library: str = 'IN2'
         ) -> pd.DataFrame:
     filtered_scores = _filter_scores(
-        scores, p_value, enrichment_score, include_negative_enrichment
+        psea_scores, p_value, enrichment_score, include_negative_enrichment
     )
 
     counts = {
@@ -143,10 +142,18 @@ def enriched_subtypes(
         species_name = row['species_name']
 
         for enriched in enriched_elements:
-            if enriched.startswith(peptide_library):
-                # Here we are uncollapsed which means we are looking at an
+            if 'Peptide' in enriched:
+                # Here we are collapsed which means we are looking at an
+                # epitope
+                hit = epitope_map.loc[enriched]
+                for subtype in hit['Subtype']:
+                    _count_enriched(
+                        counts, species_id, species_name, enriched, subtype
+                    )
+            else:
+              # Here we are uncollapsed which means we are looking at an
                 # individual peptide
-                hits = subtypes.loc[subtypes['CodeName'].apply(
+                hits = epitope_map.loc[epitope_map['CodeName'].apply(
                     lambda peptides: enriched in peptides
                 )]
 
@@ -157,14 +164,6 @@ def enriched_subtypes(
                         )
 
                 hits.apply(_count_uncollapsed, axis=1)
-            else:
-                # Here we are collapsed which means we are looking at an
-                # epitope
-                hit = subtypes.loc[enriched]
-                for subtype in hit['Subtype']:
-                    _count_enriched(
-                        counts, species_id, species_name, enriched, subtype
-                    )
 
     filtered_scores.apply(_count, axis=1)
     for key, value in counts.items():
