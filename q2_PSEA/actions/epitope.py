@@ -117,14 +117,14 @@ def _create_EpitopeID_row(epitope, collapse):
 # files, This will need to happen in transformation in both directions. df to
 # tsv we need to dedup. tsv to DataFrame need to redup so pd can read it
 def count_enriched(
-            psea_scores: pd.DataFrame,
+            psea_tables: pd.DataFrame,
             epitope_map: pd.DataFrame,
             p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
     filtered_scores = _filter_scores(
-        psea_scores, p_value, enrichment_score, include_negative_enrichment
+        psea_tables, p_value, enrichment_score, include_negative_enrichment
     )
 
     counts = {
@@ -135,11 +135,10 @@ def count_enriched(
     def _count(row):
         enriched_elements = row['core_enrichment'].split('/')
         species_id = row.name
-        # TODO: This blows up if the psea tables were created without
-        # species_to_taxa. We could use a property, but I don't think that
-        # actually helps here... Probably just check up top if this column
-        # exists?
-        species_name = row['species_name']
+
+        species_name = row.name
+        if 'species_name' in row:
+            species_name = row['species_name']
 
         for enriched in enriched_elements:
             if 'Peptide' in enriched:

@@ -866,8 +866,8 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=count_enriched,
     inputs={
-        'scores': Collection[FeatureData[PSEAScores]],
-        'subtypes': FeatureData[MappedEpitope],
+        'psea_tables': Collection[FeatureData[PSEAScores]],
+        'epitope_map': FeatureData[MappedEpitope],
     },
     parameters={
         'p_value': Float % Range(0, None),
@@ -878,8 +878,8 @@ plugin.methods.register_function(
         ('enriched', Collection[FeatureData[Enriched]]),
     ],
     input_descriptions={
-        'scores': 'PSEAScores of peptides/epitopes.',
-        'subtypes': 'subtypes',
+        'psea_tables': 'PSEAScores of peptides/epitopes.',
+        'epitope_map': 'subtypes',
     },
     parameter_descriptions={},
     output_descriptions={

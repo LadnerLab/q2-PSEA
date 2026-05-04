@@ -518,8 +518,8 @@ def make_psea_table(
     )
 
     enrichment_tables, = count_enriched(
-        scores=psea_tables,
-        subtypes=epitope_map,
+        psea_tables=psea_tables,
+        epitope_map=epitope_map,
         p_value=p_value,
         enrichment_score=enrichment_score,
         include_negative_enrichment=include_negative_enrichment
