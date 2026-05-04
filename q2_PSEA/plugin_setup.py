@@ -412,8 +412,8 @@ plugin.methods.register_function(
             "Absolute NES threshold for calling a species significant."
         ),
         "include_negative_enrichment": (
-            "Whether to include negative enrichment or not."
-        )
+            "Whether or not to include negative enrichment."
+        ),
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),

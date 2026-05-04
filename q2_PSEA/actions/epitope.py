@@ -151,7 +151,7 @@ def count_enriched(
                         counts, species_id, species_name, enriched, subtype
                     )
             else:
-              # Here we are uncollapsed which means we are looking at an
+                # Here we are uncollapsed which means we are looking at an
                 # individual peptide
                 hits = epitope_map.loc[epitope_map['CodeName'].apply(
                     lambda peptides: enriched in peptides

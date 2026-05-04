@@ -246,7 +246,8 @@ def _filter_peptide_sets(
         row_id = str(row["ID"])
         if (
             row["p.adjust"] < p_value
-            and (abs(row["NES"]) > enrichment_score if include_negative_enrichment
+            and (abs(row["NES"]) > enrichment_score
+                 if include_negative_enrichment
                  else row["NES"] > enrichment_score)
             and row_id not in tested_species
         ):
