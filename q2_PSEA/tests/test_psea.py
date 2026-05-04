@@ -495,7 +495,8 @@ class TestGetMappedFeatures(TestPluginBase):
 
     def test_multiple_features_union_all_siblings(self):
         emap, pmap = self._make_maps(
-            {"ep1": ["pep1"], "ep2": ["pep1"], "ep3": ["pep2"], "ep4": ["pep2"]},
+            {"ep1": ["pep1"], "ep2": ["pep1"],
+             "ep3": ["pep2"], "ep4": ["pep2"]},
             {"pep1": ["ep1", "ep2"], "pep2": ["ep3", "ep4"]},
         )
         result = _get_mapped_features(emap, pmap, {"ep1", "ep3"})

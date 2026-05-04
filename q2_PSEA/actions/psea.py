@@ -360,7 +360,9 @@ def make_psea_table(
 
     process_scores_action = ctx.get_action("psea", "process_scores")
     compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
-    run_iterative = ctx.get_action("psea", "_run_iterative_process_single_pair")
+    run_iterative = ctx.get_action(
+        "psea", "_run_iterative_process_single_pair"
+    )
     create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
 
     count_ae = ctx.get_action("psea", "count_antibody_events")
