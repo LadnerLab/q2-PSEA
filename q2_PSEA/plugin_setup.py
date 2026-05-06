@@ -33,6 +33,8 @@ plugin.pipelines.register_function(
         "nes_thresh": Float,
         "min_size": Int,
         "max_size": Int,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int, 
         "permutation_num": Int,
         "spline_type": Str,
         "degree": Int,
@@ -67,6 +69,10 @@ plugin.pipelines.register_function(
             " the data set.",
         "max_size": "Maximum allowed number of peptides from peptide set also"
             " the data set.",
+        "residual_abs_thresh": "Absolute residual threshold for peptide-level filtering."
+            " Species are removed before PSEA if insufficient peptides exceed this value.",
+        "residual_min_peptides": "Minimum number of peptides required per species with"
+            " absolute residual greater than residual_abs_thresh to keep that species.",
         "permutation_num": "Number of permutations. Minimal possible nominal"
             " p-value is about 1/perm.",
         "spline_type": "Specifies which spline operation to use.",

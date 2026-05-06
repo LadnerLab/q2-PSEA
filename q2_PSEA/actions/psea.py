@@ -33,6 +33,8 @@ def make_psea_table(
         species_color_file="",
         min_size=15,
         max_size=2000,
+        residual_abs_thresh=None,
+        residual_min_peptides=1,
         permutation_num=10000,  # as per original PSEA code
         spline_type="r-smooth",
         degree=3,
@@ -118,6 +120,8 @@ def make_psea_table(
                 permutation_num=permutation_num,
                 min_size=min_size,
                 max_size=max_size,
+                residual_abs_thresh=residual_abs_thresh,
+                residual_min_peptides=residual_min_peptides,
                 spline_type=spline_type,
                 degree=degree,
                 dof=dof,
@@ -163,6 +167,8 @@ def make_psea_table(
                                 permutation_num,
                                 min_size,
                                 max_size,
+                                residual_abs_thresh,
+                                residual_min_peptides,
                                 spline_type,
                                 degree,
                                 dof,
@@ -321,6 +327,8 @@ def create_fgsea_table_for_pair(
     permutation_num,
     min_size,
     max_size,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -362,6 +370,13 @@ def create_fgsea_table_for_pair(
     )
     deltaZ = pd.Series(
         data=y - yfit, index=data_sorted.index
+    )
+    
+    peptide_sets = filter_peptide_sets_by_residual(
+        peptide_sets,
+        deltaZ,
+        residual_abs_thresh=residual_abs_thresh,
+        residual_min_peptides=residual_min_peptides
     )
 
     table = INTERNAL.psea(
@@ -426,6 +441,8 @@ def run_iterative_peptide_analysis(
     permutation_num,
     min_size,
     max_size,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -487,6 +504,8 @@ def run_iterative_peptide_analysis(
                             permutation_num,
                             min_size,
                             max_size,
+                            residual_abs_thresh,
+                            residual_min_peptides,
                             spline_type,
                             degree,
                             dof,
@@ -524,6 +543,8 @@ def run_iterative_process_single_pair(
     permutation_num,
     min_size,
     max_size,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -552,6 +573,8 @@ def run_iterative_process_single_pair(
                                         permutation_num=permutation_num,
                                         min_size=min_size,
                                         max_size=max_size,
+                                        residual_abs_thresh=residual_abs_thresh,
+                                        residual_min_peptides=residual_min_peptides,
                                         spline_type=spline_type,
                                         degree=degree,
                                         dof=dof,
@@ -562,7 +585,7 @@ def run_iterative_process_single_pair(
                                         )
 
     # sort the table by ascending p-value (lowest on top)
-    table.sort_values(by=["p.adjust"], ascending=True)
+    table = table.sort_values(by=["p.adjust"], ascending=True)
 
     if iter_out_dir:
         table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
@@ -602,3 +625,26 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
                 gmt_file.write(f"{peptide}\t")
 
             gmt_file.write("\n")
+            
+def filter_peptide_sets_by_residual(
+    peptide_sets,
+    deltaZ: pd.Series,
+    residual_abs_thresh: float,
+    residual_min_peptides: int = 1
+):
+    if residual_abs_thresh is None:
+        return peptide_sets
+
+    kept = {}
+    abs_res = deltaZ.abs()
+
+    for species, peps in peptide_sets.items():
+        present = [p for p in peps if p in abs_res.index]
+        if not present:
+            continue
+        n_above = int((abs_res.loc[present] >= residual_abs_thresh).sum())
+        if n_above >= residual_min_peptides:
+            kept[species] = peps
+
+    return kept
+
