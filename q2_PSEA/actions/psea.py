@@ -384,7 +384,7 @@ def create_fgsea_table_for_pair(
     table = INTERNAL.psea(
         maxZ,
         deltaZ,
-        peptide_sets,
+        peptide_sets_r,
         species_taxa_file,
         threshold,
         permutation_num,
