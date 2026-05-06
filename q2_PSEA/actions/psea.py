@@ -372,14 +372,19 @@ def create_fgsea_table_for_pair(
         data=y - yfit, index=data_sorted.index
     )
     
-    peptide_sets = filter_peptide_sets_by_residual(
+    print(type(peptide_sets))
+    print(peptide_sets.shape)
+    print(peptide_sets.columns.tolist())
+    print(peptide_sets.head())
+    
+    peptide_sets = filter_peptide_sets_by_residual_df(
         peptide_sets,
         deltaZ,
         residual_abs_thresh=residual_abs_thresh,
-        residual_min_peptides=residual_min_peptides
+        residual_min_peptides=residual_min_peptides,
+        species_col="species",
+        gene_col="gene"
     )
-    # convert filtered python dict -> R named list
-    peptide_sets_r = peptide_sets_dict_to_r_named_list(peptide_sets)
 
     table = INTERNAL.psea(
         maxZ,
@@ -628,32 +633,31 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
 
             gmt_file.write("\n")
             
-def filter_peptide_sets_by_residual(
-    peptide_sets,
+def filter_peptide_sets_by_residual_df(
+    peptide_sets: pd.DataFrame,
     deltaZ: pd.Series,
     residual_abs_thresh: float,
-    residual_min_peptides: int = 1
+    residual_min_peptides: int = 1,
+    species_col: str = "species",
+    gene_col: str = "gene",
 ):
     if residual_abs_thresh is None:
         return peptide_sets
 
-    kept = {}
+    df = peptide_sets.copy()
     abs_res = deltaZ.abs()
 
-    for species, peps in peptide_sets.items():
-        present = [p for p in peps if p in abs_res.index]
-        if not present:
-            continue
-        n_above = int((abs_res.loc[present] >= residual_abs_thresh).sum())
-        if n_above >= residual_min_peptides:
-            kept[species] = list(peps)
+    # mark rows whose peptide/gene passes threshold
+    df["_passes"] = df[gene_col].map(abs_res).fillna(-np.inf) > residual_abs_thresh
 
-    return kept
-    
-def peptide_sets_dict_to_r_named_list(peptide_sets: dict):
-    # peptide_sets: {"species_id": iterable_of_peptides}
-    return ListVector({
-        species: StrVector(sorted(list(peps)))
-        for species, peps in peptide_sets.items()
-    })
+    # count passing peptides per species
+    keep_species = (
+        df.groupby(species_col)["_passes"]
+        .sum()
+        .loc[lambda s: s >= residual_min_peptides]
+        .index
+    )
+
+    # keep all rows for passing species, drop helper col
+    return df[df[species_col].isin(keep_species)].drop(columns="_passes")
 
