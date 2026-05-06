@@ -12,7 +12,7 @@ import concurrent.futures
 import multiprocessing
 
 from math import isnan, log, pow
-from rpy2.robjects import pandas2ri
+from rpy2.robjects import pandas2ri, ListVector, StrVector
 from rpy2.robjects.packages import importr
 from q2_pepsirf.format_types import PepsirfContingencyTSVFormat
 from q2_PSEA.actions.r_functions import INTERNAL
@@ -378,6 +378,8 @@ def create_fgsea_table_for_pair(
         residual_abs_thresh=residual_abs_thresh,
         residual_min_peptides=residual_min_peptides
     )
+    # convert filtered python dict -> R named list
+    peptide_sets_r = peptide_sets_dict_to_r_named_list(peptide_sets)
 
     table = INTERNAL.psea(
         maxZ,
@@ -644,7 +646,14 @@ def filter_peptide_sets_by_residual(
             continue
         n_above = int((abs_res.loc[present] >= residual_abs_thresh).sum())
         if n_above >= residual_min_peptides:
-            kept[species] = peps
+            kept[species] = list(peps)
 
     return kept
+    
+def peptide_sets_dict_to_r_named_list(peptide_sets: dict):
+    # peptide_sets: {"species_id": iterable_of_peptides}
+    return ListVector({
+        species: StrVector(sorted(list(peps)))
+        for species, peps in peptide_sets.items()
+    })
 
