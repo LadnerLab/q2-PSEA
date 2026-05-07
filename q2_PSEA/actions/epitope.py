@@ -113,9 +113,6 @@ def _create_EpitopeID_row(epitope, collapse):
     return epitope
 
 
-# TODO: Need to fix the formatting so the indices aren't duplicated in output
-# files, This will need to happen in transformation in both directions. df to
-# tsv we need to dedup. tsv to DataFrame need to redup so pd can read it
 def count_enriched(
             psea_tables: pd.DataFrame,
             zscores: pd.DataFrame,

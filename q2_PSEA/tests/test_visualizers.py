@@ -10,10 +10,6 @@ from qiime2.plugin.testing import TestPluginBase
 from q2_PSEA.actions.visualizers import aeplots, volcano, zscatter
 
 
-# TODO: These tests are largely useless, most assert nothing. Most visualizers
-# are hard to test though
-
-
 def _pairs_df(rows=None):
     if rows is None:
         rows = [("sA", "sB")]

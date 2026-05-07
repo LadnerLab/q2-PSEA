@@ -93,7 +93,6 @@ def remove_peptides_in_gmt_format(scores, peptide_sets_file) -> pd.DataFrame:
     """
     read_gmtr = ro.r["read.gmt"]
     with (ro.default_converter + pandas2ri.converter).context():
-        # TODO: feel like it's faster to write our own...
         peptide_sets = read_gmtr(peptide_sets_file)
     pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
     return scores.drop(index=pep_list), peptide_sets

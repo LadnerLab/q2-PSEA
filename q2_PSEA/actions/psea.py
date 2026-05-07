@@ -229,10 +229,6 @@ def _filter_peptide_sets(
         ):
             all_tested_features = set(row["all_tested_peptides"].split("/"))
 
-            # TODO: In principle this should work, but I'm not seeing it
-            # filter anything
-            #
-            # Write unittest
             if peptide_map is not None:
                 all_tested_features = _get_mapped_features(
                     epitope_map, peptide_map, all_tested_features
@@ -567,7 +563,6 @@ def _compute_pair_fit_and_residuals(
     )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
-    # TODO: Do we also need to map x and y?
     if epitope_map is not None:
         maxZ_out = utils.collapse_residuals_to_epitope(maxZ, epitope_map)
         deltaZ_out = utils.collapse_residuals_to_epitope(deltaZ, epitope_map)
@@ -575,7 +570,6 @@ def _compute_pair_fit_and_residuals(
         maxZ_out = maxZ
         deltaZ_out = deltaZ
 
-    # TODO: Why does it do it like this?
     spline_df = pd.concat([
         pd.DataFrame(
             {"x": x, "yfit": yfit},
