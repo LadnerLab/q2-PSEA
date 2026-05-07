@@ -2,12 +2,15 @@ import numpy as np
 import os
 import pandas as pd
 import qiime2
+import random
 import rpy2.robjects as ro
 import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
+import sys
 import tempfile
 
 from math import log, pow
+from qiime2.plugin import CaptureHolder, IContext
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
 
@@ -20,7 +23,7 @@ def create_fgsea_table_for_pair(
     permutation_num: int,
     min_size: int,
     max_size: int,
-    seed: int,
+    seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
@@ -40,6 +43,9 @@ def create_fgsea_table_for_pair(
     pd.DataFrame
         PSEA result table for this pair (stored as FeatureData[PSEAScores]).
     """
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(0, sys.maxsize)
+    )
     processed_zscores = processed_zscores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
@@ -145,9 +151,9 @@ def _run_iterative_process_single_pair(
     permutation_num: int,
     min_size: int,
     max_size: int,
-    seed: int,
     p_value: float,
     enrichment_score: float,
+    seed: CaptureHolder[int] = None,
     include_negative_enrichment: bool = True,
     epitope_map: pd.DataFrame = None,
     peptide_map: pd.DataFrame = None,
@@ -167,6 +173,9 @@ def _run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(0, sys.maxsize)
+    )
     updated_peptide_sets = (
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
@@ -283,32 +292,42 @@ def _get_mapped_features(epitope_map, peptide_map, all_tested_features):
 
 
 def make_psea_table(
-    ctx,
-    scores,
-    pairs,
-    peptide_sets,
-    threshold,
-    epitope,
-    species_taxa=None,
-    species_colors=None,
-    epitope_map=None,
-    peptide_map=None,
-    mapped_zscores=None,
-    mapped_gmt=None,
-    collapse="Viral",
-    p_value=0.05,
-    enrichment_score=1,
-    include_negative_enrichment=True,
-    min_size=15,
-    max_size=2000,
-    permutation_num=10000,
-    spline_type="r-smooth",
-    degree=3,
-    dof=None,
-    iterative_analysis=True,
-    seed=149,
-    map=True
-):
+    ctx: IContext,
+    scores: qiime2.Artifact,
+    pairs: qiime2.Artifact,
+    peptide_sets: qiime2.Artifact,
+    threshold: float,
+    epitope: qiime2.Artifact = None,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
+    epitope_map: qiime2.Artifact = None,
+    peptide_map: qiime2.Artifact = None,
+    mapped_zscores: qiime2.Artifact = None,
+    mapped_gmt: qiime2.Artifact = None,
+    collapse: str = "Viral",
+    p_value: float = 0.05,
+    enrichment_score: float = 1,
+    include_negative_enrichment: bool = True,
+    min_size: int = 15,
+    max_size: int = 2000,
+    permutation_num: int = 10000,
+    spline_type: str = "r-smooth",
+    degree: int = 3,
+    dof: int = None,
+    iterative_analysis: bool = True,
+    seed: CaptureHolder[int] = None,
+    map: bool = True,
+) -> tuple[
+    qiime2.Visualization,
+    qiime2.Visualization,
+    qiime2.Visualization,
+    dict[str, qiime2.Artifact],
+    dict[str, qiime2.Artifact],
+]:
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(0, sys.maxsize)
+    )
+
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
     # ------------------------------------------------------------------
