@@ -486,7 +486,7 @@ plugin.pipelines.register_function(
         "scores": FeatureTable[Zscore],
         "pairs": PSEAPairs,
         "peptide_sets": GMT,
-        "epitope": FeatureData[Epitope],
+        "peptide_metadata": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
         "peptide_map": FeatureData[MappedPeptide],
         "mapped_zscores": FeatureTable[Zscore % Properties("mapped")],
@@ -568,7 +568,7 @@ plugin.pipelines.register_function(
             "GMT file mapping species identifiers to the peptides linked to"
             " them. Collapsed to epitope level if epitope is provided."
         ),
-        "epitope": (
+        "peptide_metadata": (
             "Optional epitope table. When provided, peptide-level residuals"
             " are collapsed to the epitope level before GSEA."
         ),
@@ -887,7 +887,7 @@ plugin.methods.register_function(
     function=count_enriched,
     inputs={
         'psea_tables': Collection[FeatureData[PSEAScores]],
-        'epitope': FeatureData[Epitope],
+        'peptide_metadata': FeatureData[Epitope],
         'epitope_map': FeatureData[MappedEpitope],
         'zscores': FeatureTable[Zscore],
         'processed_zscores':

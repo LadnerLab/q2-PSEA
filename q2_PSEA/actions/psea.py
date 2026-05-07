@@ -297,9 +297,9 @@ def make_psea_table(
     pairs: qiime2.Artifact,
     peptide_sets: qiime2.Artifact,
     threshold: float,
-    epitope: qiime2.Artifact = None,
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
+    peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
     peptide_map: qiime2.Artifact = None,
     mapped_zscores: qiime2.Artifact = None,
@@ -359,6 +359,11 @@ def make_psea_table(
             " pipeline to do the mapping."
         )
 
+    if not map and peptide_metadata is None:
+        raise ValueError(
+            "If not mapping then peptide_metadata must be passed."
+        )
+
     filter_scores_action = ctx.get_action("psea", "_filter_scores_to_pairs")
     process_scores_action = ctx.get_action("psea", "_process_scores")
     compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
@@ -394,7 +399,7 @@ def make_psea_table(
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map, peptide_map = create_epitope_map(epitope, collapse)
+        epitope_map, peptide_map = create_epitope_map(peptide_metadata, collapse)
         mapped_zscores, = create_epitope_zscore(filtered_zscores, epitope_map)
         mapped_gmt, = create_epitope_gmt(epitope_map)
 
@@ -528,7 +533,7 @@ def make_psea_table(
             psea_tables=psea_tables,
             zscores=filtered_zscores,
             processed_zscores=processed_zscores,
-            epitope=epitope,
+            epitope=peptide_metadata,
             p_value=p_value,
             enrichment_score=enrichment_score,
             include_negative_enrichment=include_negative_enrichment

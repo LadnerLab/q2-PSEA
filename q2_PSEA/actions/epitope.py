@@ -117,7 +117,7 @@ def count_enriched(
             psea_tables: pd.DataFrame,
             zscores: pd.DataFrame,
             processed_zscores: pd.DataFrame,
-            epitope: pd.DataFrame = None,
+            peptide_metadata: pd.DataFrame = None,
             epitope_map: pd.DataFrame = None,
             mapped_zscores: pd.DataFrame = None,
             mapped_processed_zscores: pd.DataFrame = None,
@@ -125,8 +125,8 @@ def count_enriched(
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
-    if (epitope is not None and epitope_map is not None) or \
-            (epitope is None and epitope_map is None):
+    if (peptide_metadata is not None and epitope_map is not None) or \
+            (peptide_metadata is None and epitope_map is None):
         raise ValueError(
             "Please pass one and only one of eptiope and epitope_map"
         )
@@ -148,7 +148,7 @@ def count_enriched(
         )
     else:
         counts = _count_enriched_uncollapsed(
-            epitope, zscores, processed_zscores, filtered_scores
+            peptide_metadata, zscores, processed_zscores, filtered_scores
         )
 
     return counts
