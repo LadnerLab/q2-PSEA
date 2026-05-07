@@ -121,8 +121,8 @@ def count_enriched(
             epitope_map: pd.DataFrame,
             zscores: pd.DataFrame,
             processed_zscores: pd.DataFrame,
-            mapped_zscores: pd.DataFrame=None,
-            mapped_processed_zscores: pd.DataFrame=None,
+            mapped_zscores: pd.DataFrame = None,
+            mapped_processed_zscores: pd.DataFrame = None,
             p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
@@ -151,7 +151,9 @@ def count_enriched(
                 hit = epitope_map.loc[enriched]
                 for subtype in hit['Subtype']:
                     _count_enriched(
-                        counts, zscores, epitope_map, processed_zscores, mapped_zscores, mapped_processed_zscores, species_id, species_name, enriched, subtype
+                        counts, zscores, epitope_map, processed_zscores,
+                        mapped_zscores, mapped_processed_zscores, species_id,
+                        species_name, enriched, subtype
                     )
             else:
                 # Here we are uncollapsed which means we are looking at an
@@ -163,7 +165,9 @@ def count_enriched(
                 def _count_uncollapsed(hit):
                     for subtype in hit['Subtype']:
                         _count_enriched(
-                            counts, zscores, epitope_map, processed_zscores, mapped_zscores, mapped_processed_zscores, species_id, species_name, enriched, subtype
+                            counts, zscores, epitope_map, processed_zscores,
+                            mapped_zscores, mapped_processed_zscores,
+                            species_id, species_name, enriched, subtype
                         )
 
                 hits.apply(_count_uncollapsed, axis=1)
@@ -197,14 +201,12 @@ def count_enriched(
             )
         )
 
-        # TODO: This explodes if nothing passed the filter. Need to catch that
-        # error and raise a better one. I think it probably should be an error
-        # not an empty Artifact
-        #
-        # TODO: Should be Subtype Counts for epitope output and Epitope Counts
-        # for subtype outputs
         if key == 'subtype':
-            df.columns = ['Epitope Counts', 'Relative Enrichment Score', 'Processed Relative Enrichment Score']
+            df.columns = [
+                'Epitope Counts',
+                'Relative Enrichment Score',
+                'Processed Relative Enrichment Score'
+            ]
         else:
             df.columns = ['Subtype Counts']
         counts[key] = df
@@ -271,11 +273,11 @@ def _count_enriched(
 
 
 def _get_relative_enrichment_score(
-        zscores,
-        mapped_zscores,
-        feature,
-        epitope_map
-    ):
+            zscores,
+            mapped_zscores,
+            feature,
+            epitope_map
+        ):
     max_z_scores = mapped_zscores[feature]
     # The zscore matrix is keyed on peptides, but the subtypes here map 1 to 1
     # to peptides

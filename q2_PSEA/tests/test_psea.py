@@ -374,8 +374,8 @@ class TestProcessScoresDirect(TestPluginBase):
         raw = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
         )
-        # _process_scores expects samples×features view; import features-as-rows
-        # then retrieve the samples×features view
+        # _process_scores expects samples×features view; import
+        # features-as-rows then retrieve the samples×features view
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         self.scores_view = art.view(pd.DataFrame)
 
