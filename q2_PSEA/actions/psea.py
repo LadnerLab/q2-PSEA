@@ -313,6 +313,9 @@ def make_psea_table(
     seed=149,
     map=True
 ):
+    # ------------------------------------------------------------------
+    # Determine what kind of analysis was asked for
+    # ------------------------------------------------------------------
     map_provided = all(
         param is not None for param in [
             epitope_map, mapped_zscores, mapped_gmt
@@ -321,7 +324,7 @@ def make_psea_table(
 
     if not map and map_provided:
         raise ValueError("You provided mapped artifacts but indicated you do"
-                         " not want mapping")
+                         " not want mapping.")
 
     if map and any(
                 param is not None for param in [
@@ -330,7 +333,8 @@ def make_psea_table(
             ) and not map_provided:
         raise ValueError(
             "Please pass either all of 'epitope_map', 'mapped_zscores',"
-            " and 'mapped_gmt' or none of them if you are mapping."
+            " and 'mapped_gmt' or none of them when running mapped analysis."
+            " If you provide none, this pipeline will do the mapping."
         )
 
     if map and map_provided and iterative_analysis and not peptide_map:
@@ -368,7 +372,7 @@ def make_psea_table(
     pairs_list = pairs.view(list)
 
     # ------------------------------------------------------------------
-    # Handle epitope collapsing
+    # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
     if map and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")

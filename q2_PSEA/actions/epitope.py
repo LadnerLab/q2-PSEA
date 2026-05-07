@@ -120,8 +120,8 @@ def count_enriched(
             psea_tables: pd.DataFrame,
             zscores: pd.DataFrame,
             processed_zscores: pd.DataFrame,
-            epitope: pd.DataFrame=None,
-            epitope_map: pd.DataFrame=None,
+            epitope: pd.DataFrame = None,
+            epitope_map: pd.DataFrame = None,
             mapped_zscores: pd.DataFrame = None,
             mapped_processed_zscores: pd.DataFrame = None,
             p_value: float = .05,
@@ -150,7 +150,9 @@ def count_enriched(
             mapped_processed_zscores, filtered_scores
         )
     else:
-        counts = _count_enriched_uncollapsed(epitope, zscores, processed_zscores, filtered_scores)
+        counts = _count_enriched_uncollapsed(
+            epitope, zscores, processed_zscores, filtered_scores
+        )
 
     return counts
 
@@ -340,7 +342,8 @@ def _count_enriched_uncollapsed(
                 counts['subtype'][species_id][species_name][subtype] = {
                     'Epitope Counts': 1,
                     'Relative Enrichment Score': sum(zscores[enriched]),
-                    'Relative Processed Enrichment Score': sum(processed_zscores[enriched]),
+                    'Relative Processed Enrichment Score':
+                        sum(processed_zscores[enriched]),
                 }
             else:
                 counts['subtype'][species_id][species_name][subtype][
