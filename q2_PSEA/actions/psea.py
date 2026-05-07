@@ -152,12 +152,12 @@ def _run_iterative_process_single_pair(
     max_size: int,
     p_value: float,
     enrichment_score: float,
-    seed: CaptureHolder[int] = None,
-    include_negative_enrichment: bool = True,
+    precomputed_fit: pd.DataFrame = None,
     epitope_map: pd.DataFrame = None,
     peptide_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
-    precomputed_fit: pd.DataFrame = None,
+    seed: CaptureHolder[int] = None,
+    include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
 ) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
@@ -294,8 +294,6 @@ def make_psea_table(
     pairs: qiime2.Artifact,
     peptide_sets: qiime2.Artifact,
     threshold: float,
-    species_taxa: qiime2.Metadata = None,
-    species_colors: qiime2.Metadata = None,
     peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
     peptide_map: qiime2.Artifact = None,
@@ -313,6 +311,8 @@ def make_psea_table(
     dof: int = None,
     iterative_analysis: bool = True,
     seed: CaptureHolder[int] = None,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
     map: bool = True,
 ) -> tuple[
     qiime2.Visualization,
@@ -545,8 +545,8 @@ def _compute_pair_fit_and_residuals(
     sample_b: str,
     spline_type: str,
     degree: int,
-    dof: int = None,
     epitope_map: pd.DataFrame = None,
+    dof: int = None,
 ) -> pd.DataFrame:
     """Fit a spline to the Z-score scatter for a single sample pair and
     compute per-peptide/epitope residuals.
