@@ -172,18 +172,6 @@ def count_enriched(
 
                 hits.apply(_count_uncollapsed, axis=1)
 
-    # TODO: Need relative enrichment score for the subtype output.
-    #
-    # Relative enrichment scores come from pulling all the zscores for the
-    # subtypes of an enriched epitope
-    #
-    # normalize these zscores by dividing them by the max zscore for the
-    # epitope
-    #
-    # sum these scores across all epitopes and use that as the relative
-    # enrichment score for the subtype
-    #
-    # Do this for log scaled and non log scaled
     filtered_scores.apply(_count, axis=1)
     for key, value in counts.items():
         df = pd.DataFrame.from_dict(
