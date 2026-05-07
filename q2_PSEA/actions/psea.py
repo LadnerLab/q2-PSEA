@@ -394,7 +394,9 @@ def make_psea_table(
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map, peptide_map = create_epitope_map(peptide_metadata, collapse)
+        epitope_map, peptide_map = create_epitope_map(
+            peptide_metadata, collapse
+        )
         mapped_zscores, = create_epitope_zscore(filtered_zscores, epitope_map)
         mapped_gmt, = create_epitope_gmt(epitope_map)
 
