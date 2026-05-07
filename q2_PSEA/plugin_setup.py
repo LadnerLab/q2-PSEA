@@ -345,8 +345,6 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
     },
     parameter_descriptions={
-        "sample_a": "Name of the first sample in the pair.",
-        "sample_b": "Name of the second sample in the pair.",
         "threshold": (
             "Minimum Z-score a peptide must have to be included in GSEA."
         ),
@@ -410,8 +408,6 @@ plugin.methods.register_function(
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
-        "sample_a": Str,
-        "sample_b": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -423,8 +419,6 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
     },
     parameter_descriptions={
-        "sample_a": "Name of the first sample in the pair.",
-        "sample_b": "Name of the second sample in the pair.",
         "threshold": "Minimum Z-score for GSEA inclusion.",
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
@@ -514,6 +508,7 @@ plugin.pipelines.register_function(
         "seed": Int,
         "species_taxa": Metadata,
         "species_colors": Metadata,
+        "map": Bool,
     },
     parameter_descriptions={
         "threshold": (
@@ -892,6 +887,7 @@ plugin.methods.register_function(
     function=count_enriched,
     inputs={
         'psea_tables': Collection[FeatureData[PSEAScores]],
+        'epitope': FeatureData[Epitope],
         'epitope_map': FeatureData[MappedEpitope],
         'zscores': FeatureTable[Zscore],
         'processed_zscores':

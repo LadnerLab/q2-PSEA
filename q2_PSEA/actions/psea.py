@@ -141,8 +141,6 @@ def count_antibody_events(
 def _run_iterative_process_single_pair(
     processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
-    sample_a: str,
-    sample_b: str,
     threshold: float,
     permutation_num: int,
     min_size: int,
@@ -182,8 +180,6 @@ def _run_iterative_process_single_pair(
         psea_table = create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=updated_peptide_sets,
-            sample_a=sample_a,
-            sample_b=sample_b,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -200,8 +196,6 @@ def _run_iterative_process_single_pair(
             p_value,
             enrichment_score,
             include_negative_enrichment,
-            sample_a,
-            sample_b,
             epitope_map=epitope_map,
             peptide_map=peptide_map
         )
@@ -298,9 +292,9 @@ def make_psea_table(
     pairs,
     peptide_sets,
     threshold,
+    epitope,
     species_taxa=None,
     species_colors=None,
-    epitope=None,
     epitope_map=None,
     peptide_map=None,
     mapped_zscores=None,
@@ -317,23 +311,29 @@ def make_psea_table(
     dof=None,
     iterative_analysis=True,
     seed=149,
+    map=True
 ):
-    collapsed = False
-    map_provided = False
+    map_provided = all(
+        param is not None for param in [
+            epitope_map, mapped_zscores, mapped_gmt
+        ]
+    )
 
-    if any([epitope_map, mapped_zscores, mapped_gmt]):
-        collapsed = True
-        map_provided = True
-        if not all([epitope_map, mapped_zscores, mapped_gmt]):
-            raise ValueError(
-                "Please pass either all of 'epitope_map', 'mapped_zscores',"
-                " and 'mapped_gmt' or none of them."
-            )
-    elif epitope:
-        collapsed = True
+    if not map and map_provided:
+        raise ValueError("You provided mapped artifacts but indicated you do"
+                         " not want mapping")
 
-    if collapsed and not map_provided and iterative_analysis \
-            and not peptide_map:
+    if map and any(
+                param is not None for param in [
+                    epitope_map, mapped_zscores, mapped_gmt
+                ]
+            ) and not map_provided:
+        raise ValueError(
+            "Please pass either all of 'epitope_map', 'mapped_zscores',"
+            " and 'mapped_gmt' or none of them if you are mapping."
+        )
+
+    if map and map_provided and iterative_analysis and not peptide_map:
         raise ValueError(
             "If doing mapped iterative analysis, you must pass in a"
             " peptide_map, or not provide mapped Artifacts and allow this"
@@ -370,7 +370,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing
     # ------------------------------------------------------------------
-    if collapsed and not map_provided:
+    if map and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
@@ -384,7 +384,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     processed_zscores, = process_scores_action(filtered_zscores)
     mapped_processed_zscores = None
-    if collapsed:
+    if map:
         mapped_processed_zscores, = process_scores_action(mapped_zscores)
 
     pair_splines = {}
@@ -412,15 +412,13 @@ def make_psea_table(
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = run_iterative(
-                processed_zscores=mapped_processed_zscores if collapsed else
+                processed_zscores=mapped_processed_zscores if map else
                 processed_zscores,
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
                 peptide_map=peptide_map,
                 mapped_peptide_sets=mapped_gmt,
-                sample_a=sample_a,
-                sample_b=sample_b,
                 threshold=threshold,
                 permutation_num=permutation_num,
                 min_size=min_size,
@@ -433,17 +431,15 @@ def make_psea_table(
             )
         else:
             pair_pep_sets_dict[pair] = \
-                mapped_gmt if collapsed else peptide_sets
+                mapped_gmt if map else peptide_sets
 
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = create_fgsea_table(
-            processed_zscores=mapped_processed_zscores if collapsed else
+            processed_zscores=mapped_processed_zscores if map else
             processed_zscores,
             peptide_sets=pair_pep_sets_dict[pair],
-            sample_a=sample_a,
-            sample_b=sample_b,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -465,7 +461,7 @@ def make_psea_table(
 
     scatter_plot, = zscatter(
         zscores=(
-            mapped_processed_zscores if collapsed else processed_zscores
+            mapped_processed_zscores if map else processed_zscores
         ),
         pairs=pairs,
         splines=pair_splines,
@@ -496,17 +492,28 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
-    enrichment_tables, = count_enriched(
-        psea_tables=psea_tables,
-        epitope_map=epitope_map,
-        zscores=filtered_zscores,
-        processed_zscores=processed_zscores,
-        mapped_zscores=mapped_zscores,
-        mapped_processed_zscores=mapped_processed_zscores,
-        p_value=p_value,
-        enrichment_score=enrichment_score,
-        include_negative_enrichment=include_negative_enrichment
-    )
+    if map:
+        enrichment_tables, = count_enriched(
+            psea_tables=psea_tables,
+            zscores=filtered_zscores,
+            processed_zscores=processed_zscores,
+            epitope_map=epitope_map,
+            mapped_zscores=mapped_zscores,
+            mapped_processed_zscores=mapped_processed_zscores,
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            include_negative_enrichment=include_negative_enrichment
+        )
+    else:
+        enrichment_tables, = count_enriched(
+            psea_tables=psea_tables,
+            zscores=filtered_zscores,
+            processed_zscores=processed_zscores,
+            epitope=epitope,
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            include_negative_enrichment=include_negative_enrichment
+        )
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
 
