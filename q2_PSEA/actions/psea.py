@@ -7,8 +7,6 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import tempfile
 
-import time
-
 from math import log, pow
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
@@ -46,8 +44,6 @@ def create_fgsea_table_for_pair(
     pd.DataFrame
         PSEA result table for this pair (stored as FeatureData[PSEAScores]).
     """
-    print(f"Working on pair ({sample_a}, {sample_b})...")
-
     processed_zscores = processed_zscores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
@@ -129,12 +125,6 @@ def count_antibody_events(
                 else:
                     zero_count[taxa] = zero_count.get(taxa, 0) + 1
 
-    if zero_count:
-        print()
-        for taxa, count in zero_count.items():
-            event_word = "events" if count > 1 else "event"
-            print(f"{count} {event_word} for {taxa}, which has an NES of 0")
-
     pos_count = dict(
         sorted(pos_count.items(), key=lambda item: item[1], reverse=True)
     )
@@ -192,8 +182,6 @@ def _run_iterative_process_single_pair(
     iteration = 1
     sig_found = True
     while (sig_found):
-        print(f"\nIteration: {iteration} for pair: ({sample_a}, {sample_b})")
-
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
@@ -251,10 +239,6 @@ def _filter_peptide_sets(
                  else row["NES"] > enrichment_score)
             and row_id not in tested_species
         ):
-            print(
-                f"Found {row.get('species_name', row['ID'])} in"
-                f" ({sample_a}, {sample_b}) to be significant"
-            )
             all_tested_features = set(row["all_tested_peptides"].split("/"))
 
             # TODO: In principle this should work, but I'm not seeing it
@@ -340,8 +324,6 @@ def make_psea_table(
     iterative_analysis=True,
     seed=149,
 ):
-    start_time = time.perf_counter()
-
     collapsed = False
     map_provided = False
 
@@ -531,10 +513,6 @@ def make_psea_table(
         enrichment_score=enrichment_score,
         include_negative_enrichment=include_negative_enrichment
     )
-
-    end_time = time.perf_counter()
-    # TODO: This becomes meaningless when running in parallel
-    print(f"\nFinished in {round(end_time - start_time, 2)} seconds")
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
 
