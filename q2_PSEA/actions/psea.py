@@ -16,8 +16,6 @@ def create_fgsea_table_for_pair(
     processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
     precomputed_fit: pd.DataFrame,
-    sample_a: str,
-    sample_b: str,
     threshold: float,
     permutation_num: int,
     min_size: int,
@@ -33,8 +31,6 @@ def create_fgsea_table_for_pair(
         Log-scaled Z-score matrix (from FeatureTable[Zscore]).
     peptide_sets : pd.DataFrame
         GMT peptide-set table with columns 'term' and 'gene' (from GMT).
-    sample_a, sample_b : str
-        Names of the two samples forming the pair.
     species_taxa : PSEASpeciesTaxaDirFmt, optional
         Directory format containing species-taxa.tsv; passed as a file path
         to the underlying R function.

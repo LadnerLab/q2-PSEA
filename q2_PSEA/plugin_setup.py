@@ -337,8 +337,6 @@ plugin.methods.register_function(
         "precomputed_fit": FeatureData[Spline],
     },
     parameters={
-        "sample_a": Str,
-        "sample_b": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
