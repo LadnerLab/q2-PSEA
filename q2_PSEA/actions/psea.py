@@ -382,7 +382,7 @@ def create_fgsea_table_for_pair(
         deltaZ,
         residual_abs_thresh=residual_abs_thresh,
         residual_min_peptides=residual_min_peptides,
-        species_col="species",
+        species_col="term",
         gene_col="gene"
     )
 
