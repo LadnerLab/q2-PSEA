@@ -542,7 +542,7 @@ def make_psea_table(
             psea_tables=psea_tables,
             zscores=filtered_zscores,
             processed_zscores=processed_zscores,
-            epitope=peptide_metadata,
+            peptide_metadata=peptide_metadata,
             p_value=p_value,
             enrichment_score=enrichment_score,
             include_negative_enrichment=include_negative_enrichment
