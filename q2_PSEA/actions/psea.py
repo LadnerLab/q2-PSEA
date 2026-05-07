@@ -218,8 +218,6 @@ def _filter_peptide_sets(
             p_value: int,
             enrichment_score: int,
             include_negative_enrichment: bool,
-            sample_a: str,
-            sample_b: str,
             epitope_map: pd.DataFrame = None,
             peptide_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
