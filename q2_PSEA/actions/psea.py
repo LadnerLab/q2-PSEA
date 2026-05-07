@@ -13,7 +13,9 @@ from qiime2.plugin import CaptureHolder, IContext
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
 
-MAX_R_INT = 4294967295
+# Need a random signed 32 bit int for R
+MIN_32_BIT_INT = -2 ** 31
+MAX_32_BIT_INT = 2**31 - 1
 
 
 def create_fgsea_table_for_pair(
@@ -44,7 +46,9 @@ def create_fgsea_table_for_pair(
     pd.DataFrame
         PSEA result table for this pair (stored as FeatureData[PSEAScores]).
     """
-    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
     processed_zscores = processed_zscores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
@@ -172,7 +176,9 @@ def _run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
-    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
     updated_peptide_sets = (
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
@@ -321,7 +327,9 @@ def make_psea_table(
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
 ]:
-    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for

@@ -8,7 +8,7 @@ from qiime2.plugin.testing import TestPluginBase
 
 from qiime2 import Artifact
 from q2_PSEA.actions.epitope import (
-    _count_enriched,
+    _count_enriched_collapsed_helper,
     _filter_scores,
     create_epitope_map,
     count_enriched,
@@ -174,18 +174,18 @@ class TestCountEnriched(TestPluginBase):
 
     def test_initializes_epitope_key(self):
         counts = self._empty()
-        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
         self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 1)
 
     def test_second_call_increments_count(self):
         counts = self._empty()
-        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
-        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
         self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 2)
 
     def test_tracks_subtype_separately(self):
         counts = self._empty()
-        _count_enriched(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
         self.assertEqual(counts["subtype"]["sp001"]["InfluenzaA"]["H1N1"], 1)
 
 
