@@ -119,6 +119,10 @@ def _create_EpitopeID_row(epitope, collapse):
 def count_enriched(
             psea_tables: pd.DataFrame,
             epitope_map: pd.DataFrame,
+            zscores: pd.DataFrame,
+            processed_zscores: pd.DataFrame,
+            mapped_zscores: pd.DataFrame=None,
+            mapped_processed_zscores: pd.DataFrame=None,
             p_value: float = .05,
             enrichment_score: float = 1,
             include_negative_enrichment: bool = True,
@@ -147,7 +151,7 @@ def count_enriched(
                 hit = epitope_map.loc[enriched]
                 for subtype in hit['Subtype']:
                     _count_enriched(
-                        counts, species_id, species_name, enriched, subtype
+                        counts, zscores, epitope_map, processed_zscores, mapped_zscores, mapped_processed_zscores, species_id, species_name, enriched, subtype
                     )
             else:
                 # Here we are uncollapsed which means we are looking at an
@@ -159,11 +163,23 @@ def count_enriched(
                 def _count_uncollapsed(hit):
                     for subtype in hit['Subtype']:
                         _count_enriched(
-                            counts, species_id, species_name, enriched, subtype
+                            counts, zscores, epitope_map, processed_zscores, mapped_zscores, mapped_processed_zscores, species_id, species_name, enriched, subtype
                         )
 
                 hits.apply(_count_uncollapsed, axis=1)
 
+    # TODO: Need relative enrichment score for the subtype output.
+    #
+    # Relative enrichment scores come from pulling all the zscores for the
+    # subtypes of an enriched epitope
+    #
+    # normalize these zscores by dividing them by the max zscore for the
+    # epitope
+    #
+    # sum these scores across all epitopes and use that as the relative
+    # enrichment score for the subtype
+    #
+    # Do this for log scaled and non log scaled
     filtered_scores.apply(_count, axis=1)
     for key, value in counts.items():
         df = pd.DataFrame.from_dict(
@@ -183,8 +199,14 @@ def count_enriched(
 
         # TODO: This explodes if nothing passed the filter. Need to catch that
         # error and raise a better one. I think it probably should be an error
-        # not an empty ARtifact
-        df.columns = ['Counts']
+        # not an empty Artifact
+        #
+        # TODO: Should be Subtype Counts for epitope output and Epitope Counts
+        # for subtype outputs
+        if key == 'subtype':
+            df.columns = ['Epitope Counts', 'Relative Enrichment Score', 'Processed Relative Enrichment Score']
+        else:
+            df.columns = ['Subtype Counts']
         counts[key] = df
 
     return counts
@@ -201,7 +223,11 @@ def _filter_scores(scores, p_value, enrichment_score,
     return scores.loc[scores['enrichmentScore'] >= enrichment_score]
 
 
-def _count_enriched(counts, species_id, species_name, epitope, subtype):
+def _count_enriched(
+            counts, zscores, epitope_map, processed_zscores, mapped_zscores,
+            mapped_processed_zscores, species_id, species_name, epitope,
+            subtype
+        ):
     if species_id not in counts['epitope']:
         counts['epitope'][species_id] = {}
 
@@ -219,7 +245,49 @@ def _count_enriched(counts, species_id, species_name, epitope, subtype):
     else:
         counts['epitope'][species_id][species_name][epitope] += 1
 
+    # TODO: Get the enrichment scores. Perhaps we just do that once the first
+    # time we see a subtype? I think that is the best idea.
     if subtype not in counts['subtype'][species_id][species_name]:
-        counts['subtype'][species_id][species_name][subtype] = 1
+        counts['subtype'][species_id][species_name][subtype] = {
+            'Epitope Counts': 1,
+            'Relative Enrichment Score': _get_relative_enrichment_score(
+                zscores,
+                mapped_zscores,
+                epitope,
+                epitope_map
+            ),
+            'Relative Processed Enrichment Score':
+                _get_relative_enrichment_score(
+                    processed_zscores,
+                    mapped_processed_zscores,
+                    epitope,
+                    epitope_map
+                ),
+        }
     else:
-        counts['subtype'][species_id][species_name][subtype] += 1
+        counts['subtype'][species_id][species_name][subtype][
+            'Epitope Counts'
+        ] += 1
+
+
+def _get_relative_enrichment_score(
+        zscores,
+        mapped_zscores,
+        feature,
+        epitope_map
+    ):
+    max_z_scores = mapped_zscores[feature]
+    # The zscore matrix is keyed on peptides, but the subtypes here map 1 to 1
+    # to peptides
+    subtypes = epitope_map.loc[feature]['CodeName']
+
+    normalized_zscores = []
+
+    for subtype in subtypes:
+        z_scores = zscores[subtype]
+
+        for max_z_score, zscore in zip(max_z_scores, z_scores):
+            normalized_zscores.append(zscore / max_z_score)
+
+    relative_enrichment_score = sum(max_z_scores)
+    return relative_enrichment_score

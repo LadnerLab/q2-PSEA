@@ -49,7 +49,7 @@ class TestMethodsRegistered(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def test_process_scores_registered(self):
-        self.assertIn("process_scores", self.plugin.methods)
+        self.assertIn("_process_scores", self.plugin.methods)
 
     def test_compute_pair_fit_registered(self):
         self.assertIn("_compute_pair_fit_and_residuals", self.plugin.methods)

@@ -20,7 +20,8 @@ from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
     count_antibody_events,
     create_fgsea_table_for_pair,
-    process_scores,
+    _filter_scores_to_pairs,
+    _process_scores,
     _run_iterative_process_single_pair,
     make_psea_table,
 )
@@ -150,41 +151,67 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
 
 
 # ---------------------------------------------------------------------------
-# Register process_scores as a method
+# Register _filter_scores_to_pairs as a method
 # ---------------------------------------------------------------------------
 
-PROCESS_SCORES_IN, PROCESS_SCORES_OUT = TypeMap({
-    Zscore: Zscore % Properties("processed"),
-    Zscore % Properties("mapped"): Zscore % Properties("mapped", "processed")
+# TODO: This, near as I can tell, does not work. Doesn't seem like the type
+# mapping actually cares about the properties
+SCORES_IN, SCORES_OUT = TypeMap({
+    FeatureTable[Zscore]: FeatureTable[Zscore % Properties("processed")],
+    FeatureTable[Zscore % Properties("mapped")]:
+        FeatureTable[Zscore % Properties("mapped", "processed")]
 })
 
 plugin.methods.register_function(
-    function=process_scores,
+    function=_filter_scores_to_pairs,
     inputs={
-        "scores": FeatureTable[PROCESS_SCORES_IN],
+        "scores": SCORES_IN,
         "pairs": PSEAPairs,
     },
     parameters={},
-    outputs=[("processed_scores", FeatureTable[PROCESS_SCORES_OUT])],
+    outputs=[("filtered_scores", SCORES_OUT)],
     input_descriptions={
         "scores": "Z-score matrix (FeatureTable[Zscore]).",
-        "pairs": (
-            "Tab-delimited file listing sample pairs (one per row, header"
-            " required)."
-        ),
+        "pairs": "Pairs to filter on. Keep only scores related to these pairs."
     },
     parameter_descriptions={},
     output_descriptions={
-        "processed_scores": (
-            "Log-scaled Z-score matrix containing only the samples referenced"
-            " in the pairs file."
+        "filtered_scores": (
+            "Filtered Z-score matrix."
         ),
     },
     name="Process Scores",
     description=(
-        "Selects the samples referenced in the pairs file from the Z-score"
-        " matrix and applies log-scaling to produce the processed Z-score"
-        " matrix used in PSEA."
+        "Z-scores in the given matrix filtered to only those related to given"
+        " pairs."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Register _process_scores as a method
+# ---------------------------------------------------------------------------
+
+
+plugin.methods.register_function(
+    function=_process_scores,
+    inputs={
+        "scores": SCORES_IN,
+    },
+    parameters={},
+    outputs=[("processed_zscores", SCORES_OUT)],
+    input_descriptions={
+        "scores": "Z-score matrix (FeatureTable[Zscore]).",
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "processed_zscores": (
+            "Log-scaled Z-score matrix."
+        ),
+    },
+    name="Process Scores",
+    description=(
+        "Log scales z-scores in the given matrix."
     ),
 )
 
@@ -195,7 +222,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=_compute_pair_fit_and_residuals,
     inputs={
-        "processed_scores": FeatureTable[Zscore % Properties("processed")],
+        "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "epitope_map": FeatureData[MappedEpitope],
     },
     parameters={
@@ -207,7 +234,7 @@ plugin.methods.register_function(
     },
     outputs=[("spline_fit", FeatureData[Spline])],
     input_descriptions={
-        "processed_scores": (
+        "processed_zscores": (
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
         ),
         "epitope_map": (
@@ -305,7 +332,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=create_fgsea_table_for_pair,
     inputs={
-        "processed_scores": FeatureTable[Zscore % Properties("processed")],
+        "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
     },
@@ -344,7 +371,7 @@ plugin.methods.register_function(
         ),
     },
     input_descriptions={
-        "processed_scores": (
+        "processed_zscores": (
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
         ),
         "peptide_sets": "GMT peptide-set file mapping species to peptides.",
@@ -377,7 +404,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=_run_iterative_process_single_pair,
     inputs={
-        "processed_scores": FeatureTable[Zscore % Properties("processed")],
+        "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
@@ -419,7 +446,7 @@ plugin.methods.register_function(
         ),
     },
     input_descriptions={
-        "processed_scores": "Log-scaled Z-score matrix.",
+        "processed_zscores": "Log-scaled Z-score matrix.",
         "peptide_sets": "Current (possibly filtered) GMT for this pair.",
         "precomputed_fit": (
             "Optional precomputed maxZ/deltaZ from a prior call. When"
@@ -502,7 +529,7 @@ plugin.pipelines.register_function(
             "Adjusted p-value threshold for significance in volcano and"
             " scatter plots."
         ),
-        "enrichment_score": "Absolute NES threshold for significance.",
+        "enrichment_score": "NES threshold for significance.",
         "include_negative_enrichment": (
             "Whether or not to include negative enrichment."
         ),
@@ -868,6 +895,15 @@ plugin.methods.register_function(
     inputs={
         'psea_tables': Collection[FeatureData[PSEAScores]],
         'epitope_map': FeatureData[MappedEpitope],
+        'zscores': FeatureTable[Zscore],
+        'processed_zscores':
+            FeatureTable[Zscore % Properties('processed')],
+        'mapped_zscores': FeatureTable[Zscore % Properties('mapped')],
+        'mapped_processed_zscores':
+            # Can't seem to get this to work due to TypeMap seemingly not
+            # mapping properties
+            # FeatureTable[Zscore % Properties('mapped', 'processed')]
+            FeatureTable[Zscore % Properties('processed')]
     },
     parameters={
         'p_value': Float % Range(0, None),

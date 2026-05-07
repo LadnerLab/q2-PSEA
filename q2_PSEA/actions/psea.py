@@ -15,7 +15,7 @@ from q2_PSEA.actions.r_functions import INTERNAL
 
 
 def create_fgsea_table_for_pair(
-    processed_scores: pd.DataFrame,
+    processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
     precomputed_fit: pd.DataFrame,
     sample_a: str,
@@ -31,7 +31,7 @@ def create_fgsea_table_for_pair(
 
     Parameters
     ----------
-    processed_scores : pd.DataFrame
+    processed_zscores : pd.DataFrame
         Log-scaled Z-score matrix (from FeatureTable[Zscore]).
     peptide_sets : pd.DataFrame
         GMT peptide-set table with columns 'term' and 'gene' (from GMT).
@@ -48,15 +48,15 @@ def create_fgsea_table_for_pair(
     """
     print(f"Working on pair ({sample_a}, {sample_b})...")
 
-    processed_scores = processed_scores.transpose()
+    processed_zscores = processed_zscores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
     deltaZ_all = precomputed_fit["deltaZ"].dropna()
 
-    filtered_scores, peptide_sets_for_analysis = \
-        utils.remove_peptides(processed_scores, peptide_sets)
+    filtered_zscores, peptide_sets_for_analysis = \
+        utils.remove_peptides(processed_zscores, peptide_sets)
 
-    idx = filtered_scores.index
+    idx = filtered_zscores.index
     maxZ = maxZ_all.reindex(idx)
     deltaZ = deltaZ_all.reindex(idx)
 
@@ -153,7 +153,7 @@ def count_antibody_events(
 
 
 def _run_iterative_process_single_pair(
-    processed_scores: pd.DataFrame,
+    processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
     sample_a: str,
     sample_b: str,
@@ -196,7 +196,7 @@ def _run_iterative_process_single_pair(
 
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = create_fgsea_table_for_pair(
-            processed_scores=processed_scores,
+            processed_zscores=processed_zscores,
             peptide_sets=updated_peptide_sets,
             sample_a=sample_a,
             sample_b=sample_b,
@@ -364,7 +364,8 @@ def make_psea_table(
             " pipeline to do the mapping."
         )
 
-    process_scores_action = ctx.get_action("psea", "process_scores")
+    filter_scores_action = ctx.get_action("psea", "_filter_scores_to_pairs")
+    process_scores_action = ctx.get_action("psea", "_process_scores")
     compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
     run_iterative = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
@@ -381,6 +382,11 @@ def make_psea_table(
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
     # ------------------------------------------------------------------
+    # Filter scores
+    # ------------------------------------------------------------------
+    filtered_zscores, = filter_scores_action(scores, pairs)
+
+    # ------------------------------------------------------------------
     # Parse pairs list
     # ------------------------------------------------------------------
     pairs_list = pairs.view(list)
@@ -394,19 +400,16 @@ def make_psea_table(
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
         epitope_map, peptide_map = create_epitope_map(epitope, collapse)
-        mapped_zscores, = create_epitope_zscore(scores, epitope_map)
+        mapped_zscores, = create_epitope_zscore(filtered_zscores, epitope_map)
         mapped_gmt, = create_epitope_gmt(epitope_map)
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
     # ------------------------------------------------------------------
-    processed_scores, = process_scores_action(scores=scores, pairs=pairs)
-
-    processed_mapped_scores = None
+    processed_zscores, = process_scores_action(filtered_zscores)
+    mapped_processed_zscores = None
     if collapsed:
-        processed_mapped_scores, = process_scores_action(
-            scores=mapped_zscores, pairs=pairs
-        )
+        mapped_processed_zscores, = process_scores_action(mapped_zscores)
 
     pair_splines = {}
     pair_pep_sets_dict = {}
@@ -419,7 +422,7 @@ def make_psea_table(
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
         pair_splines[pair], = compute_fit(
-            processed_scores=processed_scores,
+            processed_zscores=processed_zscores,
             sample_a=sample_a,
             sample_b=sample_b,
             spline_type=spline_type,
@@ -433,8 +436,8 @@ def make_psea_table(
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = run_iterative(
-                processed_scores=processed_mapped_scores if collapsed else
-                processed_scores,
+                processed_zscores=mapped_processed_zscores if collapsed else
+                processed_zscores,
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
@@ -460,8 +463,8 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = create_fgsea_table(
-            processed_scores=processed_mapped_scores if collapsed else
-            processed_scores,
+            processed_zscores=mapped_processed_zscores if collapsed else
+            processed_zscores,
             peptide_sets=pair_pep_sets_dict[pair],
             sample_a=sample_a,
             sample_b=sample_b,
@@ -486,7 +489,7 @@ def make_psea_table(
 
     scatter_plot, = zscatter(
         zscores=(
-            processed_mapped_scores if collapsed else processed_scores
+            mapped_processed_zscores if collapsed else processed_zscores
         ),
         pairs=pairs,
         splines=pair_splines,
@@ -520,6 +523,10 @@ def make_psea_table(
     enrichment_tables, = count_enriched(
         psea_tables=psea_tables,
         epitope_map=epitope_map,
+        zscores=filtered_zscores,
+        processed_zscores=processed_zscores,
+        mapped_zscores=mapped_zscores,
+        mapped_processed_zscores=mapped_processed_zscores,
         p_value=p_value,
         enrichment_score=enrichment_score,
         include_negative_enrichment=include_negative_enrichment
@@ -533,7 +540,7 @@ def make_psea_table(
 
 
 def _compute_pair_fit_and_residuals(
-    processed_scores: pd.DataFrame,
+    processed_zscores: pd.DataFrame,
     sample_a: str,
     sample_b: str,
     spline_type: str,
@@ -552,11 +559,11 @@ def _compute_pair_fit_and_residuals(
     """
     # FeatureTable[Zscore] arrives as samples × features; convert to
     # features × samples so we can index by sample name.
-    processed_scores = processed_scores.transpose()
+    processed_zscores = processed_zscores.transpose()
     dof = ro.NULL if dof is None else dof
 
     pair = [sample_a, sample_b]
-    data_sorted = processed_scores.loc[:, pair].sort_values(by=sample_a)
+    data_sorted = processed_zscores.loc[:, pair].sort_values(by=sample_a)
     x = data_sorted.loc[:, sample_a].to_numpy()
     y = data_sorted.loc[:, sample_b].to_numpy()
 
@@ -598,11 +605,11 @@ def _compute_pair_fit_and_residuals(
     return spline_df
 
 
-def process_scores(
+def _filter_scores_to_pairs(
     scores: pd.DataFrame,
     pairs: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Select and log-scale Z-scores for the samples referenced in *pairs*.
+    """Select Z-scores for the samples referenced in *pairs*.
 
     Parameters
     ----------
@@ -610,6 +617,32 @@ def process_scores(
         Z-score matrix from FeatureTable[Zscore] (samples × features).
     pairs : pd.DataFrame
         Two-column pairs table (from PSEAPairs).
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered Z-score matrix (features × samples) stored as
+        FeatureTable[Zscore].
+    """
+    # FeatureTable[Zscore] arrives as samples × features; convert to
+    # features × samples so we can index by sample name.
+    scores = scores.transpose()
+
+    reps_list = list(np.unique(pairs.values.flatten()))
+    filtered_zscores = scores.loc[:, reps_list]
+
+    return filtered_zscores
+
+
+def _process_scores(
+    scores: pd.DataFrame,
+) -> pd.DataFrame:
+    """Log-scale Z-scores for the scores.
+
+    Parameters
+    ----------
+    scores : pd.DataFrame
+        Z-score matrix from FeatureTable[Zscore] (samples × features).
 
     Returns
     -------
@@ -624,14 +657,12 @@ def process_scores(
     base = 2
     offset = 3
     power = pow(base, offset)
-    reps_list = list(np.unique(pairs.values.flatten()))
-    processed_scores = scores.loc[:, reps_list]
 
-    processed_scores = processed_scores.apply(lambda row: power + row, axis=0)
-    processed_scores = processed_scores.apply(
+    processed_zscores = scores.apply(lambda row: power + row, axis=0)
+    processed_zscores = processed_zscores.apply(
         lambda row: row.apply(lambda val: 1 if val < 1 else val),
         axis=0,
     )
-    return processed_scores.apply(
+    return processed_zscores.apply(
         lambda row: row.apply(lambda val: log(val, base) - offset)
     )

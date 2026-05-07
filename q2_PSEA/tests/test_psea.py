@@ -10,7 +10,7 @@ from qiime2.plugin.testing import TestPluginBase
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
     _get_mapped_features,
-    process_scores,
+    _process_scores,
 )
 
 
@@ -31,7 +31,7 @@ def _load_gmt_art(path):
 
 
 # ---------------------------------------------------------------------------
-# process_scores — integration via plugin method
+# _process_scores — integration via plugin method
 # ---------------------------------------------------------------------------
 
 class TestProcessScoresIntegration(TestPluginBase):
@@ -41,7 +41,7 @@ class TestProcessScoresIntegration(TestPluginBase):
         super().setUp()
         self.scores_art = _load_scores_art(self.get_data_path("scores.tsv"))
         self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
-        self.method = self.plugin.methods["process_scores"]
+        self.method = self.plugin.methods["_process_scores"]
 
     def _run(self, scores=None, pairs=None):
         result, = self.method(
@@ -125,8 +125,8 @@ class TestComputePairFitIntegration(TestPluginBase):
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
 
-        # Run process_scores to get a valid processed artifact
-        process = self.plugin.methods["process_scores"]
+        # Run _process_scores to get a valid processed artifact
+        process = self.plugin.methods["_process_scores"]
         self.processed_art, = process(scores=scores_art, pairs=pairs_art)
         self.method = self.plugin.methods["_compute_pair_fit_and_residuals"]
 
@@ -198,7 +198,7 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
         pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
         self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
 
-        process = self.plugin.methods["process_scores"]
+        process = self.plugin.methods["_process_scores"]
         self.processed_art, = process(scores=scores_art, pairs=pairs_art)
 
         compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
@@ -363,7 +363,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
 
 
 # ---------------------------------------------------------------------------
-# process_scores direct function tests (unit-level, no plugin dispatch)
+# _process_scores direct function tests (unit-level, no plugin dispatch)
 # ---------------------------------------------------------------------------
 
 class TestProcessScoresDirect(TestPluginBase):
@@ -374,7 +374,7 @@ class TestProcessScoresDirect(TestPluginBase):
         raw = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
         )
-        # process_scores expects samples×features view; import features-as-rows
+        # _process_scores expects samples×features view; import features-as-rows
         # then retrieve the samples×features view
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         self.scores_view = art.view(pd.DataFrame)
@@ -384,7 +384,7 @@ class TestProcessScoresDirect(TestPluginBase):
         return pd.DataFrame(list(pairs), columns=cols)
 
     def test_selects_only_requested_samples(self):
-        result = process_scores(self.scores_view, self._pairs(("sA", "sB")))
+        result = _process_scores(self.scores_view, self._pairs(("sA", "sB")))
         self.assertSetEqual(set(result.columns), {"sA", "sB"})
 
     def test_known_value_log_scaled(self):
@@ -394,7 +394,7 @@ class TestProcessScoresDirect(TestPluginBase):
         )
         raw.iloc[:, :] = 5.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        result = process_scores(
+        result = _process_scores(
             art.view(pd.DataFrame), self._pairs(("sA", "sB"))
         )
         self.assertTrue(np.allclose(result.values, expected))

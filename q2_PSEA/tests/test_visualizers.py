@@ -255,7 +255,7 @@ class TestZscatter(TestPluginBase):
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        process = self.plugin.methods["process_scores"]
+        process = self.plugin.methods["_process_scores"]
         pairs_art = qiime2.Artifact.import_data("PSEAPairs", self.pairs_df)
         processed_art, = process(scores=scores_art, pairs=pairs_art)
         return processed_art
