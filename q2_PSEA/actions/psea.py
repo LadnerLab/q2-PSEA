@@ -359,16 +359,20 @@ def make_psea_table(
             "If not mapping then peptide_metadata must be passed."
         )
 
-    filter_scores_action = ctx.get_action("psea", "_filter_scores_to_pairs")
-    process_scores_action = ctx.get_action("psea", "_process_scores")
-    compute_fit = ctx.get_action("psea", "_compute_pair_fit_and_residuals")
-    run_iterative = ctx.get_action(
+    _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
+    _process_scores = ctx.get_action("psea", "_process_scores")
+    _compute_pair_fit_and_residuals = ctx.get_action(
+        "psea", "_compute_pair_fit_and_residuals"
+    )
+    _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
     )
-    create_fgsea_table = ctx.get_action("psea", "create_fgsea_table_for_pair")
+    create_fgsea_table_for_pair = ctx.get_action(
+        "psea", "create_fgsea_table_for_pair"
+    )
     count_enriched = ctx.get_action("psea", "count_enriched")
 
-    count_ae = ctx.get_action("psea", "count_antibody_events")
+    count_antibody_events = ctx.get_action("psea", "count_antibody_events")
 
     volcano = ctx.get_action("psea", "volcano")
     zscatter = ctx.get_action("psea", "zscatter")
@@ -379,7 +383,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Filter scores
     # ------------------------------------------------------------------
-    filtered_zscores, = filter_scores_action(scores, pairs)
+    filtered_zscores, = _filter_scores_to_pairs(scores, pairs)
 
     # ------------------------------------------------------------------
     # Parse pairs list
@@ -403,10 +407,10 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Process (log-scale) scores
     # ------------------------------------------------------------------
-    processed_zscores, = process_scores_action(filtered_zscores)
+    processed_zscores, = _process_scores(filtered_zscores)
     mapped_processed_zscores = None
     if map:
-        mapped_processed_zscores, = process_scores_action(mapped_zscores)
+        mapped_processed_zscores, = _process_scores(mapped_zscores)
 
     pair_splines = {}
     pair_pep_sets_dict = {}
@@ -418,21 +422,21 @@ def make_psea_table(
 
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
-        pair_splines[pair], = compute_fit(
+        pair_splines[pair], = _compute_pair_fit_and_residuals(
             processed_zscores=processed_zscores,
             sample_a=sample_a,
             sample_b=sample_b,
             spline_type=spline_type,
             degree=degree,
-            dof=dof,
             epitope_map=epitope_map,
+            dof=dof,
         )
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
-            pair_pep_sets_dict[pair], = run_iterative(
+            pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
                 processed_zscores=mapped_processed_zscores if map else
                 processed_zscores,
                 peptide_sets=peptide_sets,
@@ -444,8 +448,8 @@ def make_psea_table(
                 permutation_num=permutation_num,
                 min_size=min_size,
                 max_size=max_size,
-                seed=seed,
                 p_value=p_value,
+                seed=seed,
                 enrichment_score=enrichment_score,
                 include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
@@ -457,7 +461,7 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
-        psea_tables[pair], = create_fgsea_table(
+        psea_tables[pair], = create_fgsea_table_for_pair(
             processed_zscores=mapped_processed_zscores if map else
             processed_zscores,
             peptide_sets=pair_pep_sets_dict[pair],
@@ -473,7 +477,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
     # ------------------------------------------------------------------
-    pos_ae_counts, neg_ae_counts = count_ae(
+    pos_ae_counts, neg_ae_counts = count_antibody_events(
         psea_tables=psea_tables,
         p_value=p_value,
         enrichment_score=enrichment_score,
