@@ -6,13 +6,14 @@ import random
 import rpy2.robjects as ro
 import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
-import sys
 import tempfile
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
+
+MAX_R_INT = 4294967295
 
 
 def create_fgsea_table_for_pair(
@@ -43,9 +44,7 @@ def create_fgsea_table_for_pair(
     pd.DataFrame
         PSEA result table for this pair (stored as FeatureData[PSEAScores]).
     """
-    seed = CaptureHolder.get_or_set(
-        seed, lambda: random.randint(0, sys.maxsize)
-    )
+    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
     processed_zscores = processed_zscores.transpose()
 
     maxZ_all = precomputed_fit["maxZ"].dropna()
@@ -173,9 +172,7 @@ def _run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
-    seed = CaptureHolder.get_or_set(
-        seed, lambda: random.randint(0, sys.maxsize)
-    )
+    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
     updated_peptide_sets = (
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
@@ -324,9 +321,7 @@ def make_psea_table(
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
 ]:
-    seed = CaptureHolder.get_or_set(
-        seed, lambda: random.randint(0, sys.maxsize)
-    )
+    seed = CaptureHolder.get_or_set(seed, lambda: random.randint(0, MAX_R_INT))
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
