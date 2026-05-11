@@ -154,12 +154,10 @@ def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
 # Register _filter_scores_to_pairs as a method
 # ---------------------------------------------------------------------------
 
-# TODO: This, near as I can tell, does not work. Doesn't seem like the type
-# mapping actually cares about the properties
 SCORES_IN, SCORES_OUT = TypeMap({
-    FeatureTable[Zscore]: FeatureTable[Zscore % Properties("processed")],
     FeatureTable[Zscore % Properties("mapped")]:
-        FeatureTable[Zscore % Properties("mapped", "processed")]
+        FeatureTable[Zscore % Properties("mapped", "processed")],
+    FeatureTable[Zscore]: FeatureTable[Zscore % Properties("processed")]
 })
 
 plugin.methods.register_function(
@@ -894,10 +892,7 @@ plugin.methods.register_function(
             FeatureTable[Zscore % Properties('processed')],
         'mapped_zscores': FeatureTable[Zscore % Properties('mapped')],
         'mapped_processed_zscores':
-            # Can't seem to get this to work due to TypeMap seemingly not
-            # mapping properties
-            # FeatureTable[Zscore % Properties('mapped', 'processed')]
-            FeatureTable[Zscore % Properties('processed')]
+            FeatureTable[Zscore % Properties('mapped', 'processed')]
     },
     parameters={
         'p_value': Float % Range(0, None),
