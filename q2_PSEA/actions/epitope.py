@@ -73,7 +73,6 @@ def taxa_to_epitope(epitope: pd.DataFrame) -> pd.DataFrame:
     epitope = epitope[['SpeciesID', 'EpitopeID']]
     epitope = epitope.explode('SpeciesID')
     epitope.drop_duplicates(inplace=True)
-    # This matches the spec .gmt files are read into in q2-PSEA
     epitope = epitope.rename(
         columns={'SpeciesID': 'term', 'EpitopeID': 'gene'}
     )
