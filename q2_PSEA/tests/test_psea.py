@@ -9,7 +9,6 @@ from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
-    _filter_scores_to_pairs,
     _get_mapped_features,
     _process_scores,
 )
