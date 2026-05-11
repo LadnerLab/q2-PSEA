@@ -1,3 +1,6 @@
+import os
+import shutil
+import tempfile
 import unittest
 
 import pandas as pd
@@ -8,6 +11,7 @@ from q2_PSEA.utils import (
     collapse_residuals_to_epitope,
     remove_peptides,
     remove_peptides_in_df_format,
+    remove_peptides_in_tsv_format,
 )
 
 
@@ -116,6 +120,62 @@ class TestCollapseResidualsToEpitope(TestPluginBase):
         emap = self._emap({"ep1": ["pep1"]})
         result = collapse_residuals_to_epitope(pd.Series({"pep1": 0.7}), emap)
         self.assertIsInstance(result, pd.Series)
+
+
+# ---------------------------------------------------------------------------
+# remove_peptides_in_tsv_format — unit tests
+# ---------------------------------------------------------------------------
+
+class TestRemovePeptidesInTsvFormat(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.mkdtemp()
+        self.scores = pd.DataFrame(
+            {"sA": [1.0, 2.0, 3.0]},
+            index=pd.Index(["pep1", "pep2", "pep3"], name="CodeName"),
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir)
+        super().tearDown()
+
+    def _tsv(self, rows, name="sets.tsv"):
+        path = os.path.join(self._tmpdir, name)
+        pd.DataFrame(rows, columns=["term", "gene"]).to_csv(
+            path, sep="\t", index=False
+        )
+        return path
+
+    def test_peptides_in_tsv_are_retained(self):
+        path = self._tsv([("setA", "pep1"), ("setA", "pep2")])
+        filtered, _ = remove_peptides_in_tsv_format(self.scores, path)
+        self.assertIn("pep1", filtered.index)
+        self.assertIn("pep2", filtered.index)
+
+    def test_peptides_not_in_tsv_are_dropped(self):
+        path = self._tsv([("setA", "pep1")])
+        filtered, _ = remove_peptides_in_tsv_format(self.scores, path)
+        self.assertNotIn("pep2", filtered.index)
+        self.assertNotIn("pep3", filtered.index)
+
+    def test_returned_peptide_sets_matches_file_contents(self):
+        path = self._tsv([("setA", "pep1"), ("setB", "pep2")])
+        _, pep_sets = remove_peptides_in_tsv_format(self.scores, path)
+        self.assertEqual(set(pep_sets["gene"]), {"pep1", "pep2"})
+
+    def test_no_overlap_returns_empty_scores(self):
+        path = self._tsv([("setX", "pep_absent")])
+        filtered, _ = remove_peptides_in_tsv_format(self.scores, path)
+        self.assertEqual(len(filtered), 0)
+
+    def test_full_overlap_retains_all_peptides(self):
+        path = self._tsv([
+            ("setA", "pep1"), ("setA", "pep2"), ("setA", "pep3"),
+        ])
+        filtered, _ = remove_peptides_in_tsv_format(self.scores, path)
+        self.assertEqual(len(filtered), 3)
 
 
 if __name__ == "__main__":
