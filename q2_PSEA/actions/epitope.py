@@ -365,7 +365,7 @@ def _get_relative_enrichment_score(
         for max_z_score, zscore in zip(max_z_scores, z_scores):
             normalized_zscores.append(zscore / max_z_score)
 
-    relative_enrichment_score = sum(max_z_scores)
+    relative_enrichment_score = sum(normalized_zscores)
     return relative_enrichment_score
 
 
