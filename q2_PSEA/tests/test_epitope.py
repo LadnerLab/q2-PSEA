@@ -27,21 +27,21 @@ class TestCreateEpitopeMap(TestPluginBase):
         )
 
     def test_viral_collapse_creates_combined_ids(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("sp001_C1_W1", result.index)
         self.assertIn("sp002_C2_W2", result.index)
 
     def test_non_collapsed_category_keeps_original_index(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("pep_03", result.index)
 
     def test_two_peptides_share_same_epitope(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
         codenames = result.loc["sp001_C1_W1", "CodeName"]
         self.assertEqual(set(codenames), {"pep_00", "pep_01"})
 
     def test_both_collapse_includes_bacterial(self):
-        result = create_epitope_map(self.epitope.copy(), collapse="Both")
+        result, _ = create_epitope_map(self.epitope.copy(), collapse="Both")
         self.assertIn("sp003_C3_W3", result.index)
 
     def test_semicolon_entries_exploded_into_separate_rows(self):
@@ -56,7 +56,7 @@ class TestCreateEpitopeMap(TestPluginBase):
             },
             index=pd.Index(["pep_X"], name="CodeName"),
         )
-        result = create_epitope_map(multi, collapse="Viral")
+        result, _ = create_epitope_map(multi, collapse="Viral")
         self.assertIn("sp001_C1_W1", result.index)
         self.assertIn("sp002_C2_W2", result.index)
 
@@ -112,10 +112,12 @@ class TestTaxaToEpitope(TestPluginBase):
         raw = pd.read_csv(
             self.get_data_path("epitope.tsv"), sep="\t", index_col=0
         )
-        self.epitope_map_viral = create_epitope_map(
+        self.epitope_map_viral, _ = create_epitope_map(
             raw.copy(), collapse="Viral"
         )
-        self.epitope_map_both = create_epitope_map(raw.copy(), collapse="Both")
+        self.epitope_map_both, _ = create_epitope_map(
+            raw.copy(), collapse="Both"
+        )
 
     def test_term_contains_species_ids(self):
         result = taxa_to_epitope(self.epitope_map_viral.copy())
@@ -172,21 +174,55 @@ class TestCountEnriched(TestPluginBase):
     def _empty(self):
         return {"epitope": {}, "subtype": {}}
 
+    def _make_fixtures(self):
+        epitope_map = pd.DataFrame(
+            {"CodeName": [["pep1"]]},
+            index=pd.Index(["ep1"]),
+        )
+        zscores = pd.DataFrame({"pep1": [1.0]}, index=["sA"])
+        mapped_zscores = pd.DataFrame({"ep1": [1.0]}, index=["sA"])
+        return (
+            epitope_map,
+            zscores,
+            zscores.copy(),
+            mapped_zscores,
+            mapped_zscores.copy(),
+        )
+
     def test_initializes_epitope_key(self):
         counts = self._empty()
-        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        emap, zsc, pzsc, mzsc, mpzsc = self._make_fixtures()
+        _count_enriched_collapsed_helper(
+            counts, zsc, emap, pzsc, mzsc, mpzsc,
+            "sp001", "InfluenzaA", "ep1", "H1N1"
+        )
         self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 1)
 
     def test_second_call_increments_count(self):
         counts = self._empty()
-        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
-        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
+        emap, zsc, pzsc, mzsc, mpzsc = self._make_fixtures()
+        kwargs = dict(
+            zscores=zsc, epitope_map=emap, processed_zscores=pzsc,
+            mapped_zscores=mzsc, mapped_processed_zscores=mpzsc,
+            species_id="sp001", species_name="InfluenzaA",
+            epitope="ep1", subtype="H1N1",
+        )
+        _count_enriched_collapsed_helper(counts, **kwargs)
+        _count_enriched_collapsed_helper(counts, **kwargs)
         self.assertEqual(counts["epitope"]["sp001"]["InfluenzaA"]["ep1"], 2)
 
     def test_tracks_subtype_separately(self):
         counts = self._empty()
-        _count_enriched_collapsed_helper(counts, "sp001", "InfluenzaA", "ep1", "H1N1")
-        self.assertEqual(counts["subtype"]["sp001"]["InfluenzaA"]["H1N1"], 1)
+        emap, zsc, pzsc, mzsc, mpzsc = self._make_fixtures()
+        _count_enriched_collapsed_helper(
+            counts, zsc, emap, pzsc, mzsc, mpzsc,
+            "sp001", "InfluenzaA", "ep1", "H1N1"
+        )
+        self.assertIn("H1N1", counts["subtype"]["sp001"]["InfluenzaA"])
+        self.assertEqual(
+            counts["subtype"]["sp001"]["InfluenzaA"]["H1N1"]["Epitope Counts"],
+            1,
+        )
 
 
 class TestEnrichedSubtypes(TestPluginBase):
@@ -196,23 +232,40 @@ class TestEnrichedSubtypes(TestPluginBase):
         return {"pair1": pd.DataFrame(rows)}
 
     def _subtypes(self):
+        # Epitope IDs that contain "Peptide" trigger the collapsed counting
+        # path in _count_enriched_collapsed
         return pd.DataFrame(
             {
                 "CodeName": [["pep_00", "pep_01"], ["pep_02"]],
                 "Subtype": [["H1N1", "H3N2"], ["Yamagata"]],
                 "Category": ["Viral", "Viral"],
             },
-            index=pd.Index(["sp001_C1_W1", "sp002_C2_W2"], name="EpitopeID"),
+            index=pd.Index(
+                ["sp001_Peptide_W1", "sp002_Peptide_W2"], name="EpitopeID"
+            ),
         )
 
     def test_returns_dict_with_two_default_keys(self):
         scores = self._scores([{
             "p.adjust": 0.01,
             "enrichmentScore": 2.0,
-            "core_enrichment": "sp001_C1_W1",
+            "core_enrichment": "sp001_Peptide_W1",
             "species_name": "InfluenzaA",
         }])
-        result = count_enriched(scores, self._subtypes())
+        zscores = pd.DataFrame(
+            {"pep_00": [1.0], "pep_01": [1.5]}, index=["sA"]
+        )
+        mapped_zscores = pd.DataFrame(
+            {"sp001_Peptide_W1": [1.0]}, index=["sA"]
+        )
+        result = count_enriched(
+            scores,
+            zscores,
+            zscores,
+            epitope_map=self._subtypes(),
+            mapped_zscores=mapped_zscores,
+            mapped_processed_zscores=mapped_zscores,
+        )
         self.assertEqual(set(result.keys()), {"epitope", "subtype"})
 
 

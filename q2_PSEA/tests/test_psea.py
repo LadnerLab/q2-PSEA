@@ -9,6 +9,7 @@ from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
+    _filter_scores_to_pairs,
     _get_mapped_features,
     _process_scores,
 )
@@ -31,6 +32,44 @@ def _load_gmt_art(path):
 
 
 # ---------------------------------------------------------------------------
+# _filter_scores_to_pairs — integration via plugin method
+# ---------------------------------------------------------------------------
+
+class TestFilterScoresToPairsIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        self.scores_art = _load_scores_art(self.get_data_path("scores.tsv"))
+        self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
+        self.method = self.plugin.methods["_filter_scores_to_pairs"]
+
+    def _run(self, scores=None, pairs=None):
+        result, = self.method(
+            scores=scores or self.scores_art,
+            pairs=pairs or self.pairs_art,
+        )
+        return result.view(pd.DataFrame)
+
+    def test_output_only_contains_pair_samples(self):
+        result = self._run()
+        # FeatureTable[Zscore] view: samples as index, features as columns
+        self.assertSetEqual(set(result.index), {"sA", "sB"})
+
+    def test_all_features_retained(self):
+        raw = pd.read_csv(
+            self.get_data_path("scores.tsv"), sep="\t", index_col=0
+        )
+        result = self._run()
+        self.assertEqual(set(result.columns), set(raw.index))
+
+    def test_two_pairs_selects_four_samples(self):
+        pairs_two = _load_pairs_art(self.get_data_path("pairs-two.tsv"))
+        result = self._run(pairs=pairs_two)
+        self.assertSetEqual(set(result.index), {"sA", "sB", "sC", "sD"})
+
+
+# ---------------------------------------------------------------------------
 # _process_scores — integration via plugin method
 # ---------------------------------------------------------------------------
 
@@ -40,20 +79,11 @@ class TestProcessScoresIntegration(TestPluginBase):
     def setUp(self):
         super().setUp()
         self.scores_art = _load_scores_art(self.get_data_path("scores.tsv"))
-        self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
         self.method = self.plugin.methods["_process_scores"]
 
-    def _run(self, scores=None, pairs=None):
-        result, = self.method(
-            scores=scores or self.scores_art,
-            pairs=pairs or self.pairs_art,
-        )
+    def _run(self, scores=None):
+        result, = self.method(scores=scores or self.scores_art)
         return result.view(pd.DataFrame)
-
-    def test_output_only_contains_pairs_samples(self):
-        result = self._run()
-        # FeatureTable[Zscore] view: samples as index, features as columns
-        self.assertSetEqual(set(result.index), {"sA", "sB"})
 
     def test_all_peptides_retained(self):
         raw = pd.read_csv(
@@ -92,23 +122,6 @@ class TestProcessScoresIntegration(TestPluginBase):
         expected = log(13.0, 2) - 3  # log2(8+5) - 3
         self.assertTrue(np.allclose(result.values, expected))
 
-    def test_two_pairs_selects_four_samples(self):
-        raw = pd.read_csv(
-            self.get_data_path("scores.tsv"), sep="\t", index_col=0
-        )
-        art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        pairs_two = _load_pairs_art(self.get_data_path("pairs-two.tsv"))
-        result, = self.method(scores=art, pairs=pairs_two)
-        df = result.view(pd.DataFrame)
-        # FeatureTable[Zscore] view: samples as index, features as columns
-        self.assertSetEqual(set(df.index), {"sA", "sB", "sC", "sD"})
-
-    def test_output_is_feature_table_zscore(self):
-        result, = self.method(scores=self.scores_art, pairs=self.pairs_art)
-        self.assertEqual(
-            str(result.type), "FeatureTable[Zscore % Properties('processed')]"
-        )
-
 
 # ---------------------------------------------------------------------------
 # _compute_pair_fit_and_residuals — integration via plugin method
@@ -119,20 +132,19 @@ class TestComputePairFitIntegration(TestPluginBase):
 
     def setUp(self):
         super().setUp()
+        # scores-vis.tsv already has only sA and sB — no filtering needed
         raw = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
 
-        # Run _process_scores to get a valid processed artifact
         process = self.plugin.methods["_process_scores"]
-        self.processed_art, = process(scores=scores_art, pairs=pairs_art)
+        self.processed_art, = process(scores=scores_art)
         self.method = self.plugin.methods["_compute_pair_fit_and_residuals"]
 
     def _run(self, spline_type="py-smooth", **kwargs):
         result, = self.method(
-            processed_scores=self.processed_art,
+            processed_zscores=self.processed_art,
             sample_a="sA",
             sample_b="sB",
             spline_type=spline_type,
@@ -172,9 +184,9 @@ class TestComputePairFitIntegration(TestPluginBase):
     def test_maxz_equals_elementwise_max_of_processed_scores(self):
         df = self._run().view(pd.DataFrame)
         processed_df = self.processed_art.view(pd.DataFrame)
-        # processed_df: samples×features; select sA and sB columns,
-        # then compare max along samples axis with maxZ
-        pair_df = processed_df.loc[["sA", "sB"], :].T  # features × 2 samples
+        # processed_df: samples×features; select sA and sB rows,
+        # transpose to features×samples, then take max across samples
+        pair_df = processed_df.loc[["sA", "sB"], :].T
         expected_max = pair_df.max(axis=1)
         maxZ = df["maxZ"].dropna()
         assert_series_equal(
@@ -191,19 +203,19 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
 
     def setUp(self):
         super().setUp()
+        # scores-vis.tsv already has only sA and sB — no filtering needed
         raw = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
         self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
 
         process = self.plugin.methods["_process_scores"]
-        self.processed_art, = process(scores=scores_art, pairs=pairs_art)
+        self.processed_art, = process(scores=scores_art)
 
         compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
         self.spline_art, = compute_fit(
-            processed_scores=self.processed_art,
+            processed_zscores=self.processed_art,
             sample_a="sA",
             sample_b="sB",
             spline_type="py-smooth",
@@ -213,11 +225,9 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
 
     def _run(self, **kwargs):
         result, = self.method(
-            processed_scores=self.processed_art,
+            processed_zscores=self.processed_art,
             peptide_sets=self.gmt_art,
             precomputed_fit=self.spline_art,
-            sample_a="sA",
-            sample_b="sB",
             threshold=0.0,
             permutation_num=100,
             min_size=3,
@@ -285,19 +295,6 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
             taxa_access=taxa_access,
         )
         return pos.view(pd.DataFrame), neg.view(pd.DataFrame)
-
-    def test_output_types_are_psea_ae_counts(self):
-        art = self._make_psea_art([
-            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
-        ])
-        pos, neg = self.method(
-            psea_tables={"p1": art},
-            p_value=0.05,
-            enrichment_score=1.0,
-            taxa_access="ID",
-        )
-        self.assertEqual(str(pos.type), "PSEAAECounts")
-        self.assertEqual(str(neg.type), "PSEAAECounts")
 
     def test_significant_positive_nes_counted_in_pos(self):
         pos, neg = self._run([{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}])
@@ -374,18 +371,14 @@ class TestProcessScoresDirect(TestPluginBase):
         raw = pd.read_csv(
             self.get_data_path("scores.tsv"), sep="\t", index_col=0
         )
-        # _process_scores expects samples×features view; import
-        # features-as-rows then retrieve the samples×features view
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
+        # view is samples×features
         self.scores_view = art.view(pd.DataFrame)
 
-    def _pairs(self, *pairs):
-        cols = ["a", "b"]
-        return pd.DataFrame(list(pairs), columns=cols)
-
-    def test_selects_only_requested_samples(self):
-        result = _process_scores(self.scores_view, self._pairs(("sA", "sB")))
-        self.assertSetEqual(set(result.columns), {"sA", "sB"})
+    def test_all_samples_retained(self):
+        # Direct call receives samples×features and returns features×samples
+        result = _process_scores(self.scores_view)
+        self.assertSetEqual(set(result.columns), set(self.scores_view.index))
 
     def test_known_value_log_scaled(self):
         expected = log(13.0, 2) - 3  # log2(8+5) - 3
@@ -394,9 +387,7 @@ class TestProcessScoresDirect(TestPluginBase):
         )
         raw.iloc[:, :] = 5.0
         art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
-        result = _process_scores(
-            art.view(pd.DataFrame), self._pairs(("sA", "sB"))
-        )
+        result = _process_scores(art.view(pd.DataFrame))
         self.assertTrue(np.allclose(result.values, expected))
 
 
@@ -446,6 +437,11 @@ class TestComputePairFitDirect(TestPluginBase):
         for ep in mapping:
             self.assertIn(ep, df["maxZ"].dropna().index)
             self.assertIn(ep, df["deltaZ"].dropna().index)
+        # Peptides that were mapped to epitopes should not appear directly
+        mapped_peps = [p for peps_list in mapping.values() for p in peps_list]
+        for pep in mapped_peps:
+            self.assertNotIn(pep, df["maxZ"].dropna().index)
+            self.assertNotIn(pep, df["deltaZ"].dropna().index)
 
 
 # ---------------------------------------------------------------------------

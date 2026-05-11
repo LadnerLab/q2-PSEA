@@ -87,7 +87,7 @@ class TestCreateFgseaSignature(TestPluginBase):
         self.sig = self.plugin.methods["create_fgsea_table_for_pair"].signature
 
     def test_processed_scores_in_inputs(self):
-        self.assertIn("processed_scores", self.sig.inputs)
+        self.assertIn("processed_zscores", self.sig.inputs)
 
     def test_peptide_sets_in_inputs(self):
         self.assertIn("peptide_sets", self.sig.inputs)
@@ -97,8 +97,8 @@ class TestCreateFgseaSignature(TestPluginBase):
         self.assertNotIn("species_taxa", self.sig.inputs)
 
     def test_required_parameters_present(self):
-        for name in ("sample_a", "sample_b", "threshold",
-                     "permutation_num", "min_size", "max_size", "seed"):
+        for name in ("threshold", "permutation_num", "min_size", "max_size",
+                     "seed"):
             self.assertIn(name, self.sig.parameters)
 
     def test_output_is_psea_scores(self):

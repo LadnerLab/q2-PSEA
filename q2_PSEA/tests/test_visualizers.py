@@ -247,13 +247,13 @@ class TestZscatter(TestPluginBase):
         self.pairs_df = _pairs_df()
 
     def _zscores_art(self):
+        # scores-vis.tsv already has only sA and sB — no filtering needed
         raw = pd.read_csv(
             self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
         )
         scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
         process = self.plugin.methods["_process_scores"]
-        pairs_art = qiime2.Artifact.import_data("PSEAPairs", self.pairs_df)
-        processed_art, = process(scores=scores_art, pairs=pairs_art)
+        processed_art, = process(scores=scores_art)
         return processed_art
 
     def test_creates_index_html(self):
