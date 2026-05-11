@@ -417,7 +417,8 @@ class TestCountEnrichedUncollapsedHelper(TestPluginBase):
         _count_enriched_uncollapsed_helper(
             counts, epitope, zsc, pzsc, "pep1", "sp1", "InfluenzaA"
         )
-        count = counts["subtype"]["sp1"]["InfluenzaA"]["H1N1"]["Epitope Counts"]
+        count = \
+            counts["subtype"]["sp1"]["InfluenzaA"]["H1N1"]["Epitope Counts"]
         self.assertEqual(count, 2)
 
 
@@ -504,28 +505,36 @@ class TestGetRelativeEnrichmentScore(TestPluginBase):
         emap = self._emap(["pep1"])
         zscores = pd.DataFrame({"pep1": [2.0]}, index=["sA"])
         mapped_zscores = pd.DataFrame({"ep1": [4.0]}, index=["sA"])
-        result = _get_relative_enrichment_score(zscores, mapped_zscores, "ep1", emap)
+        result = _get_relative_enrichment_score(
+            zscores, mapped_zscores, "ep1", emap
+        )
         self.assertAlmostEqual(result, 0.5)  # 2.0 / 4.0
 
     def test_multiple_samples_sums_all_normalized_values(self):
         emap = self._emap(["pep1"])
         zscores = pd.DataFrame({"pep1": [1.0, 3.0]}, index=["sA", "sB"])
         mapped_zscores = pd.DataFrame({"ep1": [2.0, 6.0]}, index=["sA", "sB"])
-        result = _get_relative_enrichment_score(zscores, mapped_zscores, "ep1", emap)
+        result = _get_relative_enrichment_score(
+            zscores, mapped_zscores, "ep1", emap
+        )
         self.assertAlmostEqual(result, 1.0)  # 1/2 + 3/6
 
     def test_multiple_codenames_sum_contributions_from_each(self):
         emap = self._emap(["pep1", "pep2"])
         zscores = pd.DataFrame({"pep1": [2.0], "pep2": [1.0]}, index=["sA"])
         mapped_zscores = pd.DataFrame({"ep1": [4.0]}, index=["sA"])
-        result = _get_relative_enrichment_score(zscores, mapped_zscores, "ep1", emap)
+        result = _get_relative_enrichment_score(
+            zscores, mapped_zscores, "ep1", emap
+        )
         self.assertAlmostEqual(result, 0.75)  # 2/4 + 1/4
 
     def test_negative_zscores_divide_correctly(self):
         emap = self._emap(["pep1"])
         zscores = pd.DataFrame({"pep1": [-1.0]}, index=["sA"])
         mapped_zscores = pd.DataFrame({"ep1": [-2.0]}, index=["sA"])
-        result = _get_relative_enrichment_score(zscores, mapped_zscores, "ep1", emap)
+        result = _get_relative_enrichment_score(
+            zscores, mapped_zscores, "ep1", emap
+        )
         self.assertAlmostEqual(result, 0.5)  # -1.0 / -2.0
 
 
