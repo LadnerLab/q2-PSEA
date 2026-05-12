@@ -99,8 +99,8 @@ def make_psea_table(
     _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
     )
-    create_fgsea_table_for_pair = ctx.get_action(
-        "psea", "create_fgsea_table_for_pair"
+    _create_fgsea_table_for_pair = ctx.get_action(
+        "psea", "_create_fgsea_table_for_pair"
     )
     count_enriched = ctx.get_action("psea", "count_enriched")
 
@@ -193,7 +193,7 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
-        psea_tables[pair], = create_fgsea_table_for_pair(
+        psea_tables[pair], = _create_fgsea_table_for_pair(
             processed_zscores=mapped_processed_zscores if map else
             processed_zscores,
             peptide_sets=pair_pep_sets_dict[pair],
@@ -274,6 +274,7 @@ def make_psea_table(
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
 
+
 def _run_iterative_process_single_pair(
     processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
@@ -294,7 +295,7 @@ def _run_iterative_process_single_pair(
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
 
-    Calls the registered ``create_fgsea_table_for_pair`` method, finds the
+    Calls the registered ``_create_fgsea_table_for_pair`` method, finds the
     most significant species not yet in *tested_species*, removes its leading-
     edge peptides from all other species in the GMT, and returns the updated
     peptide sets alongside the PSEA table for this iteration.

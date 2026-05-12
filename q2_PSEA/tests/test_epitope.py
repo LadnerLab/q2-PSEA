@@ -8,6 +8,7 @@ from qiime2.plugin.testing import TestPluginBase
 
 from qiime2 import Artifact
 from q2_PSEA.actions.epitope import (
+    _count_enriched_collapsed,
     _count_enriched_collapsed_helper,
     _count_enriched_uncollapsed,
     _count_enriched_uncollapsed_helper,
@@ -573,6 +574,131 @@ class TestCreateCountDf(TestPluginBase):
         df = _create_count_df("epitope", {})
         self.assertEqual(len(df), 0)
         self.assertEqual(df.index.names[2], "Epitopes")
+
+
+# ---------------------------------------------------------------------------
+# _count_enriched_collapsed — unit tests
+# Tests the "Peptide" branch: core_enrichment elements whose name contains
+# the substring "Peptide" are looked up directly by EpitopeID.
+# ---------------------------------------------------------------------------
+
+class TestCountEnrichedCollapsed(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    # epitope_map: EpitopeID "sp001_Peptide_W1" → peptides pep_00/pep_01,
+    # subtypes H1N1/H3N2.  The "Peptide" in the ID triggers the direct-lookup
+    # branch of _count_enriched_collapsed.
+    def _epitope_map(self):
+        return pd.DataFrame(
+            {
+                "CodeName": [["pep_00", "pep_01"]],
+                "Subtype": [["H1N1", "H3N2"]],
+            },
+            index=pd.Index(["sp001_Peptide_W1"], name="EpitopeID"),
+        )
+
+    # samples × peptides
+    def _zscores(self):
+        return pd.DataFrame(
+            {"pep_00": [1.0], "pep_01": [2.0]}, index=["sA"]
+        )
+
+    # samples × epitope IDs
+    def _mapped_zscores(self):
+        return pd.DataFrame(
+            {"sp001_Peptide_W1": [3.0]}, index=["sA"]
+        )
+
+    # Minimal filtered_scores with one enriched epitope element.
+    # Default integer index → row.name = 0 → species_id = 0.
+    def _filtered(self, core_enrichment="sp001_Peptide_W1", **extra):
+        row = {"core_enrichment": core_enrichment}
+        row.update(extra)
+        return pd.DataFrame([row])
+
+    def _run(self, filtered_scores=None):
+        if filtered_scores is None:
+            filtered_scores = self._filtered()
+        zs = self._zscores()
+        mzs = self._mapped_zscores()
+        return _count_enriched_collapsed(
+            self._epitope_map(), zs, zs, mzs, mzs, filtered_scores
+        )
+
+    def test_returns_dict_with_epitope_and_subtype_keys(self):
+        result = self._run()
+        self.assertEqual(set(result.keys()), {"epitope", "subtype"})
+
+    def test_epitope_df_has_subtype_counts_column(self):
+        result = self._run()
+        self.assertIn("Subtype Counts", result["epitope"].columns)
+
+    def test_subtype_df_has_expected_columns(self):
+        result = self._run()
+        self.assertEqual(
+            set(result["subtype"].columns),
+            {"Epitope Counts", "Relative Enrichment Score",
+             "Processed Relative Enrichment Score"},
+        )
+
+    def test_subtype_count_equals_number_of_subtypes(self):
+        # sp001_Peptide_W1 has H1N1 and H3N2 → helper called twice →
+        # counts['epitope'][0][0]['sp001_Peptide_W1'] == 2
+        result = self._run()
+        epitope_df = result["epitope"]
+        val = epitope_df.loc[
+            epitope_df.index.get_level_values("Epitopes") ==
+            "sp001_Peptide_W1",
+            "Subtype Counts",
+        ].iloc[0]
+        self.assertEqual(val, 2)
+
+    def test_each_subtype_gets_one_epitope_count(self):
+        result = self._run()
+        subtype_df = result["subtype"]
+        subtypes = subtype_df.index.get_level_values("Subtypes")
+        for subtype in ("H1N1", "H3N2"):
+            self.assertIn(subtype, subtypes)
+            count = subtype_df.loc[
+                subtype_df.index.get_level_values("Subtypes") == subtype,
+                "Epitope Counts",
+            ].iloc[0]
+            self.assertEqual(count, 1)
+
+    def test_species_name_used_when_present_in_row(self):
+        # When a 'species_name' column exists, the 'Species Called' index
+        # level should hold that name rather than the row index (species_id).
+        fs = self._filtered(species_name="InfluenzaA")
+        fs.index = pd.Index(["sp001"])
+        result = self._run(filtered_scores=fs)
+        species_called = set(
+            result["epitope"].index.get_level_values("Species Called")
+        )
+        self.assertIn("InfluenzaA", species_called)
+
+    def test_relative_enrichment_score_is_correct(self):
+        # max_z for sp001_Peptide_W1 = 3.0 (single sample sA).
+        # pep_00 / sA: 1.0 / 3.0 = 0.333…
+        # pep_01 / sA: 2.0 / 3.0 = 0.666…
+        # sum = 1.0
+        result = self._run()
+        subtype_df = result["subtype"]
+        h1n1 = subtype_df.loc[
+            subtype_df.index.get_level_values("Subtypes") == "H1N1",
+            "Relative Enrichment Score",
+        ].iloc[0]
+        self.assertAlmostEqual(h1n1, 1.0)
+
+    def test_multiindex_level_names_are_correct(self):
+        result = self._run()
+        self.assertEqual(
+            list(result["epitope"].index.names),
+            ["Species ID Called", "Species Called", "Epitopes"],
+        )
+        self.assertEqual(
+            list(result["subtype"].index.names),
+            ["Species ID Called", "Species Called", "Subtypes"],
+        )
 
 
 if __name__ == "__main__":

@@ -193,7 +193,7 @@ class TestComputePairFitIntegration(TestPluginBase):
 
 
 # ---------------------------------------------------------------------------
-# create_fgsea_table_for_pair — full R integration
+# _create_fgsea_table_for_pair — full R integration
 # ---------------------------------------------------------------------------
 
 class TestCreateFgseaTableForPairIntegration(TestPluginBase):
@@ -219,7 +219,7 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
             spline_type="py-smooth",
             degree=3,
         )
-        self.method = self.plugin.methods["create_fgsea_table_for_pair"]
+        self.method = self.plugin.methods["_create_fgsea_table_for_pair"]
 
     def _run(self, **kwargs):
         result, = self.method(
@@ -442,7 +442,191 @@ class TestComputePairFitDirect(TestPluginBase):
             self.assertNotIn(pep, df["deltaZ"].dropna().index)
 
 
+# ---------------------------------------------------------------------------
+# _run_iterative_process_single_pair — integration via plugin method
+# ---------------------------------------------------------------------------
 
+class TestRunIterativeProcessSinglePairIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
+        self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
+        self.gmt_df = pd.read_csv(
+            self.get_data_path("peptide-sets.tsv"), sep="\t"
+        )
+
+        process = self.plugin.methods["_process_scores"]
+        self.processed_art, = process(scores=scores_art)
+
+        compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
+        self.spline_art, = compute_fit(
+            processed_zscores=self.processed_art,
+            sample_a="sA",
+            sample_b="sB",
+            spline_type="py-smooth",
+            degree=3,
+        )
+        self.method = self.plugin.methods["_run_iterative_process_single_pair"]
+
+    def _run(self, **kwargs):
+        result, = self.method(
+            processed_zscores=self.processed_art,
+            peptide_sets=self.gmt_art,
+            precomputed_fit=self.spline_art,
+            threshold=0.0,
+            permutation_num=100,
+            min_size=3,
+            max_size=500,
+            p_value=0.05,
+            enrichment_score=1.0,
+            seed=42,
+            **kwargs,
+        )
+        return result
+
+    def test_output_is_valid_gmt(self):
+        df = self._run().view(pd.DataFrame)
+        self.assertIn("term", df.columns)
+        self.assertIn("gene", df.columns)
+
+    def test_output_row_count_at_most_input_row_count(self):
+        df = self._run().view(pd.DataFrame)
+        self.assertLessEqual(len(df), len(self.gmt_df))
+
+    def test_output_terms_are_subset_of_input_terms(self):
+        df = self._run().view(pd.DataFrame)
+        self.assertTrue(set(df["term"]).issubset(set(self.gmt_df["term"])))
+
+    def test_with_p_value_zero_output_equals_input(self):
+        # p_value=0 means row["p.adjust"] < 0 is never satisfied,
+        # so no species is ever called significant and the GMT is returned
+        # unchanged after the first R call exits the while-loop.
+        result, = self.method(
+            processed_zscores=self.processed_art,
+            peptide_sets=self.gmt_art,
+            precomputed_fit=self.spline_art,
+            threshold=0.0,
+            permutation_num=100,
+            min_size=3,
+            max_size=500,
+            p_value=0.0,
+            enrichment_score=1.0,
+            seed=42,
+        )
+        out_df = result.view(pd.DataFrame)
+        pd.testing.assert_frame_equal(
+            out_df.reset_index(drop=True),
+            self.gmt_df.reset_index(drop=True),
+        )
+
+
+# ---------------------------------------------------------------------------
+# make_psea_table — pipeline integration
+# ---------------------------------------------------------------------------
+
+class TestMakePseaTableIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        # Use the full 7-peptide scores-vis.tsv and the full peptide-sets.tsv.
+        # With multiple gene sets in the GMT, R's GSEA can compute ranked
+        # enrichment even when deltaZ values are very small.  The epitope
+        # metadata is extended to cover all 9 peptides in the GMT so that
+        # _count_enriched_uncollapsed never hits a KeyError regardless of
+        # which peptides appear in core_enrichment.
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        self.scores_art = qiime2.Artifact.import_data(
+            "FeatureTable[Zscore]", raw
+        )
+        self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
+        self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
+        # Extended epitope metadata covering all 9 peptides in peptide-sets.tsv
+        pep_ids = [f"pep_{i:02d}" for i in range(9)]
+        species = (
+            ["sp001"] * 2 + ["sp002"] + ["sp003"]
+            + ["sp004"] * 3 + ["sp005"] * 2
+        )
+        subtypes = (
+            ["H1N1", "H3N2", "Yamagata", "K12"]
+            + ["HSV1"] * 3 + ["HIV1"] * 2
+        )
+        categories = (
+            ["Viral", "Viral", "Viral", "Bacterial"]
+            + ["Viral"] * 3 + ["Viral"] * 2
+        )
+        epi_extended = pd.DataFrame(
+            {
+                "SpeciesID": species,
+                "ClusterID": [f"C{i+1}" for i in range(9)],
+                "EpitopeWindow": [f"W{i+1}" for i in range(9)],
+                "Species": [
+                    "InfluenzaA", "InfluenzaA", "InfluenzaB", "EColi",
+                    "HerpesV", "HerpesV", "HerpesV", "HIV", "HIV",
+                ],
+                "Subtype": subtypes,
+                "Category": categories,
+            },
+            index=pd.Index(pep_ids, name="CodeName"),
+        )
+        self.epi_art = qiime2.Artifact.import_data(
+            "FeatureData[Epitope]", epi_extended
+        )
+        self.pipeline = self.plugin.pipelines["make_psea_table"]
+
+    def test_raises_when_map_false_and_peptide_metadata_missing(self):
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                map=False,
+                # peptide_metadata intentionally omitted
+            )
+
+    def test_raises_when_partial_map_artifacts_provided(self):
+        # Providing epitope_map without mapped_zscores/mapped_gmt is invalid.
+        # Note: create_epitope_map uses the input name "epitope", not
+        # "peptide_metadata".
+        epi_map_art, _ = self.plugin.methods["create_epitope_map"](
+            epitope=self.epi_art, collapse="Viral"
+        )
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                map=True,
+                epitope_map=epi_map_art,
+                # mapped_zscores and mapped_gmt omitted → partial → error
+            )
+
+    def test_psea_tables_keyed_by_pair_name(self):
+        _, _, _, psea_tables, _ = self.pipeline(
+            scores=self.scores_art,
+            pairs=self.pairs_art,
+            peptide_sets=self.gmt_art,
+            peptide_metadata=self.epi_art,
+            threshold=0.0,
+            permutation_num=100,
+            min_size=3,
+            max_size=500,
+            p_value=1.0,
+            enrichment_score=0.0,
+            iterative_analysis=False,
+            map=False,
+            seed=42,
+        )
+        self.assertIn("sA~sB", psea_tables)
 
 
 if __name__ == "__main__":

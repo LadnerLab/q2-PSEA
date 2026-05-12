@@ -287,7 +287,7 @@ plugin.methods.register_function(
     input_descriptions={
         "psea_tables": (
             "Per-pair PSEA result tables produced by"
-            " create_fgsea_table_for_pair."
+            " _create_fgsea_table_for_pair."
         ),
     },
     parameter_descriptions={
@@ -323,7 +323,7 @@ plugin.methods.register_function(
 )
 
 # ---------------------------------------------------------------------------
-# Register create_fgsea_table_for_pair as a method
+# Register _create_fgsea_table_for_pair as a method
 # ---------------------------------------------------------------------------
 
 
@@ -468,7 +468,7 @@ plugin.methods.register_function(
     description=(
         "One iteration of the iterative peptide-filtering procedure for a"
         " single sample pair. Calls the registered"
-        " create_fgsea_table_for_pair method, identifies the top significant"
+        " _create_fgsea_table_for_pair method, identifies the top significant"
         " untested species, and removes its leading-edge peptides from all"
         " other species in the GMT."
     ),

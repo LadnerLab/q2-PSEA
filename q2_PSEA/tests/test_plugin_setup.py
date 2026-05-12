@@ -58,7 +58,7 @@ class TestMethodsRegistered(TestPluginBase):
         self.assertIn("count_antibody_events", self.plugin.methods)
 
     def test_create_fgsea_table_registered(self):
-        self.assertIn("create_fgsea_table_for_pair", self.plugin.methods)
+        self.assertIn("_create_fgsea_table_for_pair", self.plugin.methods)
 
     def test_create_epitope_map_registered(self):
         self.assertIn("create_epitope_map", self.plugin.methods)
@@ -84,7 +84,8 @@ class TestCreateFgseaSignature(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        self.sig = self.plugin.methods["create_fgsea_table_for_pair"].signature
+        self.sig = \
+            self.plugin.methods["_create_fgsea_table_for_pair"].signature
 
     def test_processed_scores_in_inputs(self):
         self.assertIn("processed_zscores", self.sig.inputs)
