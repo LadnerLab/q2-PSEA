@@ -18,282 +18,6 @@ MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
 
-def create_fgsea_table_for_pair(
-    processed_zscores: pd.DataFrame,
-    peptide_sets: pd.DataFrame,
-    precomputed_fit: pd.DataFrame,
-    threshold: float,
-    permutation_num: int,
-    min_size: int,
-    max_size: int,
-    seed: CaptureHolder[int] = None,
-    species_taxa: qiime2.Metadata = None,
-) -> pd.DataFrame:
-    """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
-
-    Parameters
-    ----------
-    processed_zscores : pd.DataFrame
-        Log-scaled Z-score matrix (from FeatureTable[Zscore]).
-    peptide_sets : pd.DataFrame
-        GMT peptide-set table with columns 'term' and 'gene' (from GMT).
-    species_taxa : PSEASpeciesTaxaDirFmt, optional
-        Directory format containing species-taxa.tsv; passed as a file path
-        to the underlying R function.
-
-    Returns
-    -------
-    pd.DataFrame
-        PSEA result table for this pair (stored as FeatureData[PSEAScores]).
-    """
-    seed = CaptureHolder.get_or_set(
-        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
-    )
-    processed_zscores = processed_zscores.transpose()
-
-    maxZ_all = precomputed_fit["maxZ"].dropna()
-    deltaZ_all = precomputed_fit["deltaZ"].dropna()
-
-    filtered_zscores, peptide_sets_for_analysis = \
-        utils.remove_peptides(processed_zscores, peptide_sets)
-
-    idx = filtered_zscores.index
-    maxZ = maxZ_all.reindex(idx)
-    deltaZ = deltaZ_all.reindex(idx)
-
-    # This ought to ensure this file is accessible where this code is actually
-    # being run if run cross node on HPC for instance
-    with tempfile.TemporaryDirectory() as tmpdir:
-        if species_taxa is not None:
-            taxa_df = species_taxa.to_dataframe().reset_index()
-            species_taxa_file = os.path.join(tmpdir, "species_taxa.tsv")
-            taxa_df.to_csv(
-                species_taxa_file, sep="\t", header=False, index=False
-            )
-        else:
-            species_taxa_file = ""
-
-        with (ro.default_converter + pandas2ri.converter).context():
-            table = INTERNAL.psea(
-                maxZ,
-                deltaZ,
-                peptide_sets_for_analysis,
-                species_taxa_file,
-                threshold,
-                permutation_num,
-                min_size,
-                max_size,
-                seed,
-            )
-
-            table = ro.conversion.get_conversion().rpy2py(table)
-
-    return table
-
-
-def count_antibody_events(
-    psea_tables: pd.DataFrame,
-    p_value: float,
-    enrichment_score: float,
-    taxa_access: str,
-) -> (pd.DataFrame, pd.DataFrame):
-    """QIIME 2 method: count positive- and negative-NES antibody events.
-
-    Iterates over every PSEA table in *psea_tables*. A taxon is counted as one
-    event for a given pair when its adjusted p-value is below *p_value*
-    and the absolute value of its NES exceeds *enrichment_score*. Positive and
-    negative NES events are tallied separately.
-
-    Returns
-    -------
-    pos_ae_counts : pd.DataFrame
-        Two-column DataFrame (Species, Events) sorted by event count
-        descending. Contains taxa with significant positive NES.
-    neg_ae_counts : pd.DataFrame
-        Same structure for taxa with significant negative NES.
-    """
-    pos_count = {}
-    neg_count = {}
-    zero_count = {}
-
-    for _, table_df in psea_tables.items():
-        for _, row in table_df.iterrows():
-            taxa = row[taxa_access]
-            if (
-                row["p.adjust"] < p_value
-                and abs(row["NES"]) > enrichment_score
-            ):
-                if row["NES"] > 0:
-                    pos_count[taxa] = pos_count.get(taxa, 0) + 1
-                elif row["NES"] < 0:
-                    neg_count[taxa] = neg_count.get(taxa, 0) + 1
-                else:
-                    zero_count[taxa] = zero_count.get(taxa, 0) + 1
-
-    pos_count = dict(
-        sorted(pos_count.items(), key=lambda item: item[1], reverse=True)
-    )
-    neg_count = dict(
-        sorted(neg_count.items(), key=lambda item: item[1], reverse=True)
-    )
-
-    pos_ae_df = pd.DataFrame(
-        list(pos_count.items()), columns=["Species", "Events"]
-    )
-    neg_ae_df = pd.DataFrame(
-        list(neg_count.items()), columns=["Species", "Events"]
-    )
-
-    return pos_ae_df, neg_ae_df
-
-
-def _run_iterative_process_single_pair(
-    processed_zscores: pd.DataFrame,
-    peptide_sets: pd.DataFrame,
-    threshold: float,
-    permutation_num: int,
-    min_size: int,
-    max_size: int,
-    p_value: float,
-    enrichment_score: float,
-    precomputed_fit: pd.DataFrame = None,
-    epitope_map: pd.DataFrame = None,
-    peptide_map: pd.DataFrame = None,
-    mapped_peptide_sets: pd.DataFrame = None,
-    seed: CaptureHolder[int] = None,
-    include_negative_enrichment: bool = True,
-    species_taxa: qiime2.Metadata = None,
-) -> pd.DataFrame:
-    """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
-    single sample pair.
-
-    Calls the registered ``create_fgsea_table_for_pair`` method, finds the
-    most significant species not yet in *tested_species*, removes its leading-
-    edge peptides from all other species in the GMT, and returns the updated
-    peptide sets alongside the PSEA table for this iteration.
-
-    Returns
-    -------
-    updated_peptide_sets : GMT
-    """
-    seed = CaptureHolder.get_or_set(
-        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
-    )
-    updated_peptide_sets = (
-        mapped_peptide_sets if mapped_peptide_sets is not None
-        else peptide_sets
-    )
-
-    tested_species = set()
-    iteration = 1
-    sig_found = True
-    while (sig_found):
-        # Called as a raw Python function not a QIIME 2 Method
-        psea_table = create_fgsea_table_for_pair(
-            processed_zscores=processed_zscores,
-            peptide_sets=updated_peptide_sets,
-            threshold=threshold,
-            permutation_num=permutation_num,
-            min_size=min_size,
-            max_size=max_size,
-            seed=seed,
-            species_taxa=species_taxa,
-            precomputed_fit=precomputed_fit,
-        )
-
-        updated_peptide_sets, tested_species, sig_found = _filter_peptide_sets(
-            psea_table,
-            updated_peptide_sets,
-            tested_species,
-            p_value,
-            enrichment_score,
-            include_negative_enrichment,
-            epitope_map=epitope_map,
-            peptide_map=peptide_map
-        )
-
-        iteration += 1
-
-    return updated_peptide_sets
-
-
-def _filter_peptide_sets(
-            psea_table: pd.DataFrame,
-            updated_peptide_sets: pd.DataFrame,
-            tested_species: set,
-            p_value: int,
-            enrichment_score: int,
-            include_negative_enrichment: bool,
-            epitope_map: pd.DataFrame = None,
-            peptide_map: pd.DataFrame = None,
-        ) -> tuple[pd.DataFrame, set, bool]:
-    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
-
-    sig_found = True
-    for _, row in psea_table.iterrows():
-        row_id = str(row["ID"])
-        if (
-            row["p.adjust"] < p_value
-            and (abs(row["NES"]) > enrichment_score
-                 if include_negative_enrichment
-                 else row["NES"] > enrichment_score)
-            and row_id not in tested_species
-        ):
-            all_tested_features = set(row["all_tested_peptides"].split("/"))
-
-            if peptide_map is not None:
-                all_tested_features = _get_mapped_features(
-                    epitope_map, peptide_map, all_tested_features
-                )
-
-            mask = (
-                (updated_peptide_sets["term"].astype(str) != row_id)
-                & updated_peptide_sets["gene"].isin(all_tested_features)
-            )
-
-            updated_peptide_sets = updated_peptide_sets[~mask]
-            tested_species.add(row_id)
-            break
-    else:
-        sig_found = False
-
-    return updated_peptide_sets, tested_species, sig_found
-
-
-def _get_mapped_features(epitope_map, peptide_map, all_tested_features):
-    """
-    This function is only run if we are using epitope mapping. An epitope maps
-    to one peptide and one species; however, multiple epitopes from multiple
-    species can map to the same peptide. We need to map epitopes we hit back
-    to peptides so we can get all the epitopes that map to that peptide.
-
-    Parameters
-    ----------
-    epitope_map : pd.DataFrame
-        Maps epitopes to peptides.
-    peptide_map : pd.DataFrame
-        Maps peptides to epitopes.
-    all_tested_features : set[str]
-        A set of all features, epitopes or peptides that have been tested so
-        far.
-
-    Returns
-    -------
-    set[str]
-        All features the peptide we tested map to
-    """
-    expanded = set()
-
-    for tested_feature in all_tested_features:
-        codenames = epitope_map.loc[tested_feature, 'CodeName']
-        for codename in codenames:
-            expanded = expanded.union(
-                set(peptide_map.loc[codename, 'EpitopeID'])
-            )
-
-    return expanded
-
-
 def make_psea_table(
     ctx: IContext,
     scores: qiime2.Artifact,
@@ -549,6 +273,205 @@ def make_psea_table(
         )
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
+
+def _run_iterative_process_single_pair(
+    processed_zscores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    threshold: float,
+    permutation_num: int,
+    min_size: int,
+    max_size: int,
+    p_value: float,
+    enrichment_score: float,
+    precomputed_fit: pd.DataFrame = None,
+    epitope_map: pd.DataFrame = None,
+    peptide_map: pd.DataFrame = None,
+    mapped_peptide_sets: pd.DataFrame = None,
+    seed: CaptureHolder[int] = None,
+    include_negative_enrichment: bool = True,
+    species_taxa: qiime2.Metadata = None,
+) -> pd.DataFrame:
+    """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
+    single sample pair.
+
+    Calls the registered ``create_fgsea_table_for_pair`` method, finds the
+    most significant species not yet in *tested_species*, removes its leading-
+    edge peptides from all other species in the GMT, and returns the updated
+    peptide sets alongside the PSEA table for this iteration.
+
+    Returns
+    -------
+    updated_peptide_sets : GMT
+    """
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
+    updated_peptide_sets = (
+        mapped_peptide_sets if mapped_peptide_sets is not None
+        else peptide_sets
+    )
+
+    tested_species = set()
+    iteration = 1
+    sig_found = True
+    while (sig_found):
+        # Called as a raw Python function not a QIIME 2 Method
+        psea_table = _create_fgsea_table_for_pair(
+            processed_zscores=processed_zscores,
+            peptide_sets=updated_peptide_sets,
+            threshold=threshold,
+            permutation_num=permutation_num,
+            min_size=min_size,
+            max_size=max_size,
+            seed=seed,
+            species_taxa=species_taxa,
+            precomputed_fit=precomputed_fit,
+        )
+
+        updated_peptide_sets, tested_species, sig_found = \
+            utils.filter_peptide_sets(
+                psea_table,
+                updated_peptide_sets,
+                tested_species,
+                p_value,
+                enrichment_score,
+                include_negative_enrichment,
+                epitope_map=epitope_map,
+                peptide_map=peptide_map
+            )
+
+        iteration += 1
+
+    return updated_peptide_sets
+
+
+def _create_fgsea_table_for_pair(
+    processed_zscores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    precomputed_fit: pd.DataFrame,
+    threshold: float,
+    permutation_num: int,
+    min_size: int,
+    max_size: int,
+    seed: CaptureHolder[int] = None,
+    species_taxa: qiime2.Metadata = None,
+) -> pd.DataFrame:
+    """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
+
+    Parameters
+    ----------
+    processed_zscores : pd.DataFrame
+        Log-scaled Z-score matrix (from FeatureTable[Zscore]).
+    peptide_sets : pd.DataFrame
+        GMT peptide-set table with columns 'term' and 'gene' (from GMT).
+    species_taxa : PSEASpeciesTaxaDirFmt, optional
+        Directory format containing species-taxa.tsv; passed as a file path
+        to the underlying R function.
+
+    Returns
+    -------
+    pd.DataFrame
+        PSEA result table for this pair (stored as FeatureData[PSEAScores]).
+    """
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
+    processed_zscores = processed_zscores.transpose()
+
+    maxZ_all = precomputed_fit["maxZ"].dropna()
+    deltaZ_all = precomputed_fit["deltaZ"].dropna()
+
+    filtered_zscores, peptide_sets_for_analysis = \
+        utils.remove_peptides(processed_zscores, peptide_sets)
+
+    idx = filtered_zscores.index
+    maxZ = maxZ_all.reindex(idx)
+    deltaZ = deltaZ_all.reindex(idx)
+
+    # This ought to ensure this file is accessible where this code is actually
+    # being run if run cross node on HPC for instance
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if species_taxa is not None:
+            taxa_df = species_taxa.to_dataframe().reset_index()
+            species_taxa_file = os.path.join(tmpdir, "species_taxa.tsv")
+            taxa_df.to_csv(
+                species_taxa_file, sep="\t", header=False, index=False
+            )
+        else:
+            species_taxa_file = ""
+
+        with (ro.default_converter + pandas2ri.converter).context():
+            table = INTERNAL.psea(
+                maxZ,
+                deltaZ,
+                peptide_sets_for_analysis,
+                species_taxa_file,
+                threshold,
+                permutation_num,
+                min_size,
+                max_size,
+                seed,
+            )
+
+            table = ro.conversion.get_conversion().rpy2py(table)
+
+    return table
+
+
+def count_antibody_events(
+    psea_tables: pd.DataFrame,
+    p_value: float,
+    enrichment_score: float,
+    taxa_access: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """QIIME 2 method: count positive- and negative-NES antibody events.
+
+    Iterates over every PSEA table in *psea_tables*. A taxon is counted as one
+    event for a given pair when its adjusted p-value is below *p_value*
+    and the absolute value of its NES exceeds *enrichment_score*. Positive and
+    negative NES events are tallied separately.
+
+    Returns
+    -------
+    pos_ae_counts : pd.DataFrame
+        Two-column DataFrame (Species, Events) sorted by event count
+        descending. Contains taxa with significant positive NES.
+    neg_ae_counts : pd.DataFrame
+        Same structure for taxa with significant negative NES.
+    """
+    pos_count = {}
+    neg_count = {}
+    zero_count = {}
+
+    for _, table_df in psea_tables.items():
+        for _, row in table_df.iterrows():
+            taxa = row[taxa_access]
+            if (
+                row["p.adjust"] < p_value
+                and abs(row["NES"]) > enrichment_score
+            ):
+                if row["NES"] > 0:
+                    pos_count[taxa] = pos_count.get(taxa, 0) + 1
+                elif row["NES"] < 0:
+                    neg_count[taxa] = neg_count.get(taxa, 0) + 1
+                else:
+                    zero_count[taxa] = zero_count.get(taxa, 0) + 1
+
+    pos_count = dict(
+        sorted(pos_count.items(), key=lambda item: item[1], reverse=True)
+    )
+    neg_count = dict(
+        sorted(neg_count.items(), key=lambda item: item[1], reverse=True)
+    )
+
+    pos_ae_df = pd.DataFrame(
+        list(pos_count.items()), columns=["Species", "Events"]
+    )
+    neg_ae_df = pd.DataFrame(
+        list(neg_count.items()), columns=["Species", "Events"]
+    )
+
+    return pos_ae_df, neg_ae_df
 
 
 def _compute_pair_fit_and_residuals(

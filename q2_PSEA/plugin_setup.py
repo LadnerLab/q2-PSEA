@@ -19,7 +19,7 @@ import q2_PSEA.actions.splines as splines
 from q2_PSEA.actions.psea import (
     _compute_pair_fit_and_residuals,
     count_antibody_events,
-    create_fgsea_table_for_pair,
+    _create_fgsea_table_for_pair,
     _filter_scores_to_pairs,
     _process_scores,
     _run_iterative_process_single_pair,
@@ -328,7 +328,7 @@ plugin.methods.register_function(
 
 
 plugin.methods.register_function(
-    function=create_fgsea_table_for_pair,
+    function=_create_fgsea_table_for_pair,
     inputs={
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,

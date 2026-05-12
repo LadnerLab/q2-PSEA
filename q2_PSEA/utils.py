@@ -1,118 +1,7 @@
 import pandas as pd
-import rpy2.robjects as ro
-import qiime2
-
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.packages import importr
 
 
-cluster_profiler = importr("clusterProfiler")
-
-
-def generate_metadata(replicates):
-    """
-
-    Parameters
-    ----------
-
-    Returns
-    -------
-    """
-    base_reps = []
-
-    replicates.sort()
-
-    for replicate in replicates:
-        base_seq_name = replicate.split("_")[2]
-        base_reps.append(base_seq_name)
-
-    meta_series = pd.Series(data=base_reps, index=replicates)
-    meta_series.index.name = "sample-id"
-    meta_series.name = "source"
-
-    return qiime2.metadata.CategoricalMetadataColumn(meta_series)
-
-
-def make_metadata(df, length):
-    """Given a Pandas DataFrame, and the length of columns, returns Qiime2
-    Metadata
-    """
-    indexes = []
-    for i in range(length):
-        indexes.append(f"{i}")
-    df.index = indexes
-    df.index.name = "sample-id"
-    return qiime2.Metadata(df)
-
-
-def save_taxa_leading_peps_file(
-            taxa_peps_filepath,
-            taxa,
-            leading_peps
-        ) -> None:
-    """
-
-    Parameters
-    ----------
-
-    Returns
-    -------
-    """
-    with open(taxa_peps_filepath, "w") as fh:
-        for i in range(len(taxa)):
-            fh.write(
-                taxa[i] + "\t" + leading_peps[i].replace("/", "\t") + "\n"
-            )
-
-
-def remove_peptides_in_csv_format(
-        scores,
-        peptide_sets_file
-) -> (pd.DataFrame, pd.DataFrame):
-    """Removes peptides not present in CSV formatted sets file from a matrix of
-    Z scores
-
-    Returns
-    -------
-    pd.DataFrame
-        Contains remaining peptides which were found in the peptide sets file
-    """
-    peptide_sets = pd.read_csv(peptide_sets_file, sep=",")
-    pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
-    return scores.drop(index=pep_list), peptide_sets
-
-
-def remove_peptides_in_gmt_format(scores, peptide_sets_file) -> pd.DataFrame:
-    """Removes peptides not present in GMT formatted sets file from a matrix of
-    Z scores
-
-    Returns
-    -------
-    pd.DataFrame
-        Contains remaining peptides which were found in the peptide sets file
-    """
-    read_gmtr = ro.r["read.gmt"]
-    with (ro.default_converter + pandas2ri.converter).context():
-        peptide_sets = read_gmtr(peptide_sets_file)
-    pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
-    return scores.drop(index=pep_list), peptide_sets
-
-
-def remove_peptides_in_tsv_format(scores, peptide_sets_file) -> pd.DataFrame:
-    """Removes peptide not present in TSV formatted sets file from a matrix of
-    Z scores
-
-    Returns
-    -------
-    pd.DataFrame
-        Contains remaining peptides which were found in the peptide sets file
-    """
-    peptide_sets = pd.read_csv(peptide_sets_file, sep="\t")
-    pep_list = scores.index.difference(peptide_sets.loc[:, "gene"])
-    return scores.drop(index=pep_list), peptide_sets
-
-
-def remove_peptides_in_df_format(scores, peptide_sets) -> pd.DataFrame:
+def remove_peptides(scores, peptide_sets) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Removes peptide not present in df formatted sets from a matrix of Z
     scores
 
@@ -125,35 +14,81 @@ def remove_peptides_in_df_format(scores, peptide_sets) -> pd.DataFrame:
     return scores.drop(index=pep_list), peptide_sets
 
 
-REMOVE_PEPTIDES_SWITCH = {
-    "csv": remove_peptides_in_csv_format,
-    "gmt": remove_peptides_in_gmt_format,
-    "tsv": remove_peptides_in_tsv_format,
-    "df": remove_peptides_in_df_format,
-}
+def filter_peptide_sets(
+            psea_table: pd.DataFrame,
+            updated_peptide_sets: pd.DataFrame,
+            tested_species: set,
+            p_value: int,
+            enrichment_score: int,
+            include_negative_enrichment: bool,
+            epitope_map: pd.DataFrame = None,
+            peptide_map: pd.DataFrame = None,
+        ) -> tuple[pd.DataFrame, set, bool]:
+    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
+
+    sig_found = True
+    for _, row in psea_table.iterrows():
+        row_id = str(row["ID"])
+        if (
+            row["p.adjust"] < p_value
+            and (abs(row["NES"]) > enrichment_score
+                 if include_negative_enrichment
+                 else row["NES"] > enrichment_score)
+            and row_id not in tested_species
+        ):
+            all_tested_features = set(row["all_tested_peptides"].split("/"))
+
+            if peptide_map is not None:
+                all_tested_features = _get_mapped_features(
+                    epitope_map, peptide_map, all_tested_features
+                )
+
+            mask = (
+                (updated_peptide_sets["term"].astype(str) != row_id)
+                & updated_peptide_sets["gene"].isin(all_tested_features)
+            )
+
+            updated_peptide_sets = updated_peptide_sets[~mask]
+            tested_species.add(row_id)
+            break
+    else:
+        sig_found = False
+
+    return updated_peptide_sets, tested_species, sig_found
 
 
-def remove_peptides(scores, peptide_sets) -> (pd.DataFrame, pd.DataFrame):
-    """Provides an interface to abstract support for TSV, CSV, and GMT file
-    formats
+def _get_mapped_features(epitope_map, peptide_map, all_tested_features):
+    """
+    This function is only run if we are using epitope mapping. An epitope maps
+    to one peptide and one species; however, multiple epitopes from multiple
+    species can map to the same peptide. We need to map epitopes we hit back
+    to peptides so we can get all the epitopes that map to that peptide.
 
-    Notes
-    -----
-    * TSV and CSV file formats are basically the same but use tabs and commas,
-      respectively
+    Parameters
+    ----------
+    epitope_map : pd.DataFrame
+        Maps epitopes to peptides.
+    peptide_map : pd.DataFrame
+        Maps peptides to epitopes.
+    all_tested_features : set[str]
+        A set of all features, epitopes or peptides that have been tested so
+        far.
 
     Returns
     -------
-    pd.DataFrame
-        DataFrame from processing
+    set[str]
+        All features the peptide we tested map to
     """
-    if isinstance(peptide_sets, pd.DataFrame):
-        format = "df"
-    else:
-        format = peptide_sets.split(".")[1]
-    assert format in list(REMOVE_PEPTIDES_SWITCH), \
-        f"'{format}' is not a supported format for the peptide sets file!"
-    return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets)
+    expanded = set()
+
+    for tested_feature in all_tested_features:
+        codenames = epitope_map.loc[tested_feature, 'CodeName']
+        for codename in codenames:
+            expanded = expanded.union(
+                set(peptide_map.loc[codename, 'EpitopeID'])
+            )
+
+    return expanded
 
 
 def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
