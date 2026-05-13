@@ -903,7 +903,9 @@ plugin.methods.register_function(
         ('enriched', Collection[FeatureData[Enriched]]),
     ],
     input_descriptions={
-        'psea_tables': 'PSEAScores of peptides/epitopes.',
+        'psea_tables':
+            'PSEAScores of peptides/epitopes. Collection maps sample1~sample2'
+            ' to Artifact',
         'epitope_map': 'subtypes',
     },
     parameter_descriptions={},

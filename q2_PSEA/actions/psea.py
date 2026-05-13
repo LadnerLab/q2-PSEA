@@ -24,7 +24,7 @@ def make_psea_table(
     pairs: qiime2.Artifact,
     peptide_sets: qiime2.Artifact,
     threshold: float,
-    peptide_metadata: qiime2.Artifact = None,
+    peptide_metadata: qiime2.Artifact,
     epitope_map: qiime2.Artifact = None,
     peptide_map: qiime2.Artifact = None,
     mapped_zscores: qiime2.Artifact = None,
@@ -125,6 +125,8 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
+    # TODO: I think this needs to be more dynamic. The only one of these that's
+    # likely to need rerun for every analysis is zscore
     if map and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
@@ -249,28 +251,18 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
-    if map:
-        enrichment_tables, = count_enriched(
-            psea_tables=psea_tables,
-            zscores=filtered_zscores,
-            processed_zscores=processed_zscores,
-            epitope_map=epitope_map,
-            mapped_zscores=mapped_zscores,
-            mapped_processed_zscores=mapped_processed_zscores,
-            p_value=p_value,
-            enrichment_score=enrichment_score,
-            include_negative_enrichment=include_negative_enrichment
-        )
-    else:
-        enrichment_tables, = count_enriched(
-            psea_tables=psea_tables,
-            zscores=filtered_zscores,
-            processed_zscores=processed_zscores,
-            peptide_metadata=peptide_metadata,
-            p_value=p_value,
-            enrichment_score=enrichment_score,
-            include_negative_enrichment=include_negative_enrichment
-        )
+    enrichment_tables, = count_enriched(
+        psea_tables=psea_tables,
+        zscores=filtered_zscores,
+        processed_zscores=processed_zscores,
+        epitope_map=epitope_map,
+        peptide_metadata=peptide_metadata,
+        mapped_zscores=mapped_zscores,
+        mapped_processed_zscores=mapped_processed_zscores,
+        p_value=p_value,
+        enrichment_score=enrichment_score,
+        include_negative_enrichment=include_negative_enrichment
+    )
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
 
