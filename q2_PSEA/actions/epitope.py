@@ -241,15 +241,16 @@ def _count_enriched_uncollapsed_helper(
         enrichment_scores.append(zscores[enriched][sample])
         processed_enrichment_scores.append(processed_zscores[enriched][sample])
 
+    # TODO: May need to dedup peptides here
     if subtype not in counts['uncollapsed_subtype'][species_id][species_name]:
         counts['uncollapsed_subtype'][species_id][species_name][subtype] = {
-            'Epitope Counts': 1,
+            'Peptide Counts': 1,
             'Relative Enrichment Score': enrichment_scores,
             'Relative Processed Enrichment Score': processed_enrichment_scores
         }
     else:
         counts['uncollapsed_subtype'][species_id][species_name][subtype][
-            'Epitope Counts'
+            'Peptide Counts'
         ] += 1
         counts['uncollapsed_subtype'][species_id][species_name][subtype][
             'Relative Enrichment Score'
