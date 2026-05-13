@@ -33,6 +33,7 @@ plugin.pipelines.register_function(
         "nes_thresh": Float,
         "min_size": Int,
         "max_size": Int,
+        "fit_threshold": Float,
         "permutation_num": Int,
         "spline_type": Str,
         "degree": Int,
@@ -67,6 +68,9 @@ plugin.pipelines.register_function(
             " the data set.",
         "max_size": "Maximum allowed number of peptides from peptide set also"
             " the data set.",
+        "fit_threshold": "Optional threshold used only for linear spline fitting; "
+            "only points where x > threshold or y > threshold are used to fit "
+            "the line.",
         "permutation_num": "Number of permutations. Minimal possible nominal"
             " p-value is about 1/perm.",
         "spline_type": "Specifies which spline operation to use.",

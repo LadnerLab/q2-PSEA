@@ -32,22 +32,22 @@ def smooth_spline(x, y, knots=3, s=0.788458):
     t, c, k = interpolate.splrep(x, y, t=q_knots, s=s)
     return interpolate.BSpline(t, c, k)(x)
     
-def linear_regression(x, y):
-    """Returns predicted values of `y` based on the given `x` values
-    
+def linear_regression(x, y, x_pred=None):
+    """Returns predicted values based on linear fit from (x, y).
+
     Parameters
     ----------
     x : list(float)
-
+        X values used for fitting.
     y : list(float)
-
-    Returns
-    -------
-    list(float)
-        Predicted y value for every given x value
+        Y values used for fitting.
+    x_pred : list(float), optional
+        X values to predict on. If None, predicts on `x`.
     """
     m, b = np.polyfit(x, y, 1)
-    return m * np.asarray(x) + b
+    if x_pred is None:
+        x_pred = x
+    return m * np.asarray(x_pred) + b
 
 r_splines = """
 smooth_spline <- function(x, y)
