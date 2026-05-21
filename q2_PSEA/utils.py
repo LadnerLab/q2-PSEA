@@ -110,4 +110,5 @@ def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
             elif abs(residual) > abs(epitope_residuals[epitope]):
                 epitope_residuals[epitope] = residual
 
-    return pd.Series(epitope_residuals)
+    peptide_residuals.update(epitope_residuals)
+    return pd.Series(peptide_residuals)
