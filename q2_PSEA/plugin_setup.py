@@ -884,26 +884,21 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=count_enriched,
     inputs={
-        'psea_tables': Collection[FeatureData[PSEAScores]],
+        'psea_table': FeatureData[PSEAScores],
+        'residuals': FeatureData[Spline],
         'peptide_metadata': FeatureData[Epitope],
         'epitope_map': FeatureData[MappedEpitope],
-        'zscores': FeatureTable[Zscore],
-        'processed_zscores':
-            FeatureTable[Zscore % Properties('processed')],
-        'mapped_zscores': FeatureTable[Zscore % Properties('mapped')],
-        'mapped_processed_zscores':
-            FeatureTable[Zscore % Properties('mapped', 'processed')]
     },
     parameters={
         'p_value': Float % Range(0, None),
-        'enrichment_score': Float % Range(0, None),
+        'residual_threshold': Float % Range(0, None),
         'include_negative_enrichment': Bool,
     },
     outputs=[
-        ('enriched', Collection[FeatureData[Enriched]]),
+        ('enriched', FeatureData[Enriched]),
     ],
     input_descriptions={
-        'psea_tables':
+        'psea_table':
             'PSEAScores of peptides/epitopes. Collection maps sample1~sample2'
             ' to Artifact',
         'epitope_map': 'subtypes',

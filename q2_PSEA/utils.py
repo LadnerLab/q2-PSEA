@@ -102,13 +102,11 @@ def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
     epitope_residuals = {}
     for peptide, residual in peptide_residuals.items():
         mapped_epitopes = peptide_to_epitopes.get(peptide)
-        if not mapped_epitopes:
-            mapped_epitopes = (peptide,)
         for epitope in mapped_epitopes:
             if epitope not in epitope_residuals:
                 epitope_residuals[epitope] = residual
             elif abs(residual) > abs(epitope_residuals[epitope]):
                 epitope_residuals[epitope] = residual
 
-    peptide_residuals.update(epitope_residuals)
-    return pd.Series(peptide_residuals)
+    epitope_residuals.update(peptide_residuals)
+    return pd.Series(epitope_residuals)

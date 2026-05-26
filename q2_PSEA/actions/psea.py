@@ -149,6 +149,7 @@ def make_psea_table(
     pair_splines = {}
     pair_pep_sets_dict = {}
     psea_tables = {}
+    enrichment_tables = {}
 
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
@@ -208,6 +209,21 @@ def make_psea_table(
             precomputed_fit=pair_splines[pair],
         )
 
+        # TODO: If mapped then call count_enriched per pair here
+        # If not mapped... we need to do something. Shunt out some empty files
+        # the classic
+        enrichment_tables[pair], = count_enriched(
+            psea_table=psea_tables[pair],
+            residuals=pair_splines[pair],
+            epitope_map=epitope_map,
+            peptide_metadata=peptide_metadata,
+            p_value=p_value,
+            # TODO: This should probably be parameterized seperately to
+            # make-psea-table
+            residual_threshold=enrichment_score,
+            include_negative_enrichment=include_negative_enrichment
+        )
+
     # ------------------------------------------------------------------
     # Count antibody events and build visualizations
     # ------------------------------------------------------------------
@@ -249,19 +265,6 @@ def make_psea_table(
         xy_access=["Events", "Species"],
         xy_labels=["Number of AEs in cohort", "Species"],
         colors_file=species_colors,
-    )
-
-    enrichment_tables, = count_enriched(
-        psea_tables=psea_tables,
-        zscores=filtered_zscores,
-        processed_zscores=processed_zscores,
-        epitope_map=epitope_map,
-        peptide_metadata=peptide_metadata,
-        mapped_zscores=mapped_zscores,
-        mapped_processed_zscores=mapped_processed_zscores,
-        p_value=p_value,
-        enrichment_score=enrichment_score,
-        include_negative_enrichment=include_negative_enrichment
     )
 
     return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
@@ -370,7 +373,6 @@ def _create_fgsea_table_for_pair(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
     processed_zscores = processed_zscores.transpose()
-
     maxZ_all = precomputed_fit["maxZ"].dropna()
     deltaZ_all = precomputed_fit["deltaZ"].dropna()
 

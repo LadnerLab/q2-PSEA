@@ -112,264 +112,85 @@ def _create_EpitopeID_row(epitope, collapse):
     return epitope
 
 
+# Take list collapsed epitopes
+# Go to metadata and get associated peptides
+# Get residuals for those peptides if above some threshold we count it
+# Then normalize all residuals against the abs val of max residual for epitope
+# then sum them across epitopes
+# Output this one file per pair
 def count_enriched(
-            psea_tables: pd.DataFrame,
-            zscores: pd.DataFrame,
-            processed_zscores: pd.DataFrame,
+            psea_table: pd.DataFrame,
+            residuals: pd.DataFrame,
             peptide_metadata: pd.DataFrame,
             epitope_map: pd.DataFrame = None,
-            mapped_zscores: pd.DataFrame = None,
-            mapped_processed_zscores: pd.DataFrame = None,
             p_value: float = .05,
-            enrichment_score: float = 1,
+            residual_threshold: float = 1.0,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
-    samples = [pair.split('~')[1] for pair in psea_tables.keys()]
+    filtered_psea_table = psea_table.loc[psea_table['p.adjust'] <= p_value]
+    counts = {}
 
-    if epitope_map is not None and not (
-            mapped_zscores is not None and
-            mapped_processed_zscores is not None):
-        raise ValueError("If passing epitope_map you must also pass"
-                         " mapped_zscores and mapped_processed_zscores")
+    for core_enrichment in filtered_psea_table['core_enrichment']:
+        # Conglomerate all peptides and subtypes here
+        for enriched in core_enrichment.split('/'):
+            peptides = epitope_map.loc[enriched]['CodeName']
 
-    filtered_scores = _filter_scores(
-        psea_tables, p_value, enrichment_score, include_negative_enrichment
-    )
+            filtered_map = {}
+            for peptide in peptides:
+                residual = abs(residuals.loc[peptide]['deltaZ'])
+                if abs(residual) >= residual_threshold:
+                    filtered_map[peptide] = residual
 
-    counts = _count_enriched_uncollapsed(
-        peptide_metadata, zscores, processed_zscores, filtered_scores, samples,
-        epitope_map=epitope_map
-    )
+            if filtered_map == {}:
+                continue
 
-    if epitope_map is not None:
-        counts.update(_count_enriched_collapsed(
-            epitope_map, zscores, processed_zscores, mapped_zscores,
-            mapped_processed_zscores, filtered_scores
-        ))
+            # NOTE: We are normalizing the residuals within epitope then
+            # summing them cross epitope, this can cause the score to be higher
+            # than the number of peptides
+            max_residual = max(filtered_map.values())
+            for peptide, residual in filtered_map.items():
+                filtered_map[peptide] = residual / max_residual
 
-    return counts
+                # If there are multiple subtypes they will be ; seperated. The
+                # speciesID and species_name cells will contain duplicated ;
+                # seperated values. FOr ID and name we can just take the first
+                # for subtypes we need to iterate
+                speciesID = \
+                    peptide_metadata.loc[peptide]['SpeciesID'].split(';')[0]
+                species_name = \
+                    peptide_metadata.loc[peptide]['Species'].split(';')[0]
+                subtypes = peptide_metadata.loc[peptide]['Subtype']
 
+                if subtypes is np.nan:
+                    subtypes = ['subtypeNA']
+                else:
+                    subtypes = subtypes.split(';')
 
-def _filter_scores(scores, p_value, enrichment_score,
-                   include_negative_enrichment):
-    scores = pd.concat(list(scores.values()))
-    scores = scores.loc[scores['p.adjust'] <= p_value]
+                id_dict = counts.setdefault(speciesID, {})
+                name_dict = id_dict.setdefault(species_name, {})
 
-    if include_negative_enrichment:
-        return scores.loc[abs(scores['enrichmentScore']) >= enrichment_score]
+                for subtype in subtypes:
+                    subtype_dict = name_dict.setdefault(subtype, {
+                        'Peptide Counts': 0,
+                        'Relative Enrichment Score': 0
+                    })
 
-    return scores.loc[scores['enrichmentScore'] >= enrichment_score]
+                    subtype_dict['Peptide Counts'] += 1
+                    subtype_dict['Relative Enrichment Score'] += residual
 
-
-# TODO: Uncollapsed here is not split on
-# TODO: Sum the enrichment scores based only on the second timepoint in a pair
-def _count_enriched_uncollapsed(
-            epitope, zscores, processed_zscores, filtered_scores, samples,
-            epitope_map=None
-        ):
-    counts = {
-        'uncollapsed_peptide': {},
-        'uncollapsed_subtype': {},
-    }
-
-    def _count(row):
-        enriched_elements = row['core_enrichment'].split('/')
-        if epitope_map is not None:
-            peptides = []
-            for enriched in enriched_elements:
-                peptides.extend(epitope_map.loc[enriched]['CodeName'])
-            enriched_elements = peptides
-
-        species_id = row.name
-
-        species_name = row.name
-        if 'species_name' in row:
-            species_name = row['species_name']
-
-        for enriched in enriched_elements:
-            subtypes = epitope.loc[enriched]['Subtype'].split(';')
-            for subtype in subtypes:
-                _count_enriched_uncollapsed_helper(
-                    counts, subtype, zscores, processed_zscores, enriched,
-                    species_id, species_name, samples
-                )
-
-    filtered_scores.apply(_count, axis=1)
-    for key, value in counts.items():
-        if key == 'uncollapsed_subtype':
-            _normalize_and_sum(value)
-        df = _create_count_df(key, value)
-
-        if key == 'uncollapsed_subtype':
-            df.columns = [
-                'Peptide Counts',
-                'Relative Enrichment Score',
-                'Processed Relative Enrichment Score'
-            ]
-        else:
-            df.columns = ['Subtype Counts']
-        counts[key] = df
-
-    return counts
-
-
-def _count_enriched_uncollapsed_helper(
-            counts, subtype, zscores, processed_zscores, enriched, species_id,
-            species_name, samples
-        ):
-    if species_id not in counts['uncollapsed_peptide']:
-        counts['uncollapsed_peptide'][species_id] = {}
-
-    if species_id not in counts['uncollapsed_subtype']:
-        counts['uncollapsed_subtype'][species_id] = {}
-
-    if species_name not in counts['uncollapsed_peptide'][species_id]:
-        counts['uncollapsed_peptide'][species_id][species_name] = {}
-
-    if species_name not in counts['uncollapsed_subtype'][species_id]:
-        counts['uncollapsed_subtype'][species_id][species_name] = {}
-
-    if enriched not in counts['uncollapsed_peptide'][species_id][species_name]:
-        counts['uncollapsed_peptide'][species_id][species_name][enriched] = 1
-    else:
-        counts['uncollapsed_peptide'][species_id][species_name][enriched] += 1
-
-    enrichment_scores = []
-    processed_enrichment_scores = []
-
-    for sample in samples:
-        enrichment_scores.append(zscores[enriched][sample])
-        processed_enrichment_scores.append(processed_zscores[enriched][sample])
-
-    # TODO: May need to dedup peptides here
-    if subtype not in counts['uncollapsed_subtype'][species_id][species_name]:
-        counts['uncollapsed_subtype'][species_id][species_name][subtype] = {
-            'Peptide Counts': 1,
-            'Relative Enrichment Score': enrichment_scores,
-            'Relative Processed Enrichment Score': processed_enrichment_scores
-        }
-    else:
-        counts['uncollapsed_subtype'][species_id][species_name][subtype][
-            'Peptide Counts'
-        ] += 1
-        counts['uncollapsed_subtype'][species_id][species_name][subtype][
-            'Relative Enrichment Score'
-        ].extend(enrichment_scores)
-        counts['uncollapsed_subtype'][species_id][species_name][subtype][
-            'Relative Processed Enrichment Score'
-        ].extend(processed_enrichment_scores)
-
-
-def _count_enriched_collapsed(
-            epitope_map, zscores, processed_zscores, mapped_zscores,
-            mapped_processed_zscores, filtered_scores
-        ):
-    counts = {
-        'collapsed_epitope': {},
-        'collapsed_subtype': {},
-    }
-
-    def _count(row):
-        enriched_elements = row['core_enrichment'].split('/')
-        species_id = row.name
-
-        species_name = row.name
-        if 'species_name' in row:
-            species_name = row['species_name']
-
-        for enriched in enriched_elements:
-            if 'Peptide' in enriched:
-                # Here we are collapsed which means we are looking at an
-                # epitope
-                hit = epitope_map.loc[enriched]
-                for subtype in hit['Subtype']:
-                    _count_enriched_collapsed_helper(
-                        counts, species_id, species_name, enriched, subtype
-                    )
-            else:
-                # Here we are uncollapsed which means we are looking at an
-                # individual peptide
-                hits = epitope_map.loc[epitope_map['CodeName'].apply(
-                    lambda peptides: enriched in peptides
-                )]
-
-                def _count_uncollapsed(hit):
-                    for subtype in hit['Subtype']:
-                        _count_enriched_collapsed_helper(
-                            counts, species_id, species_name, enriched, subtype
-                        )
-
-                hits.apply(_count_uncollapsed, axis=1)
-
-    filtered_scores.apply(_count, axis=1)
-    for key, value in counts.items():
-        df = _create_count_df(key, value)
-
-        if key == 'collapsed_subtype':
-            df.columns = ['Epitope Counts']
-        else:
-            df.columns = ['Subtype Counts']
-        counts[key] = df
-
-    return counts
-
-
-def _count_enriched_collapsed_helper(
-            counts, species_id, species_name, epitope, subtype
-        ):
-    if species_id not in counts['collapsed_epitope']:
-        counts['collapsed_epitope'][species_id] = {}
-
-    if species_id not in counts['collapsed_subtype']:
-        counts['collapsed_subtype'][species_id] = {}
-
-    if species_name not in counts['collapsed_epitope'][species_id]:
-        counts['collapsed_epitope'][species_id][species_name] = {}
-
-    if species_name not in counts['collapsed_subtype'][species_id]:
-        counts['collapsed_subtype'][species_id][species_name] = {}
-
-    if epitope not in counts['collapsed_epitope'][species_id][species_name]:
-        counts['collapsed_epitope'][species_id][species_name][epitope] = 1
-    else:
-        counts['collapsed_epitope'][species_id][species_name][epitope] += 1
-
-    if subtype not in counts['collapsed_subtype'][species_id][species_name]:
-        counts['collapsed_subtype'][species_id][species_name][subtype] = 1
-    else:
-        counts['collapsed_subtype'][species_id][species_name][subtype] += 1
-
-
-def _normalize_and_sum(counts):
-    for _, inner in counts.items():
-        for _, inner_inner in inner.items():
-            for _, final in inner_inner.items():
-                res = final['Relative Enrichment Score']
-                res_proc = final['Relative Processed Enrichment Score']
-
-                _max = max(res)
-                _max_processed = max(res_proc)
-
-                final['Relative Enrichment Score'] = \
-                    sum([score / _max for score in res])
-                final['Relative Processed Enrichment Score'] = \
-                    sum([score / _max_processed for score in res_proc])
-
-
-def _create_count_df(key, value):
-    df = pd.DataFrame.from_dict(
+    counts = pd.DataFrame.from_dict(
         {
             (species_id, species_name, epitope_subtype): count
-            for species_id, inner in value.items()
+            for species_id, inner in counts.items()
             for species_name, inner_inner in inner.items()
             for epitope_subtype, count in inner_inner.items()
         }, orient='index'
     )
-    df.index = pd.MultiIndex.from_tuples(
-        df.index,
+    counts.index = pd.MultiIndex.from_tuples(
+        counts.index,
         names=(
-            'Species ID Called', 'Species Called', key.capitalize() + 's'
+            'Species ID Called', 'Species Called', 'Subtypes'
         )
     )
 
-    return df
+    return counts
