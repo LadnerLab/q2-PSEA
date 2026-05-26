@@ -34,6 +34,7 @@ plugin.pipelines.register_function(
         "min_size": Int,
         "max_size": Int,
         "fit_threshold": Float,
+        "linear_through_origin": Bool,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int, 
         "permutation_num": Int,
