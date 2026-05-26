@@ -12,7 +12,7 @@ import concurrent.futures
 import multiprocessing
 
 from math import isnan, log, pow
-from rpy2.robjects import pandas2ri
+from rpy2.robjects import pandas2ri, ListVector, StrVector
 from rpy2.robjects.packages import importr
 from q2_pepsirf.format_types import PepsirfContingencyTSVFormat
 from q2_PSEA.actions.r_functions import INTERNAL
@@ -35,6 +35,8 @@ def make_psea_table(
         max_size=2000,
         fit_threshold=None,
         linear_through_origin=False,
+        residual_abs_thresh=None,
+        residual_min_peptides=1,
         permutation_num=10000,  # as per original PSEA code
         spline_type="r-smooth",
         degree=3,
@@ -122,6 +124,8 @@ def make_psea_table(
                 max_size=max_size,
                 fit_threshold=fit_threshold,
                 linear_through_origin=linear_through_origin,
+                residual_abs_thresh=residual_abs_thresh,
+                residual_min_peptides=residual_min_peptides,
                 spline_type=spline_type,
                 degree=degree,
                 dof=dof,
@@ -169,6 +173,8 @@ def make_psea_table(
                                 max_size,
                                 fit_threshold,
                                 linear_through_origin,
+                                residual_abs_thresh,
+                                residual_min_peptides,
                                 spline_type,
                                 degree,
                                 dof,
@@ -329,6 +335,8 @@ def create_fgsea_table_for_pair(
     max_size,
     fit_threshold,
     linear_through_origin,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -391,6 +399,20 @@ def create_fgsea_table_for_pair(
     )
     deltaZ = pd.Series(
         data=y - yfit, index=data_sorted.index
+    )
+    
+    print(type(peptide_sets))
+    print(peptide_sets.shape)
+    print(peptide_sets.columns.tolist())
+    print(peptide_sets.head())
+    
+    peptide_sets = filter_peptide_sets_by_residual_df(
+        peptide_sets,
+        deltaZ,
+        residual_abs_thresh=residual_abs_thresh,
+        residual_min_peptides=residual_min_peptides,
+        species_col="term",
+        gene_col="gene"
     )
 
     table = INTERNAL.psea(
@@ -457,6 +479,8 @@ def run_iterative_peptide_analysis(
     max_size,
     fit_threshold,
     linear_through_origin,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -520,6 +544,8 @@ def run_iterative_peptide_analysis(
                             max_size,
                             fit_threshold,
                             linear_through_origin,
+                            residual_abs_thresh,
+                            residual_min_peptides,
                             spline_type,
                             degree,
                             dof,
@@ -559,6 +585,8 @@ def run_iterative_process_single_pair(
     max_size,
     fit_threshold,
     linear_through_origin,
+    residual_abs_thresh,
+    residual_min_peptides,
     spline_type,
     degree,
     dof,
@@ -589,6 +617,8 @@ def run_iterative_process_single_pair(
                                         max_size=max_size,
                                         fit_threshold=fit_threshold,
                                         linear_through_origin=linear_through_origin,
+                                        residual_abs_thresh=residual_abs_thresh,
+                                        residual_min_peptides=residual_min_peptides,
                                         spline_type=spline_type,
                                         degree=degree,
                                         dof=dof,
@@ -599,7 +629,7 @@ def run_iterative_process_single_pair(
                                         )
 
     # sort the table by ascending p-value (lowest on top)
-    table.sort_values(by=["p.adjust"], ascending=True)
+    table = table.sort_values(by=["p.adjust"], ascending=True)
 
     if iter_out_dir:
         table.to_csv(f"{iter_out_dir}/{pair}.tsv", sep="\t")
@@ -639,3 +669,32 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
                 gmt_file.write(f"{peptide}\t")
 
             gmt_file.write("\n")
+            
+def filter_peptide_sets_by_residual_df(
+    peptide_sets: pd.DataFrame,
+    deltaZ: pd.Series,
+    residual_abs_thresh: float,
+    residual_min_peptides: int = 1,
+    species_col: str = "species",
+    gene_col: str = "gene",
+):
+    if residual_abs_thresh is None:
+        return peptide_sets
+
+    df = peptide_sets.copy()
+    abs_res = deltaZ.abs()
+
+    # mark rows whose peptide/gene passes threshold
+    df["_passes"] = df[gene_col].map(abs_res).fillna(-np.inf) > residual_abs_thresh
+
+    # count passing peptides per species
+    keep_species = (
+        df.groupby(species_col)["_passes"]
+        .sum()
+        .loc[lambda s: s >= residual_min_peptides]
+        .index
+    )
+
+    # keep all rows for passing species, drop helper col
+    return df[df[species_col].isin(keep_species)].drop(columns="_passes")
+

@@ -34,6 +34,8 @@ plugin.pipelines.register_function(
         "min_size": Int,
         "max_size": Int,
         "fit_threshold": Float,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int, 
         "permutation_num": Int,
         "spline_type": Str,
         "degree": Int,
@@ -72,6 +74,10 @@ plugin.pipelines.register_function(
             "only points where x > threshold or y > threshold are used to fit "
             "the line.",
         "linear_through_origin": "If True and spline_type is linear, force the regression line through (0, 0).",
+        "residual_abs_thresh": "Absolute residual threshold for peptide-level filtering."
+            " Species are removed before PSEA if insufficient peptides exceed this value.",
+        "residual_min_peptides": "Minimum number of peptides required per species with"
+            " absolute residual greater than residual_abs_thresh to keep that species.",
         "permutation_num": "Number of permutations. Minimal possible nominal"
             " p-value is about 1/perm.",
         "spline_type": "Specifies which spline operation to use.",
