@@ -34,6 +34,7 @@ def make_psea_table(
         min_size=15,
         max_size=2000,
         fit_threshold=None,
+        linear_through_origin=False,
         permutation_num=10000,  # as per original PSEA code
         spline_type="r-smooth",
         degree=3,
@@ -120,6 +121,7 @@ def make_psea_table(
                 min_size=min_size,
                 max_size=max_size,
                 fit_threshold=fit_threshold,
+                linear_through_origin=linear_through_origin,
                 spline_type=spline_type,
                 degree=degree,
                 dof=dof,
@@ -166,6 +168,7 @@ def make_psea_table(
                                 min_size,
                                 max_size,
                                 fit_threshold,
+                                linear_through_origin,
                                 spline_type,
                                 degree,
                                 dof,
@@ -325,6 +328,7 @@ def create_fgsea_table_for_pair(
     min_size,
     max_size,
     fit_threshold,
+    linear_through_origin,
     spline_type,
     degree,
     dof,
@@ -354,7 +358,7 @@ def create_fgsea_table_for_pair(
     elif spline_type == "linear":
         # keep points where either x or y is greater than the threshold
         if fit_threshold is not None:
-            filtered_mask = (x > fit_threshold) | (y > fit_threshold)
+            filtered_mask = (x > fit_threshold) & (y > fit_threshold)
             x_filtered = x[filtered_mask]
             y_filtered = y[filtered_mask]
         else:
@@ -368,7 +372,7 @@ def create_fgsea_table_for_pair(
                 f"fit_threshold={fit_threshold}, pair={pair}"
             )
 
-        yfit = splines.linear_regression(x_filtered, y_filtered, x_pred=x)
+        yfit = splines.linear_regression(x_filtered,y_filtered,x_pred=x,through_origin=linear_through_origin)
         
     elif spline_type == "cubic":
         yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
@@ -452,6 +456,7 @@ def run_iterative_peptide_analysis(
     min_size,
     max_size,
     fit_threshold,
+    linear_through_origin,
     spline_type,
     degree,
     dof,
@@ -514,6 +519,7 @@ def run_iterative_peptide_analysis(
                             min_size,
                             max_size,
                             fit_threshold,
+                            linear_through_origin,
                             spline_type,
                             degree,
                             dof,
@@ -552,6 +558,7 @@ def run_iterative_process_single_pair(
     min_size,
     max_size,
     fit_threshold,
+    linear_through_origin,
     spline_type,
     degree,
     dof,
@@ -581,6 +588,7 @@ def run_iterative_process_single_pair(
                                         min_size=min_size,
                                         max_size=max_size,
                                         fit_threshold=fit_threshold,
+                                        linear_through_origin=linear_through_origin,
                                         spline_type=spline_type,
                                         degree=degree,
                                         dof=dof,

@@ -71,6 +71,7 @@ plugin.pipelines.register_function(
         "fit_threshold": "Optional threshold used only for linear spline fitting; "
             "only points where x > threshold or y > threshold are used to fit "
             "the line.",
+        "linear_through_origin": "If True and spline_type is linear, force the regression line through (0, 0).",
         "permutation_num": "Number of permutations. Minimal possible nominal"
             " p-value is about 1/perm.",
         "spline_type": "Specifies which spline operation to use.",
