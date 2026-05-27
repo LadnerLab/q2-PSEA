@@ -1,0 +1,24 @@
+channels:
+- https://packages.qiime2.org/qiime2/2026.7/tiny/staged
+- conda-forge
+- bioconda
+dependencies:
+  - qiime2-tiny
+  - gseapy
+  - rpy2
+  - r-base
+  - r-essentials
+  - r-igraph
+  - r-ggraph
+  - r-ggforce
+  - r-scatterpie
+  - r-biocmanager
+  - r-splines2
+  - bioconductor-ggtree
+  - bioconductor-enrichplot
+  - altair
+  - pip
+  - pip:
+    # These two can be switched to main once this is all merged
+    - q2-psea@git+https://github.com/LadnerLab/q2-PSEA.git@psea-epitope-modified-Claude
+    - q2-pepsirf@git+https://github.com/Oddant1/q2-pepsirf.git@epitope
