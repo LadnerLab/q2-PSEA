@@ -86,11 +86,6 @@ def make_psea_table(
             " pipeline to do the mapping."
         )
 
-    if not map and peptide_metadata is None:
-        raise ValueError(
-            "If not mapping then peptide_metadata must be passed."
-        )
-
     _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
     _process_scores = ctx.get_action("psea", "_process_scores")
     _compute_pair_fit_and_residuals = ctx.get_action(
