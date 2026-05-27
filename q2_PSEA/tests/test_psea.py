@@ -426,7 +426,7 @@ class TestComputePairFitDirect(TestPluginBase):
             maxZ.sort_index(), expected.sort_index(), check_names=False
         )
 
-    def test_epitope_map_replaces_peptide_ids_in_maxz_and_deltaz(self):
+    def test_epitope_map_contains_peptide_and_epitope_ids(self):
         peps = list(self.view.columns)
         mapping = {f"ep_{i}": [peps[i * 2], peps[i * 2 + 1]]
                    for i in range(len(peps) // 2)}
@@ -435,11 +435,11 @@ class TestComputePairFitDirect(TestPluginBase):
         for ep in mapping:
             self.assertIn(ep, df["maxZ"].dropna().index)
             self.assertIn(ep, df["deltaZ"].dropna().index)
-        # Peptides that were mapped to epitopes should not appear directly
+        # Peptides that were mapped to epitopes also appear alongside epitopes
         mapped_peps = [p for peps_list in mapping.values() for p in peps_list]
         for pep in mapped_peps:
-            self.assertNotIn(pep, df["maxZ"].dropna().index)
-            self.assertNotIn(pep, df["deltaZ"].dropna().index)
+            self.assertIn(pep, df["maxZ"].dropna().index)
+            self.assertIn(pep, df["deltaZ"].dropna().index)
 
 
 # ---------------------------------------------------------------------------

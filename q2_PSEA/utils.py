@@ -101,7 +101,7 @@ def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
 
     epitope_residuals = {}
     for peptide, residual in peptide_residuals.items():
-        mapped_epitopes = peptide_to_epitopes.get(peptide)
+        mapped_epitopes = peptide_to_epitopes.get(peptide, (peptide, ))
         for epitope in mapped_epitopes:
             if epitope not in epitope_residuals:
                 epitope_residuals[epitope] = residual
