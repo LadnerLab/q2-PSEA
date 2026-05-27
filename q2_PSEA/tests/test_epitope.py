@@ -134,7 +134,6 @@ class TestTaxaToEpitope(TestPluginBase):
         self.assertIn("sp003_C3_W3", result["gene"].values)
 
 
-
 # ---------------------------------------------------------------------------
 # _create_EpitopeID_row — unit tests
 # ---------------------------------------------------------------------------
