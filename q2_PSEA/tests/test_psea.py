@@ -610,6 +610,60 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 # mapped_zscores and mapped_gmt omitted → partial → error
             )
 
+    def _make_mapped_artifacts(self):
+        raw_9 = pd.DataFrame(
+            {s: [float(i) for i in range(9)] for s in ["sA", "sB"]},
+            index=pd.Index(
+                [f"pep_{i:02d}" for i in range(9)], name="peptide_id"
+            ),
+        )
+        scores_9_art = qiime2.Artifact.import_data(
+            "FeatureTable[Zscore]", raw_9
+        )
+        epi_map_art, pep_map_art = self.plugin.methods["create_epitope_map"](
+            epitope=self.epi_art, collapse="Viral"
+        )
+        mapped_zscores_art, = self.plugin.methods["epitope_zscore"](
+            zscores=scores_9_art, epitope_map=epi_map_art
+        )
+        mapped_gmt_art, = self.plugin.methods["taxa_to_epitope"](
+            epitope=epi_map_art
+        )
+        return epi_map_art, pep_map_art, mapped_zscores_art, mapped_gmt_art
+
+    def test_raises_when_map_false_and_epitope_map_provided(self):
+        epi_map_art, _, mapped_zscores_art, mapped_gmt_art = (
+            self._make_mapped_artifacts()
+        )
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                map=False,
+                epitope_map=epi_map_art,
+                mapped_zscores=mapped_zscores_art,
+                mapped_gmt=mapped_gmt_art,
+            )
+
+    def test_raises_when_mapped_iterative_without_peptide_map(self):
+        epi_map_art, _, mapped_zscores_art, mapped_gmt_art = (
+            self._make_mapped_artifacts()
+        )
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                map=True,
+                iterative_analysis=True,
+                epitope_map=epi_map_art,
+                mapped_zscores=mapped_zscores_art,
+                mapped_gmt=mapped_gmt_art,
+            )
+
     def test_psea_tables_keyed_by_pair_name(self):
         _, _, _, psea_tables, _ = self.pipeline(
             scores=self.scores_art,

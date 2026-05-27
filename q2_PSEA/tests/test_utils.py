@@ -120,6 +120,30 @@ class TestFilterPeptideSets(TestPluginBase):
         self.assertIn("sp2", tested)
         self.assertNotIn("sp1", tested)
 
+    def test_with_epitope_map_expands_sibling_epitopes(self):
+        psea = self._psea([
+            {"ID": "sp1", "p.adjust": 0.01, "NES": 2.0,
+             "all_tested_peptides": "ep1"},
+        ])
+        gmt = self._gmt([
+            ("sp1", "ep1"), ("sp2", "ep1"), ("sp2", "ep2"),
+        ])
+        epitope_map = pd.DataFrame(
+            {"CodeName": [["pep1"], ["pep1"]]},
+            index=pd.Index(["ep1", "ep2"], name="EpitopeID"),
+        )
+        peptide_map = pd.DataFrame(
+            {"EpitopeID": [["ep1", "ep2"]]},
+            index=pd.Index(["pep1"], name="CodeName"),
+        )
+        updated, _, _ = filter_peptide_sets(
+            psea, gmt, set(), 0.05, 1.0, True,
+            epitope_map=epitope_map, peptide_map=peptide_map,
+        )
+        sp2_genes = updated[updated["term"] == "sp2"]["gene"].tolist()
+        self.assertNotIn("ep1", sp2_genes)
+        self.assertNotIn("ep2", sp2_genes)
+
 
 # ---------------------------------------------------------------------------
 # _get_mapped_features — unit tests

@@ -9,6 +9,7 @@ from qiime2.plugin.testing import TestPluginBase
 from qiime2 import Artifact
 from q2_PSEA.actions.epitope import (
     _create_EpitopeID_row,
+    count_enriched,
     create_epitope_map,
     epitope_zscore,
     taxa_to_epitope,
@@ -204,6 +205,162 @@ class TestCreateEpitopeIDRow(TestPluginBase):
         )
         result = _create_EpitopeID_row(df, "Viral")
         self.assertIn("subtypeNA", result["Subtype"].values)
+
+    def test_nan_cluster_id_filled_with_clusterNA(self):
+        df = pd.DataFrame(
+            [
+                ["InfluenzaA", "H1N1", "sp001", np.nan, "W1", "Viral"],
+                ["InfluenzaB", "H3N2", "sp002", "C2", "W2", "Viral"],
+            ],
+            columns=["Species", "Subtype", "SpeciesID", "ClusterID",
+                     "EpitopeWindow", "Category"],
+            index=pd.Index(["pep_00", "pep_01"], name="CodeName"),
+        )
+        result = _create_EpitopeID_row(df, "Viral")
+        self.assertIn("clusterNA", result["ClusterID"].values)
+
+    def test_nan_epitope_window_filled_with_peptide_na(self):
+        df = pd.DataFrame(
+            [
+                ["InfluenzaA", "H1N1", "sp001", "C1", np.nan, "Viral"],
+                ["InfluenzaB", "H3N2", "sp002", "C2", "W2", "Viral"],
+            ],
+            columns=["Species", "Subtype", "SpeciesID", "ClusterID",
+                     "EpitopeWindow", "Category"],
+            index=pd.Index(["pep_00", "pep_01"], name="CodeName"),
+        )
+        result = _create_EpitopeID_row(df, "Viral")
+        self.assertIn("Peptide_NA", result["EpitopeWindow"].values)
+
+
+class TestCountEnriched(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        self.residuals = pd.DataFrame(
+            {"deltaZ": {"pep_00": 2.0, "pep_01": 1.0}}
+        )
+        self.peptide_metadata = pd.DataFrame(
+            {
+                "SpeciesID": {"pep_00": "sp001", "pep_01": "sp001"},
+                "Species": {"pep_00": "InfluenzaA", "pep_01": "InfluenzaA"},
+                "Subtype": {"pep_00": "H1N1", "pep_01": "H1N1"},
+            }
+        )
+        self.epitope_map = pd.DataFrame(
+            {"CodeName": [["pep_00", "pep_01"]]},
+            index=pd.Index(["ep1"], name="EpitopeID"),
+        )
+        self.psea_table = pd.DataFrame(
+            {
+                "p.adjust": [0.01],
+                "core_enrichment": ["ep1"],
+                "NES": [2.0],
+                "ID": ["sp001"],
+            }
+        )
+
+    def test_returns_empty_dataframe_when_epitope_map_is_none(self):
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            peptide_metadata=self.peptide_metadata,
+            epitope_map=None,
+        )
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertTrue(result.empty)
+
+    def test_returns_empty_dataframe_when_peptide_metadata_is_none(self):
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            peptide_metadata=None,
+            epitope_map=self.epitope_map,
+        )
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertTrue(result.empty)
+
+    def test_filters_by_p_value(self):
+        residuals = pd.DataFrame({"deltaZ": {"pep_00": 2.0, "pep_02": 1.5}})
+        peptide_metadata = pd.DataFrame(
+            {
+                "SpeciesID": {"pep_00": "sp001", "pep_02": "sp002"},
+                "Species": {"pep_00": "InfluenzaA", "pep_02": "EBV"},
+                "Subtype": {"pep_00": "H1N1", "pep_02": "EBV1"},
+            }
+        )
+        epitope_map = pd.DataFrame(
+            {"CodeName": [["pep_00"], ["pep_02"]]},
+            index=pd.Index(["ep1", "ep2"], name="EpitopeID"),
+        )
+        psea_table = pd.DataFrame(
+            {"p.adjust": [0.01, 0.1], "core_enrichment": ["ep1", "ep2"]}
+        )
+        result = count_enriched(
+            psea_table, residuals, peptide_metadata, epitope_map, p_value=0.05
+        )
+        self.assertIn(
+            "sp001", result.index.get_level_values("Species ID Called")
+        )
+        self.assertNotIn(
+            "sp002", result.index.get_level_values("Species ID Called")
+        )
+
+    def test_filters_peptides_by_residual_threshold(self):
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            self.peptide_metadata,
+            self.epitope_map,
+            residual_threshold=1.5,
+        )
+        self.assertEqual(result.iloc[0]["Peptide Counts"], 1)
+
+    def test_normalizes_and_sums_residuals_within_epitope(self):
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            self.peptide_metadata,
+            self.epitope_map,
+            residual_threshold=1.0,
+        )
+        self.assertEqual(result.iloc[0]["Peptide Counts"], 2)
+        self.assertAlmostEqual(
+            result.iloc[0]["Relative Enrichment Score"], 3.0
+        )
+
+    def test_output_has_correct_multiindex_names(self):
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            self.peptide_metadata,
+            self.epitope_map,
+        )
+        self.assertEqual(
+            list(result.index.names),
+            ["Species ID Called", "Species Called", "Subtypes"],
+        )
+
+    def test_nan_subtype_becomes_subtypena(self):
+        peptide_metadata = pd.DataFrame(
+            {
+                "SpeciesID": {"pep_00": "sp001", "pep_01": "sp001"},
+                "Species": {"pep_00": "InfluenzaA", "pep_01": "InfluenzaA"},
+                "Subtype": {"pep_00": np.nan, "pep_01": "H1N1"},
+            }
+        )
+        epitope_map = pd.DataFrame(
+            {"CodeName": [["pep_00"]]},
+            index=pd.Index(["ep1"], name="EpitopeID"),
+        )
+        result = count_enriched(
+            self.psea_table,
+            self.residuals,
+            peptide_metadata,
+            epitope_map,
+        )
+        self.assertIn("subtypeNA", result.index.get_level_values("Subtypes"))
 
 
 if __name__ == "__main__":
