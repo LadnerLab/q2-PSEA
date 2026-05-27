@@ -3,7 +3,7 @@ channels:
 - conda-forge
 - bioconda
 dependencies:
-  - qiime2-tiny
+  - rachis-tiny
   - gseapy
   - rpy2
   - r-base
