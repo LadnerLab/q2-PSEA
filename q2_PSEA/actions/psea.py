@@ -24,7 +24,7 @@ def make_psea_table(
     pairs: qiime2.Artifact,
     peptide_sets: qiime2.Artifact,
     threshold: float,
-    peptide_metadata: qiime2.Artifact,
+    peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
     peptide_map: qiime2.Artifact = None,
     mapped_zscores: qiime2.Artifact = None,

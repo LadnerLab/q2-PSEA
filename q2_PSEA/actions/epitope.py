@@ -121,12 +121,15 @@ def _create_EpitopeID_row(epitope, collapse):
 def count_enriched(
             psea_table: pd.DataFrame,
             residuals: pd.DataFrame,
-            peptide_metadata: pd.DataFrame,
+            peptide_metadata: pd.DataFrame = None,
             epitope_map: pd.DataFrame = None,
             p_value: float = .05,
             residual_threshold: float = 1.0,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
+    if epitope_map is None or peptide_metadata is None:
+        return pd.DataFrame()
+
     filtered_psea_table = psea_table.loc[psea_table['p.adjust'] <= p_value]
     counts = {}
 
