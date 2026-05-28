@@ -152,7 +152,7 @@ def count_enriched(
             # than the number of peptides
             max_residual = max(filtered_map.values())
             for peptide, residual in filtered_map.items():
-                filtered_map[peptide] = residual / max_residual
+                residual = residual / max_residual
 
                 # If there are multiple subtypes they will be ; seperated. The
                 # speciesID and species_name cells will contain duplicated ;
