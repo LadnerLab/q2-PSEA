@@ -145,9 +145,9 @@ def count_enriched(
             peptide_to_residual = {}
             for peptide in peptides:
                 peptide_to_residual[peptide] = \
-                   abs(residuals.loc[peptide]['deltaZ']) if \
+                    abs(residuals.loc[peptide]['deltaZ']) if \
                     include_negative_enrichment else \
-                        residuals.loc[peptide]['deltaZ']
+                    residuals.loc[peptide]['deltaZ']
 
             max_residual = max(peptide_to_residual.values())
             for peptide, residual in peptide_to_residual.items():
