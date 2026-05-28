@@ -127,6 +127,7 @@ def count_enriched(
             residual_threshold: float = 1.0,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
+    # Short circuit if we weren't collapsed
     if epitope_map is None or peptide_metadata is None:
         return pd.DataFrame()
 
@@ -138,25 +139,23 @@ def count_enriched(
         for enriched in core_enrichment.split('/'):
             peptides = epitope_map.loc[enriched]['CodeName']
 
-            filtered_map = {}
+            # NOTE: In theory maybe we can get rid of this loop and normalize
+            # post facto; however, because we are normalizing within epitopes
+            # but summing cross epitope this will get needlessly fiddly.
+            peptide_to_residual = {}
             for peptide in peptides:
-                residual = abs(residuals.loc[peptide]['deltaZ'])
-                if abs(residual) >= residual_threshold:
-                    filtered_map[peptide] = residual
+                peptide_to_residual[peptide] = \
+                   abs(residuals.loc[peptide]['deltaZ']) if \
+                    include_negative_enrichment else \
+                        residuals.loc[peptide]['deltaZ']
 
-            if filtered_map == {}:
-                continue
+            max_residual = max(peptide_to_residual.values())
+            for peptide, residual in peptide_to_residual.items():
+                normalized_residual = residual / max_residual
 
-            # NOTE: We are normalizing the residuals within epitope then
-            # summing them cross epitope, this can cause the score to be higher
-            # than the number of peptides
-            max_residual = max(filtered_map.values())
-            for peptide, residual in filtered_map.items():
-                residual = residual / max_residual
-
-                # If there are multiple subtypes they will be ; seperated. The
+                # If there are multiple subtypes they will be ; separated. The
                 # speciesID and species_name cells will contain duplicated ;
-                # seperated values. FOr ID and name we can just take the first
+                # separated values. FOr ID and name we can just take the first
                 # for subtypes we need to iterate
                 speciesID = \
                     peptide_metadata.loc[peptide]['SpeciesID'].split(';')[0]
@@ -178,8 +177,11 @@ def count_enriched(
                         'Relative Enrichment Score': 0
                     })
 
-                    subtype_dict['Peptide Counts'] += 1
-                    subtype_dict['Relative Enrichment Score'] += residual
+                    if residual > residual_threshold:
+                        subtype_dict['Peptide Counts'] += 1
+                        subtype_dict[
+                            'Relative Enrichment Score'
+                        ] += normalized_residual
 
     counts = pd.DataFrame.from_dict(
         {
