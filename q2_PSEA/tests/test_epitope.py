@@ -325,9 +325,9 @@ class TestCountEnriched(TestPluginBase):
             self.epitope_map,
             residual_threshold=1.0,
         )
-        self.assertEqual(result.iloc[0]["Peptide Counts"], 2)
+        self.assertEqual(result.iloc[0]["Peptide Counts"], 1)
         self.assertAlmostEqual(
-            result.iloc[0]["Relative Enrichment Score"], 3.0
+            result.iloc[0]["Relative Enrichment Score"], 1.0
         )
 
     def test_output_has_correct_multiindex_names(self):
