@@ -507,6 +507,7 @@ plugin.pipelines.register_function(
         "species_taxa": Metadata,
         "species_colors": Metadata,
         "map": Bool,
+        "residual_threshold": Float,
     },
     parameter_descriptions={
         "threshold": (
@@ -552,6 +553,10 @@ plugin.pipelines.register_function(
             "Optional Metadata mapping species names (IDs) to HEX color"
             " codes used in output visualizations."
         ),
+        "residual_threshold": (
+            "The threshold above which a peptide residual must be in order to"
+            " be counted in count_enriched."
+        )
     },
     input_descriptions={
         "scores": (

@@ -44,6 +44,7 @@ def make_psea_table(
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
     map: bool = True,
+    residual_threshold: float = 1.0
 ) -> tuple[
     qiime2.Visualization,
     qiime2.Visualization,
@@ -213,9 +214,7 @@ def make_psea_table(
             epitope_map=epitope_map,
             peptide_metadata=peptide_metadata,
             p_value=p_value,
-            # TODO: This should probably be parameterized seperately to
-            # make-psea-table
-            residual_threshold=enrichment_score,
+            residual_threshold=residual_threshold,
             include_negative_enrichment=include_negative_enrichment
         )
 
