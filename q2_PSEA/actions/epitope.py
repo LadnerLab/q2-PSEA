@@ -154,6 +154,8 @@ def count_enriched(
 
                 peptide_to_residual[peptide] = residual
 
+            # NOTE: If we really need to optimize, try excepting here would be
+            # faster than if/else. Probably negligible though.
             for peptide, residual in peptide_to_residual.items():
                 # Get all speciesIDs for this peptide
                 speciesIDs = peptide_metadata.loc[peptide]['SpeciesID']
