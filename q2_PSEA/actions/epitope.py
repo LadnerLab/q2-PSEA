@@ -143,52 +143,91 @@ def count_enriched(
             # post facto; however, because we are normalizing within epitopes
             # but summing cross epitope this will get needlessly fiddly.
             peptide_to_residual = {}
+            max_residual = 0
             for peptide in peptides:
-                peptide_to_residual[peptide] = \
-                    abs(residuals.loc[peptide]['deltaZ']) if \
+                residual = abs(residuals.loc[peptide]['deltaZ']) if \
                     include_negative_enrichment else \
                     residuals.loc[peptide]['deltaZ']
 
-            max_residual = max(peptide_to_residual.values())
-            for peptide, residual in peptide_to_residual.items():
-                normalized_residual = residual / max_residual
+                if residual > max_residual:
+                    max_residual = residual
 
-                # If there are multiple subtypes they will be ; separated. The
-                # speciesID and species_name cells will contain duplicated ;
-                # separated values. FOr ID and name we can just take the first
-                # for subtypes we need to iterate
-                speciesID = \
-                    peptide_metadata.loc[peptide]['SpeciesID'].split(';')[0]
-                species_name = \
-                    peptide_metadata.loc[peptide]['Species'].split(';')[0]
+                peptide_to_residual[peptide] = residual
+
+            for peptide, residual in peptide_to_residual.items():
+                # Get all speciesIDs for this peptide
+                speciesIDs = peptide_metadata.loc[peptide]['SpeciesID']
+                if isinstance(speciesIDs, str):
+                    speciesIDs = speciesIDs.split(';')
+                else:
+                    speciesIDs = (speciesIDs,)
+
+                # Get all species names for this peptide
+                species_names = peptide_metadata.loc[peptide]['Species']
+                if isinstance(species_names, str):
+                    species_names = species_names.split(';')
+                else:
+                    species_names = (species_names,)
+
+                # Get all subtypes for this peptide
                 subtypes = peptide_metadata.loc[peptide]['Subtype']
 
                 if subtypes is np.nan:
-                    subtypes = ['subtypeNA']
+                    subtypes = tuple(['subtypeNA'] * len(speciesIDs))
                 else:
-                    subtypes = subtypes.split(';')
+                    if isinstance(subtypes, str):
+                        subtypes = subtypes.split(';')
+                    else:
+                        subtypes = (subtypes,)
 
-                id_dict = counts.setdefault(speciesID, {})
-                name_dict = id_dict.setdefault(species_name, {})
+                # Assert we have the same number of IDs, names, and subtypes
+                assert len(speciesIDs) == len(species_names)
+                assert len(species_names) == len(subtypes)
 
-                for subtype in subtypes:
+                # Normalize the residual before we start summing
+                normalized_residual = residual / max_residual
+
+                # Iterate over all unique subtypes
+                for speciesID, species_name, subtype in zip(
+                            speciesIDs, species_names, subtypes
+                        ):
+                    # Get the nested dicts for this speciesID and name
+                    id_dict = counts.setdefault(speciesID, {})
+                    name_dict = id_dict.setdefault(species_name, {})
+
+                    # Now count the subtype
                     subtype_dict = name_dict.setdefault(subtype, {
-                        'Peptide Counts': 0,
+                        # This is a set so we can take the length and get the
+                        # number of unique peptides easily later
+                        'Peptide Counts': set(),
                         'Relative Enrichment Score': 0
                     })
 
+                    # NOTE: We are counting every peptide with a residual >
+                    # threshold, but we are only counting it once even if seen
+                    # in multiple epitopes (done by taking len of the set we
+                    # make here). We are summing the normalized residuals
+                    # across epitope.
+                    #
+                    # The thing is, we could see the same epitope multiple
+                    # times. This will not count the peptide again, but it will
+                    # add the same normalized residual again. Is this
+                    # desirable?
                     if residual > residual_threshold:
-                        subtype_dict['Peptide Counts'] += 1
+                        subtype_dict['Peptide Counts'].add(peptide)
                         subtype_dict[
                             'Relative Enrichment Score'
                         ] += normalized_residual
 
     counts = pd.DataFrame.from_dict(
         {
-            (species_id, species_name, epitope_subtype): count
+            (species_id, species_name, subtype): {
+                'Peptide Counts': len(count['Peptide Counts']),
+                'Relative Enrichment Score': count['Relative Enrichment Score']
+            }
             for species_id, inner in counts.items()
             for species_name, inner_inner in inner.items()
-            for epitope_subtype, count in inner_inner.items()
+            for subtype, count in inner_inner.items()
         }, orient='index'
     )
     counts.index = pd.MultiIndex.from_tuples(
