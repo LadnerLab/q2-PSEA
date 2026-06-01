@@ -173,7 +173,6 @@ def count_enriched(
 
                 # Get all subtypes for this peptide
                 subtypes = peptide_metadata.loc[peptide]['Subtype']
-
                 if subtypes is np.nan:
                     subtypes = tuple(['subtypeNA'] * len(speciesIDs))
                 else:
