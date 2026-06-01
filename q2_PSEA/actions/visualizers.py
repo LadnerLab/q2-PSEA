@@ -247,7 +247,7 @@ def zscatter(
         p += 1
     heatmap_df = pd.DataFrame(heatmap_dict)
     xy_max = heatmap_df.loc[:, ["bin_x_end", "bin_y_end"]].max()
-    ratio = (xy_max[0] / xy_max[1]) + 1
+    ratio = (xy_max.iloc[0] / xy_max.iloc[1]) + 1
     chart_height = 500
     chart_width = chart_height + (20 * ratio)
 
