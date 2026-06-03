@@ -117,6 +117,7 @@ def make_psea_table(
 
     _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
     _process_scores = ctx.get_action("psea", "_process_scores")
+    _split_scores = ctx.get_action("psea", "_split_scores")
     _compute_pair_fit_and_residuals = ctx.get_action(
         "psea", "_compute_pair_fit_and_residuals"
     )
@@ -168,6 +169,15 @@ def make_psea_table(
     if map:
         mapped_processed_zscores, = _process_scores(mapped_zscores)
 
+    # ------------------------------------------------------------------
+    # Split scores out by pair
+    # ------------------------------------------------------------------
+    split_processed_zscores, = _split_scores(processed_zscores, pairs)
+    if map:
+        split_mapped_processed_zscores, = _split_scores(
+            mapped_processed_zscores, pairs
+        )
+
     pair_splines = {}
     pair_pep_sets_dict = {}
     psea_tables = {}
@@ -182,7 +192,7 @@ def make_psea_table(
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
         pair_splines[pair], = _compute_pair_fit_and_residuals(
-            processed_zscores=processed_zscores,
+            processed_zscores=split_processed_zscores[pair],
             pair=pair,
             spline_type=spline_type,
             degree=degree,
@@ -190,13 +200,16 @@ def make_psea_table(
             dof=dof,
         )
 
+        used_zscores = \
+            split_mapped_processed_zscores[pair] if map else \
+                split_processed_zscores[pair]
+
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
-                processed_zscores=mapped_processed_zscores if map else
-                processed_zscores,
+                processed_zscores=used_zscores,
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
@@ -222,8 +235,7 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = _create_fgsea_table_for_pair(
-            processed_zscores=mapped_processed_zscores if map else
-            processed_zscores,
+            processed_zscores=used_zscores,
             peptide_sets=pair_pep_sets_dict[pair],
             threshold=threshold,
             permutation_num=permutation_num,
@@ -245,9 +257,7 @@ def make_psea_table(
         )
 
         scatter_plots[pair], = zscatter(
-            zscores=(
-                mapped_processed_zscores if map else processed_zscores
-            ),
+            zscores=used_zscores,
             pair=pair,
             spline=pair_splines[pair],
             p_val_access="p.adjust",
@@ -623,3 +633,20 @@ def _process_scores(
     return processed_zscores.apply(
         lambda row: row.apply(lambda val: log(val, base) - offset)
     )
+
+
+def _split_scores(
+    scores: pd.DataFrame,
+    pairs: list
+) -> pd.DataFrame:
+    # FeatureTable[Zscore] arrives as samples × features; convert to
+    # features × samples so we can index by sample name.
+    scores = scores.transpose()
+
+    split_scores = {}
+
+    for pair in pairs:
+        pair_list = pair.split('~')
+        split_scores[pair] = scores.loc[:, pair_list]
+
+    return split_scores

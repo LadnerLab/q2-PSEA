@@ -24,6 +24,7 @@ from q2_PSEA.actions.psea import (
     _filter_scores_to_pairs,
     _process_scores,
     _run_iterative_process_single_pair,
+    _split_scores,
     make_psea_table,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
@@ -831,4 +832,18 @@ plugin.methods.register_function(
     },
     name='enriched subtypes',
     description='Counts which subtypes have been enriched.',
+)
+
+plugin.methods.register_function(
+    function=_split_scores,
+    inputs={
+        'scores': SCORES_IN,
+        'pairs': PSEAPairs,
+    },
+    parameters={},
+    outputs=[
+        ('split_scores', Collection[SCORES_OUT])
+    ],
+    name='split scores',
+    description='Splits scores into per-pair artifacts.'
 )
