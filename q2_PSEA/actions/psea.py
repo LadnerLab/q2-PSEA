@@ -269,9 +269,6 @@ def make_psea_table(
             colors_file=species_colors,
         )
 
-    # ------------------------------------------------------------------
-    # Count antibody events and build visualizations
-    # ------------------------------------------------------------------
     pos_ae_counts, neg_ae_counts = count_antibody_events(
         psea_tables=psea_tables,
         p_value=p_value,
