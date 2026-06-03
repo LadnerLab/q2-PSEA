@@ -46,7 +46,7 @@ def make_psea_table(
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
     map: bool = True,
-    residual_threshold: float = 1.0,
+    residual_threshold: float = .5,
     debug_per_iteration_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,

@@ -124,7 +124,7 @@ def count_enriched(
             peptide_metadata: pd.DataFrame = None,
             epitope_map: pd.DataFrame = None,
             p_value: float = .05,
-            residual_threshold: float = 1.0,
+            residual_threshold: float = 0.5,
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
     # Short circuit if we weren't collapsed
