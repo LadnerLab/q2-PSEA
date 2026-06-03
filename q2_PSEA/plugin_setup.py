@@ -392,7 +392,7 @@ plugin.methods.register_function(
 
 
 # ---------------------------------------------------------------------------
-# Register _run_iterative_process_single_pair as a pipeline
+# Register _run_iterative_process_single_pair as a method
 # ---------------------------------------------------------------------------
 
 plugin.methods.register_function(
@@ -599,20 +599,20 @@ plugin.pipelines.register_function(
         )
     },
     outputs=[
-        ("scatter_plot", Visualization),
-        ("volcano_plot", Visualization),
+        ("scatter_plots", Collection[Visualization]),
+        ("volcano_plots", Collection[Visualization]),
         ("ae_plots", Visualization),
         ("psea_tables", Collection[FeatureData[PSEAScores]]),
         ("enrichment_tables", Collection[FeatureData[Enriched]])
     ],
     output_descriptions={
-        "scatter_plot": (
-            "Z-score scatter plot with spline fit and highlighted leading-edge"
-            " peptides for significant taxa."
+        "scatter_plots": (
+            "per-pair z-score scatter plots with spline fit and highlighted"
+            " leading-edge peptides for significant taxa."
         ),
-        "volcano_plot": (
-            "Volcano plot of normalized enrichment scores vs. adjusted"
-            " p-values."
+        "volcano_plots": (
+            "per-pair volcano plots of normalized enrichment scores vs."
+            " adjusted p-values."
         ),
         "ae_plots": "Antibody-event summary bar plots.",
         "psea_tables": (
@@ -640,8 +640,7 @@ plugin.pipelines.register_function(
 plugin.visualizers.register_function(
     function=volcano,
     inputs={
-        "pairs": PSEAPairs,
-        "psea_tables": Collection[FeatureData[PSEAScores]],
+        "psea_table": FeatureData[PSEAScores],
     },
     parameters={
         "x": List[Float],
@@ -656,13 +655,9 @@ plugin.visualizers.register_function(
         "colors_file": Metadata,
     },
     input_descriptions={
-        "pairs": (
-            "Tab-delimited file listing pairs of sample names (one pair per"
-            " row, header required)."
-        ),
-        "psea_tables": (
-            "Per-pair PSEA result tables. When provided, x, y, and taxa are"
-            " read from these artifacts using xy_access and taxa_access."
+        "psea_table": (
+            "PSEA result table. When provided, x, y, and taxa are read from"
+            " this artifact using xy_access and taxa_access."
         ),
     },
     parameter_descriptions={
@@ -709,23 +704,19 @@ plugin.visualizers.register_function(
     function=zscatter,
     inputs={
         "zscores": FeatureTable[Zscore % Properties("processed")],
-        "pairs": PSEAPairs,
-        "psea_tables": Collection[FeatureData[PSEAScores]],
-        "splines": Collection[FeatureData[Spline]],
+        "psea_table": FeatureData[PSEAScores],
+        "spline": FeatureData[Spline],
     },
     input_descriptions={
         "zscores": "Matrix of Z scores.",
-        "pairs": (
-            "Tab-delimited file listing pairs of sample names (one pair per"
-            " row, header required)."
+        "psea_table": (
+            "PSEA result table used to highlight leading-edge peptides for"
+            " significant taxa."
         ),
-        "psea_tables": (
-            "Per-pair PSEA result tables used to highlight leading-edge"
-            " peptides for significant taxa."
-        ),
-        "splines": "Collection of splines per pair."
+        "spline": "Spline fit for the plot."
     },
     parameters={
+        "pair": Str,
         "p_val_access": Str,
         "le_peps_access": Str,
         "taxa_access": Str,
@@ -733,6 +724,7 @@ plugin.visualizers.register_function(
         "colors_file": Metadata,
     },
     parameter_descriptions={
+        "pair": "String of format sample_a~sample_b.",
         "p_val_access": (
             "Column name in psea_tables compared to 'highlight_threshold'"
             " for highlighting."
@@ -749,7 +741,7 @@ plugin.visualizers.register_function(
     },
     name="Z Score Scatter Visualization",
     description=(
-        "Creates a heatmap scatter plot of Z scores for each sample pair."
+        "Creates a heatmap scatter plot of Z scores for the given sample pair."
         " An optional spline fit and significant leading-edge peptides can"
         " be overlaid."
     ),

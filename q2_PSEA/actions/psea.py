@@ -146,6 +146,8 @@ def make_psea_table(
     pair_pep_sets_dict = {}
     psea_tables = {}
     enrichment_tables = {}
+    scatter_plots = {}
+    volcano_plots = {}
 
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
@@ -205,9 +207,6 @@ def make_psea_table(
             precomputed_fit=pair_splines[pair],
         )
 
-        # TODO: If mapped then call count_enriched per pair here
-        # If not mapped... we need to do something. Shunt out some empty files
-        # the classic
         enrichment_tables[pair], = count_enriched(
             psea_table=psea_tables[pair],
             residuals=pair_splines[pair],
@@ -216,6 +215,30 @@ def make_psea_table(
             p_value=p_value,
             residual_threshold=residual_threshold,
             include_negative_enrichment=include_negative_enrichment
+        )
+
+        scatter_plots[pair], = zscatter(
+            zscores=(
+                mapped_processed_zscores if map else processed_zscores
+            ),
+            pair=pair,
+            spline=pair_splines[pair],
+            p_val_access="p.adjust",
+            le_peps_access="core_enrichment",
+            taxa_access=taxa_access,
+            psea_table=psea_tables[pair],
+            highlight_threshold=p_value,
+            colors_file=species_colors,
+        )
+
+        volcano_plots[pair], = volcano(
+            psea_table=psea_tables[pair],
+            xy_access=["NES", "p.adjust"],
+            taxa_access=taxa_access,
+            x_threshold=enrichment_score,
+            y_threshold=p_value,
+            xy_labels=["Enrichment score", "Adjusted p-values"],
+            colors_file=species_colors,
         )
 
     # ------------------------------------------------------------------
@@ -228,31 +251,6 @@ def make_psea_table(
         taxa_access=taxa_access,
     )
 
-    scatter_plot, = zscatter(
-        zscores=(
-            mapped_processed_zscores if map else processed_zscores
-        ),
-        pairs=pairs,
-        splines=pair_splines,
-        p_val_access="p.adjust",
-        le_peps_access="core_enrichment",
-        taxa_access=taxa_access,
-        psea_tables=psea_tables,
-        highlight_threshold=p_value,
-        colors_file=species_colors,
-    )
-
-    volcano_plot, = volcano(
-        pairs=pairs,
-        psea_tables=psea_tables,
-        xy_access=["NES", "p.adjust"],
-        taxa_access=taxa_access,
-        x_threshold=enrichment_score,
-        y_threshold=p_value,
-        xy_labels=["Enrichment score", "Adjusted p-values"],
-        colors_file=species_colors,
-    )
-
     ae_plot, = aeplots(
         pos_ae_counts=pos_ae_counts,
         neg_ae_counts=neg_ae_counts,
@@ -261,7 +259,8 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
-    return scatter_plot, volcano_plot, ae_plot, psea_tables, enrichment_tables
+    return (scatter_plots, volcano_plots, ae_plot, psea_tables,
+            enrichment_tables)
 
 
 def _run_iterative_process_single_pair(
