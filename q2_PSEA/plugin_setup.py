@@ -273,7 +273,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=count_antibody_events,
     inputs={
-        "psea_tables": Collection[FeatureData[PSEAScores]],
+        "psea_table": FeatureData[PSEAScores],
     },
     parameters={
         "p_value": Float,
@@ -285,9 +285,8 @@ plugin.methods.register_function(
         ("neg_ae_counts", PSEAAECounts),
     ],
     input_descriptions={
-        "psea_tables": (
-            "Per-pair PSEA result tables produced by"
-            " _create_fgsea_table_for_pair."
+        "psea_table": (
+            "PSEA result table produced by _create_fgsea_table_for_pair."
         ),
     },
     parameter_descriptions={
@@ -771,8 +770,8 @@ plugin.visualizers.register_function(
 plugin.visualizers.register_function(
     function=aeplots,
     inputs={
-        "pos_ae_counts": PSEAAECounts,
-        "neg_ae_counts": PSEAAECounts,
+        "pos_ae_counts": List[PSEAAECounts],
+        "neg_ae_counts": List[PSEAAECounts],
     },
     input_descriptions={
         "pos_ae_counts": (

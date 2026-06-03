@@ -110,3 +110,9 @@ def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
 
     epitope_residuals.update(peptide_residuals)
     return pd.Series(epitope_residuals)
+
+
+def collate_ae_counts(ae_counts: list[pd.DataFrame]):
+    return pd.concat(
+        ae_counts, ignore_index=True
+    ).groupby('Species', as_index=False)['Events'].sum()

@@ -6,6 +6,7 @@ import numpy as np
 import os
 import pandas as pd
 import qiime2
+from q2_PSEA.utils import collate_ae_counts
 
 
 def volcano(
@@ -301,8 +302,8 @@ def aeplots(
 ) -> None:
     alt.data_transformers.disable_max_rows()
 
-    pos_df = pos_ae_counts.copy()
-    neg_df = neg_ae_counts.copy()
+    pos_df = collate_ae_counts(pos_ae_counts)
+    neg_df = collate_ae_counts(neg_ae_counts)
 
     pos_df["NES"] = "Positive"
     neg_df["NES"] = "Negative"

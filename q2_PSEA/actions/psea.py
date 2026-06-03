@@ -174,6 +174,8 @@ def make_psea_table(
     enrichment_tables = {}
     scatter_plots = {}
     volcano_plots = {}
+    pos_ae_counts = {}
+    neg_ae_counts = {}
 
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
@@ -269,12 +271,12 @@ def make_psea_table(
             colors_file=species_colors,
         )
 
-    pos_ae_counts, neg_ae_counts = count_antibody_events(
-        psea_tables=psea_tables,
-        p_value=p_value,
-        enrichment_score=enrichment_score,
-        taxa_access=taxa_access,
-    )
+        pos_ae_counts[pair], neg_ae_counts[pair] = count_antibody_events(
+            psea_table=psea_tables[pair],
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            taxa_access=taxa_access,
+        )
 
     ae_plot, = aeplots(
         pos_ae_counts=pos_ae_counts,
@@ -448,17 +450,17 @@ def _create_fgsea_table_for_pair(
 
 
 def count_antibody_events(
-    psea_tables: pd.DataFrame,
+    psea_table: pd.DataFrame,
     p_value: float,
     enrichment_score: float,
     taxa_access: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """QIIME 2 method: count positive- and negative-NES antibody events.
 
-    Iterates over every PSEA table in *psea_tables*. A taxon is counted as one
-    event for a given pair when its adjusted p-value is below *p_value*
-    and the absolute value of its NES exceeds *enrichment_score*. Positive and
-    negative NES events are tallied separately.
+    A taxon is counted as one event for a given pair when its adjusted p-value
+    is below *p_value* and the absolute value of its NES exceeds
+    *enrichment_score*. Positive and negative NES events are tallied
+    separately.
 
     Returns
     -------
@@ -472,19 +474,18 @@ def count_antibody_events(
     neg_count = {}
     zero_count = {}
 
-    for _, table_df in psea_tables.items():
-        for _, row in table_df.iterrows():
-            taxa = row[taxa_access]
-            if (
-                row["p.adjust"] < p_value
-                and abs(row["NES"]) > enrichment_score
-            ):
-                if row["NES"] > 0:
-                    pos_count[taxa] = pos_count.get(taxa, 0) + 1
-                elif row["NES"] < 0:
-                    neg_count[taxa] = neg_count.get(taxa, 0) + 1
-                else:
-                    zero_count[taxa] = zero_count.get(taxa, 0) + 1
+    for _, row in psea_table.iterrows():
+        taxa = row[taxa_access]
+        if (
+            row["p.adjust"] < p_value
+            and abs(row["NES"]) > enrichment_score
+        ):
+            if row["NES"] > 0:
+                pos_count[taxa] = pos_count.get(taxa, 0) + 1
+            elif row["NES"] < 0:
+                neg_count[taxa] = neg_count.get(taxa, 0) + 1
+            else:
+                zero_count[taxa] = zero_count.get(taxa, 0) + 1
 
     pos_count = dict(
         sorted(pos_count.items(), key=lambda item: item[1], reverse=True)
