@@ -1,6 +1,4 @@
 #! /usr/bin/env python
-import pandas as pd
-
 from q2_types.feature_data import FeatureData
 from q2_types.feature_table import FeatureTable
 from q2_pepsirf.format_types import (
@@ -11,6 +9,9 @@ from q2_pepsirf.format_types import (
     MappedPeptide,
     GMT,
     Zscore,
+    PSEAAECounts,
+    PSEAPairs,
+    Spline
 )
 
 import q2_PSEA
@@ -32,15 +33,6 @@ from q2_PSEA.actions.epitope import (
     taxa_to_epitope,
     count_enriched,
 )
-from q2_PSEA.format_types import (
-    PSEAAECountsDirFmt,
-    PSEAAECountsTSVFormat,
-    PSEAPairsTSVFormat,
-    PSEAPairsDirFmt,
-    SplineDirFmt,
-    SplineTSVFormat,
-)
-from q2_PSEA.types import PSEAAECounts, PSEAPairs, Spline
 from qiime2.plugin import (
     Bool,
     Collection,
@@ -68,87 +60,6 @@ plugin = Plugin(
     website="https://github.com/LadnerLab/q2-PSEA.git",
     description="QIIME 2 plugin for Peptide Set Enrichment Analysis.",
 )
-
-# ---------------------------------------------------------------------------
-# Register formats
-# ---------------------------------------------------------------------------
-
-plugin.register_formats(
-    PSEAAECountsDirFmt, PSEAAECountsTSVFormat,
-    PSEAPairsTSVFormat, PSEAPairsDirFmt,
-    SplineDirFmt, SplineTSVFormat,
-)
-
-# ---------------------------------------------------------------------------
-# Register semantic types
-# ---------------------------------------------------------------------------
-
-plugin.register_semantic_types(PSEAAECounts, PSEAPairs, Spline)
-
-# ---------------------------------------------------------------------------
-# Map semantic types -> directory formats
-# ---------------------------------------------------------------------------
-
-plugin.register_semantic_type_to_format(PSEAAECounts, PSEAAECountsDirFmt)
-plugin.register_semantic_type_to_format(PSEAPairs, PSEAPairsDirFmt)
-plugin.register_semantic_type_to_format(
-    FeatureData[Spline], SplineDirFmt
-)
-
-# ---------------------------------------------------------------------------
-# Transformers
-# ---------------------------------------------------------------------------
-
-
-@plugin.register_transformer
-def _psea_pairs_tsv_to_df(ff: PSEAPairsTSVFormat) -> pd.DataFrame:
-    return pd.read_csv(str(ff), sep="\t", header=0)
-
-
-@plugin.register_transformer
-def _df_to_psea_pairs_tsv(df: pd.DataFrame) -> PSEAPairsTSVFormat:
-    result = PSEAPairsTSVFormat()
-    df.to_csv(str(result), sep="\t", index=False)
-    return result
-
-
-@plugin.register_transformer
-def _psea_pairs_tsv_to_list(ff: PSEAPairsTSVFormat) -> list:
-    pairs = []
-    with open(str(ff)) as fh:
-        # Skip header
-        fh.readline()
-        for line in fh.readlines():
-            # rstrip to ensure newline is gone then replace tabs with ~ for
-            # pair name
-            pairs.append(line.rstrip().replace("\t", "~"))
-
-    return pairs
-
-
-@plugin.register_transformer
-def _ae_counts_tsv_to_df(ff: PSEAAECountsTSVFormat) -> pd.DataFrame:
-    return pd.read_csv(str(ff), sep="\t", header=0)
-
-
-@plugin.register_transformer
-def _df_to_ae_counts_tsv(df: pd.DataFrame) -> PSEAAECountsTSVFormat:
-    result = PSEAAECountsTSVFormat()
-    df.to_csv(str(result), sep="\t", index=False)
-    return result
-
-
-@plugin.register_transformer
-def _spline_tsv_to_df(ff: SplineTSVFormat) -> pd.DataFrame:
-    return pd.read_csv(str(ff), sep="\t", index_col=0)
-
-
-@plugin.register_transformer
-def _df_to_spline_tsv(df: pd.DataFrame) -> SplineTSVFormat:
-    result = SplineTSVFormat()
-    df.to_csv(str(result), sep="\t", index=True)
-    return result
-
 
 # ---------------------------------------------------------------------------
 # Register _filter_scores_to_pairs as a method
