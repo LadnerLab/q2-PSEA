@@ -472,7 +472,6 @@ def count_antibody_events(
     """
     pos_count = {}
     neg_count = {}
-    zero_count = {}
 
     for _, row in psea_table.iterrows():
         taxa = row[taxa_access]
@@ -484,8 +483,6 @@ def count_antibody_events(
                 pos_count[taxa] = pos_count.get(taxa, 0) + 1
             elif row["NES"] < 0:
                 neg_count[taxa] = neg_count.get(taxa, 0) + 1
-            else:
-                zero_count[taxa] = zero_count.get(taxa, 0) + 1
 
     pos_count = dict(
         sorted(pos_count.items(), key=lambda item: item[1], reverse=True)

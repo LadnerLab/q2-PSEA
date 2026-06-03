@@ -1,3 +1,0 @@
-[tool.mutmut]
-paths_to_mutate = [ "q2_PSEA/" ]
-do_not_mutate = [ "**/tests/*", "*/__init__.py", "*/_version.py" ]
