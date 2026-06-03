@@ -204,21 +204,15 @@ def count_enriched(
                         'Relative Enrichment Score': 0
                     })
 
-                    # NOTE: We are counting every peptide with a residual >
-                    # threshold, but we are only counting it once even if seen
-                    # in multiple epitopes (done by taking len of the set we
-                    # make here). We are summing the normalized residuals
-                    # across epitope.
-                    #
-                    # The thing is, we could see the same epitope multiple
-                    # times. This will not count the peptide again, but it will
-                    # add the same normalized residual again. Is this
-                    # desirable?
+                    # Only count the peptide if its residual is above given
+                    # threshold
                     if residual > residual_threshold:
                         subtype_dict['Peptide Counts'].add(peptide)
-                        subtype_dict[
-                            'Relative Enrichment Score'
-                        ] += normalized_residual
+
+                    # Add the residual to the enrichment score regardless
+                    subtype_dict[
+                        'Relative Enrichment Score'
+                    ] += normalized_residual
 
     counts = pd.DataFrame.from_dict(
         {
