@@ -149,8 +149,6 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
-    # TODO: I think this needs to be more dynamic. The only one of these that's
-    # likely to need rerun for every analysis is zscore
     if map and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
