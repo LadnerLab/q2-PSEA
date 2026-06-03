@@ -415,6 +415,8 @@ plugin.methods.register_function(
         "enrichment_score": Float,
         "include_negative_enrichment": Bool,
         "species_taxa": Metadata,
+        "debug_per_iteration_table_path": Str,
+        "pair": Str,
     },
     parameter_descriptions={
         "threshold": "Minimum Z-score for GSEA inclusion.",
@@ -433,6 +435,15 @@ plugin.methods.register_function(
         ),
         "species_taxa": (
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+        ),
+        "debug_per_iteration_table_path": (
+            "Path to write per pair and per iteration psea tables to as .tsvs."
+            " Only to be used when debugging and meaningless if not doing"
+            " iterative analysis."
+        ),
+        "pair": (
+            "The name of the pair we are running iterative analysis on. Only"
+            " needed when writing debug tables."
         ),
     },
     input_descriptions={
@@ -508,6 +519,7 @@ plugin.pipelines.register_function(
         "species_colors": Metadata,
         "map": Bool,
         "residual_threshold": Float,
+        "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
         "threshold": (
@@ -556,7 +568,12 @@ plugin.pipelines.register_function(
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
             " be counted in count_enriched."
-        )
+        ),
+        "debug_per_iteration_table_path": (
+            "Path to write per pair and per iteration psea tables to as .tsvs."
+            " Only to be used when debugging and meaningless if not doing"
+            " iterative analysis."
+        ),
     },
     input_descriptions={
         "scores": (

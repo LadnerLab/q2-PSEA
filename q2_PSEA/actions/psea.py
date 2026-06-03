@@ -6,10 +6,12 @@ import random
 import rpy2.robjects as ro
 import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
+import warnings
 import tempfile
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
+from rachis.core.exceptions import RachisWarning
 from rpy2.robjects import pandas2ri, numpy2ri
 from q2_PSEA.actions.r_functions import INTERNAL
 
@@ -44,7 +46,8 @@ def make_psea_table(
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
     map: bool = True,
-    residual_threshold: float = 1.0
+    residual_threshold: float = 1.0,
+    debug_per_iteration_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
     qiime2.Visualization,
@@ -55,6 +58,31 @@ def make_psea_table(
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
+
+    # ------------------------------------------------------------------
+    # Validate debug value
+    # ------------------------------------------------------------------
+    if debug_per_iteration_table_path is not None:
+        warnings.warn(
+            f"You have set a value of {debug_per_iteration_table_path} for"
+            " 'debug_iteration_table_path.' Please only set this value if you"
+            " intend to use the per iteration .TSVs for debugging. Do not set"
+            " for regular analysis.", RachisWarning
+        )
+
+        if not iterative_analysis:
+            raise ValueError(
+                "Please only provide a path for debug_per_iteration_table_path"
+                " if doing iterative analysis."
+            )
+
+        if os.path.exists(debug_per_iteration_table_path):
+            raise ValueError(
+                f"Path {debug_per_iteration_table_path} already exists. Please"
+                " provide a path for debug .tsvs that does not already exist."
+            )
+
+        os.mkdir(debug_per_iteration_table_path)
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
@@ -186,6 +214,8 @@ def make_psea_table(
                 enrichment_score=enrichment_score,
                 include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
+                debug_per_iteration_table_path=debug_per_iteration_table_path,
+                pair=pair,
             )
         else:
             pair_pep_sets_dict[pair] = \
@@ -279,6 +309,8 @@ def _run_iterative_process_single_pair(
     seed: CaptureHolder[int] = None,
     include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
+    debug_per_iteration_table_path: str = None,
+    pair: str = None
 ) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
@@ -303,6 +335,13 @@ def _run_iterative_process_single_pair(
     tested_species = set()
     iteration = 1
     sig_found = True
+
+    if debug_per_iteration_table_path:
+        if not pair:
+            raise ValueError("Pair name must be provided when debugging.")
+
+        os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
+
     while (sig_found):
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = _create_fgsea_table_for_pair(
@@ -316,6 +355,13 @@ def _run_iterative_process_single_pair(
             species_taxa=species_taxa,
             precomputed_fit=precomputed_fit,
         )
+
+        if debug_per_iteration_table_path:
+            psea_table.to_csv(
+                os.path.join(
+                    debug_per_iteration_table_path, pair, f'{iteration}.tsv'
+                ), sep='\t', index=False
+            )
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
