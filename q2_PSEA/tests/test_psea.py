@@ -287,7 +287,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
     def _run(self, rows, taxa_access="ID", p_value=0.05, enrichment_score=1.0):
         art = self._make_psea_art(rows)
         pos, neg = self.method(
-            psea_tables={"pair1": art},
+            psea_table=art,
             p_value=p_value,
             enrichment_score=enrichment_score,
             taxa_access=taxa_access,
@@ -318,30 +318,26 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
         self.assertEqual(len(pos), 0)
         self.assertEqual(len(neg), 0)
 
-    def test_multiple_pairs_accumulate_events(self):
-        art1 = self._make_psea_art(
-            [{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}]
-        )
-        art2 = self._make_psea_art(
-            [{"ID": "sp1", "NES": 2.0, "p.adjust": 0.01}]
-        )
+    def test_multiple_rows_same_species_accumulate_events(self):
+        art = self._make_psea_art([
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+            {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
+        ])
         pos, _ = self.method(
-            psea_tables={"pairA": art1, "pairB": art2},
+            psea_table=art,
             p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         df = pos.view(pd.DataFrame)
         self.assertEqual(df.iloc[0]["Events"], 2)
 
     def test_output_sorted_descending_by_events(self):
-        art1 = self._make_psea_art([
+        art = self._make_psea_art([
             {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
             {"ID": "sp2", "NES": 2.0, "p.adjust": 0.01},
-        ])
-        art2 = self._make_psea_art([
             {"ID": "sp1", "NES": 2.0, "p.adjust": 0.01},
         ])
         pos, _ = self.method(
-            psea_tables={"pA": art1, "pB": art2},
+            psea_table=art,
             p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         df = pos.view(pd.DataFrame)
@@ -350,7 +346,7 @@ class TestCountAntibodyEventsIntegration(TestPluginBase):
     def test_empty_result_when_no_rows(self):
         art = self._make_psea_art([{"ID": "sp1", "NES": 0.1, "p.adjust": 0.9}])
         pos, neg = self.method(
-            psea_tables={"p1": art},
+            psea_table=art,
             p_value=0.05, enrichment_score=1.0, taxa_access="ID",
         )
         self.assertEqual(len(pos.view(pd.DataFrame)), 0)

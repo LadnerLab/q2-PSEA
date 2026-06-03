@@ -179,14 +179,11 @@ def make_psea_table(
 
     # NOTE: We can parallelize pairs. We cannot parallelize iterations
     for pair in pairs_list:
-        sample_a, sample_b = pair.split("~")
-
         # Compute spline fit once per pair; reuse it for both the scatter
         # plot data and as the precomputed_fit input to create_fgsea_table.
         pair_splines[pair], = _compute_pair_fit_and_residuals(
             processed_zscores=processed_zscores,
-            sample_a=sample_a,
-            sample_b=sample_b,
+            pair=pair,
             spline_type=spline_type,
             degree=degree,
             epitope_map=epitope_map,
@@ -503,8 +500,7 @@ def count_antibody_events(
 
 def _compute_pair_fit_and_residuals(
     processed_zscores: pd.DataFrame,
-    sample_a: str,
-    sample_b: str,
+    pair: str,
     spline_type: str,
     degree: int,
     epitope_map: pd.DataFrame = None,
@@ -524,8 +520,9 @@ def _compute_pair_fit_and_residuals(
     processed_zscores = processed_zscores.transpose()
     dof = ro.NULL if dof is None else dof
 
-    pair = [sample_a, sample_b]
-    data_sorted = processed_zscores.loc[:, pair].sort_values(by=sample_a)
+    sample_a, sample_b = pair.split('~')
+    pair_list = [sample_a, sample_b]
+    data_sorted = processed_zscores.loc[:, pair_list].sort_values(by=sample_a)
     x = data_sorted.loc[:, sample_a].to_numpy()
     y = data_sorted.loc[:, sample_b].to_numpy()
 
@@ -540,7 +537,7 @@ def _compute_pair_fit_and_residuals(
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.smooth_spline(x, y)
 
-    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair], 1)
+    maxZ = np.apply_over_axes(np.max, data_sorted.loc[:, pair_list], 1)
     maxZ = pd.Series(
         [num for elem in maxZ for num in elem], index=data_sorted.index
     )

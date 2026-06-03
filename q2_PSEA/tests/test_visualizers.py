@@ -78,8 +78,8 @@ class TestAeplots(TestPluginBase):
         pos_art = qiime2.Artifact.import_data("PSEAAECounts", self.pos_df)
         neg_art = qiime2.Artifact.import_data("PSEAAECounts", self.neg_df)
         viz, = self.plugin.visualizers["aeplots"](
-            pos_ae_counts=pos_art,
-            neg_ae_counts=neg_art,
+            pos_ae_counts=[pos_art],
+            neg_ae_counts=[neg_art],
         )
         self.assertEqual(str(viz.type), "Visualization")
 
@@ -88,8 +88,8 @@ class TestAeplots(TestPluginBase):
         pos_art = qiime2.Artifact.import_data("PSEAAECounts", self.pos_df)
         neg_art = qiime2.Artifact.import_data("PSEAAECounts", self.neg_df)
         viz, = self.plugin.visualizers["aeplots"](
-            pos_ae_counts=pos_art,
-            neg_ae_counts=neg_art,
+            pos_ae_counts=[pos_art],
+            neg_ae_counts=[neg_art],
             colors_file=colors,
         )
         self.assertEqual(str(viz.type), "Visualization")
@@ -100,8 +100,8 @@ class TestAeplots(TestPluginBase):
         with tempfile.TemporaryDirectory() as output_dir:
             aeplots(
                 output_dir,
-                pos_ae_counts=pos,
-                neg_ae_counts=neg,
+                pos_ae_counts=[pos],
+                neg_ae_counts=[neg],
                 xy_access=["Events", "Species"],
                 xy_labels=["Count", "Organism"],
             )
@@ -113,7 +113,7 @@ class TestAeplots(TestPluginBase):
         pos = pd.DataFrame([("InfluenzaA", 1)], columns=["Species", "Events"])
         neg = pd.DataFrame([], columns=["Species", "Events"])
         with tempfile.TemporaryDirectory() as output_dir:
-            aeplots(output_dir, pos_ae_counts=pos, neg_ae_counts=neg)
+            aeplots(output_dir, pos_ae_counts=[pos], neg_ae_counts=[neg])
             self.assertTrue(
                 os.path.exists(os.path.join(output_dir, "index.html"))
             )
@@ -130,11 +130,9 @@ class TestVolcano(TestPluginBase):
         return qiime2.Artifact.import_data("PSEAPairs", _pairs_df(rows))
 
     def test_creates_index_html_with_explicit_xy(self):
-        pairs = _pairs_df()
         with tempfile.TemporaryDirectory() as output_dir:
             volcano(
                 output_dir,
-                pairs=pairs,
                 x=[0.5, -0.6, 0.1],
                 y=[0.01, 0.04, 0.9],
             )
@@ -143,20 +141,16 @@ class TestVolcano(TestPluginBase):
             )
 
     def test_via_plugin_returns_visualization(self):
-        pairs_art = self._pairs_art()
         viz, = self.plugin.visualizers["volcano"](
-            pairs=pairs_art,
             x=[0.5, -0.6, 0.1],
             y=[0.01, 0.04, 0.9],
         )
         self.assertEqual(str(viz.type), "Visualization")
 
     def test_log_false_produces_output(self):
-        pairs = _pairs_df()
         with tempfile.TemporaryDirectory() as output_dir:
             volcano(
                 output_dir,
-                pairs=pairs,
                 x=[0.5, -0.6],
                 y=[0.01, 0.04],
                 log=False,
@@ -166,11 +160,9 @@ class TestVolcano(TestPluginBase):
             )
 
     def test_with_taxa_highlights_significant_points(self):
-        pairs = _pairs_df()
         with tempfile.TemporaryDirectory() as output_dir:
             volcano(
                 output_dir,
-                pairs=pairs,
                 x=[0.6, -0.8, 0.1],
                 y=[0.01, 0.02, 0.9],
                 taxa=["InfluenzaA", "EBV", "CoV"],
@@ -182,10 +174,8 @@ class TestVolcano(TestPluginBase):
             )
 
     def test_with_colors_file(self):
-        pairs_art = self._pairs_art()
         colors = qiime2.Metadata.load(self.get_data_path("species-colors.tsv"))
         viz, = self.plugin.visualizers["volcano"](
-            pairs=pairs_art,
             x=[0.6, -0.8],
             y=[0.01, 0.02],
             taxa=["InfluenzaA", "EBV"],
@@ -193,25 +183,21 @@ class TestVolcano(TestPluginBase):
         )
         self.assertEqual(str(viz.type), "Visualization")
 
-    def test_with_psea_tables(self):
-        pairs_art = self._pairs_art()
+    def test_with_psea_table(self):
         psea_art = qiime2.Artifact.import_data(
             "FeatureData[PSEAScores]", _psea_table_df()
         )
         viz, = self.plugin.visualizers["volcano"](
-            pairs=pairs_art,
-            psea_tables={"sA~sB": psea_art},
+            psea_table=psea_art,
             xy_access=["NES", "p.adjust"],
             taxa_access="ID",
         )
         self.assertEqual(str(viz.type), "Visualization")
 
-    def test_pairs_with_title_column(self):
-        pairs = _pairs_df_titled()
+    def test_single_point_produces_output(self):
         with tempfile.TemporaryDirectory() as output_dir:
             volcano(
                 output_dir,
-                pairs=pairs,
                 x=[0.5],
                 y=[0.01],
             )
@@ -220,11 +206,9 @@ class TestVolcano(TestPluginBase):
             )
 
     def test_custom_axis_labels(self):
-        pairs = _pairs_df()
         with tempfile.TemporaryDirectory() as output_dir:
             volcano(
                 output_dir,
-                pairs=pairs,
                 x=[0.5, -0.6],
                 y=[0.01, 0.04],
                 xy_labels=["Enrichment Score", "-log10(p)"],
@@ -261,7 +245,7 @@ class TestZscatter(TestPluginBase):
             zscatter(
                 output_dir,
                 zscores=self.zscores_df,
-                pairs=self.pairs_df,
+                pair="sA~sB",
             )
             self.assertTrue(
                 os.path.exists(os.path.join(output_dir, "index.html"))
@@ -269,10 +253,9 @@ class TestZscatter(TestPluginBase):
 
     def test_via_plugin_returns_visualization(self):
         processed_art = self._zscores_art()
-        pairs_art = qiime2.Artifact.import_data("PSEAPairs", self.pairs_df)
         viz, = self.plugin.visualizers["zscatter"](
             zscores=processed_art,
-            pairs=pairs_art,
+            pair="sA~sB",
         )
         self.assertEqual(str(viz.type), "Visualization")
 
@@ -288,14 +271,13 @@ class TestZscatter(TestPluginBase):
             "ID": ["InfluenzaA"],
         })
         processed_art = self._zscores_art()
-        pairs_art = qiime2.Artifact.import_data("PSEAPairs", self.pairs_df)
         psea_art = qiime2.Artifact.import_data(
             "FeatureData[PSEAScores]", psea_df
         )
         viz, = self.plugin.visualizers["zscatter"](
             zscores=processed_art,
-            pairs=pairs_art,
-            psea_tables={"sA~sB": psea_art},
+            pair="sA~sB",
+            psea_table=psea_art,
             p_val_access="p.adjust",
             le_peps_access="core_enrichment",
             taxa_access="ID",
@@ -315,15 +297,14 @@ class TestZscatter(TestPluginBase):
             "ID": ["InfluenzaA"],
         })
         processed_art = self._zscores_art()
-        pairs_art = qiime2.Artifact.import_data("PSEAPairs", self.pairs_df)
         psea_art = qiime2.Artifact.import_data(
             "FeatureData[PSEAScores]", psea_df
         )
         colors = qiime2.Metadata.load(self.get_data_path("species-colors.tsv"))
         viz, = self.plugin.visualizers["zscatter"](
             zscores=processed_art,
-            pairs=pairs_art,
-            psea_tables={"sA~sB": psea_art},
+            pair="sA~sB",
+            psea_table=psea_art,
             p_val_access="p.adjust",
             le_peps_access="core_enrichment",
             taxa_access="ID",
@@ -331,21 +312,17 @@ class TestZscatter(TestPluginBase):
         )
         self.assertEqual(str(viz.type), "Visualization")
 
-    def test_psea_tables_without_access_params_raises(self):
+    def test_psea_table_without_access_params_raises(self):
         with tempfile.TemporaryDirectory() as output_dir:
             with self.assertRaises(AssertionError):
                 zscatter(
                     output_dir,
                     zscores=self.zscores_df,
-                    pairs=self.pairs_df,
-                    psea_tables={"sA~sB": _psea_table_df()},
+                    pair="sA~sB",
+                    psea_table=_psea_table_df(),
                 )
 
-    def test_multiple_pairs_produces_output(self):
-        pairs_two = pd.DataFrame(
-            [("sA", "sB"), ("sC", "sD")],
-            columns=["sample_a", "sample_b"],
-        )
+    def test_non_default_pair_from_larger_zscore_matrix(self):
         rng = np.random.default_rng(7)
         zscores_four = pd.DataFrame(
             rng.standard_normal((4, 20)),
@@ -353,7 +330,7 @@ class TestZscatter(TestPluginBase):
             columns=[f"pep_{i:02d}" for i in range(20)],
         )
         with tempfile.TemporaryDirectory() as output_dir:
-            zscatter(output_dir, zscores=zscores_four, pairs=pairs_two)
+            zscatter(output_dir, zscores=zscores_four, pair="sC~sD")
             self.assertTrue(
                 os.path.exists(os.path.join(output_dir, "index.html"))
             )

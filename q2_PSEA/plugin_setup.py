@@ -224,8 +224,7 @@ plugin.methods.register_function(
         "epitope_map": FeatureData[MappedEpitope],
     },
     parameters={
-        "sample_a": Str,
-        "sample_b": Str,
+        "pair": Str,
         "spline_type": Str % Choices(splines.SPLINE_TYPES),
         "degree": Int,
         "dof": Int,
@@ -241,8 +240,7 @@ plugin.methods.register_function(
         ),
     },
     parameter_descriptions={
-        "sample_a": "Name of the first sample in the pair.",
-        "sample_b": "Name of the second sample in the pair.",
+        "pair": "Name of the pair.",
         "spline_type": "Spline method used to fit the Z-score scatter.",
         "degree": (
             "Polynomial degree for spline fitting (affects 'cubic' only)."
