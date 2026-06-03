@@ -202,7 +202,7 @@ def make_psea_table(
 
         used_zscores = \
             split_mapped_processed_zscores[pair] if map else \
-                split_processed_zscores[pair]
+            split_processed_zscores[pair]
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
