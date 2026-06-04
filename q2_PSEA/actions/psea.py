@@ -200,6 +200,9 @@ def make_psea_table(
             dof=dof,
         )
 
+        # We need to use unmapped scores when collapsing no matter what, but
+        # down below whether we use mapped or unmapped depends on the type of
+        # analysis requested
         used_zscores = \
             split_mapped_processed_zscores[pair] if map else \
             split_processed_zscores[pair]
