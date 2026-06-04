@@ -178,6 +178,12 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Split scores out by pair
     # ------------------------------------------------------------------
+    # TODO: may be need for optimization here. This becomes a blocking
+    # operation down below when we need to index into this inside of the loop.
+    #
+    # It does reduce memory usage in later processes, but it also spikes it
+    # here, and it takes some time... maybe too long for a large number
+    # of pairs
     split_processed_zscores, = _split_scores(processed_zscores, pairs)
     split_mapped_processed_zscores = None
     if map:
