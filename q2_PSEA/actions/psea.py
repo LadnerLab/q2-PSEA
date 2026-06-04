@@ -179,6 +179,7 @@ def make_psea_table(
     # Split scores out by pair
     # ------------------------------------------------------------------
     split_processed_zscores, = _split_scores(processed_zscores, pairs)
+    split_mapped_processed_zscores = None
     if map:
         split_mapped_processed_zscores, = _split_scores(
             mapped_processed_zscores, pairs
