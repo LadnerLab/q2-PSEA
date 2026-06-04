@@ -108,6 +108,12 @@ def make_psea_table(
             " If you provide none, this pipeline will do the mapping."
         )
 
+    if map and not map_provided and peptide_metadata is None:
+        raise ValueError(
+            f"Must provide peptide metadata if doing a mapped analysis without"
+            " providing mapped artifacts."
+        )
+
     if map and map_provided and iterative_analysis and not peptide_map:
         raise ValueError(
             "If doing mapped iterative analysis, you must pass in a"
