@@ -103,8 +103,9 @@ def make_psea_table(
             ) and not map_provided:
         raise ValueError(
             "Please pass either all of 'epitope_map', 'scores_map',"
-            " and 'peptide_sets_map' or none of them when running mapped analysis."
-            " If you provide none, this pipeline will do the mapping."
+            " and 'peptide_sets_map' or none of them when running mapped"
+            " analysis. If you provide None, this pipeline will do the"
+            " mapping."
         )
 
     if use_epitope_mapping and not map_provided and peptide_metadata is None:
