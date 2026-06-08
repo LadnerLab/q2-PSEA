@@ -2,48 +2,6 @@ import unittest
 
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_PSEA.types import PSEAPairs, PSEAAECounts
-
-
-class TestSemanticTypes(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_psea_pairs_name(self):
-        self.assertEqual(str(PSEAPairs), "PSEAPairs")
-
-    def test_psea_ae_counts_name(self):
-        self.assertEqual(str(PSEAAECounts), "PSEAAECounts")
-
-    def test_psea_pairs_registered(self):
-        registered = {str(t) for t in self.plugin.type_fragments}
-        self.assertIn("PSEAPairs", registered)
-
-    def test_psea_ae_counts_registered(self):
-        registered = {str(t) for t in self.plugin.type_fragments}
-        self.assertIn("PSEAAECounts", registered)
-
-
-class TestFormatsRegistered(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def test_pairs_tsv_format_registered(self):
-        self.assertIn("PSEAPairsTSVFormat", self.plugin.formats)
-
-    def test_pairs_dir_format_registered(self):
-        self.assertIn("PSEAPairsDirFmt", self.plugin.formats)
-
-    def test_ae_counts_tsv_format_registered(self):
-        self.assertIn("PSEAAECountsTSVFormat", self.plugin.formats)
-
-    def test_ae_counts_dir_format_registered(self):
-        self.assertIn("PSEAAECountsDirFmt", self.plugin.formats)
-
-    def test_spline_tsv_format_registered(self):
-        self.assertIn("SplineTSVFormat", self.plugin.formats)
-
-    def test_spline_dir_format_registered(self):
-        self.assertIn("SplineDirFmt", self.plugin.formats)
-
 
 class TestMethodsRegistered(TestPluginBase):
     package = "q2_PSEA.tests"

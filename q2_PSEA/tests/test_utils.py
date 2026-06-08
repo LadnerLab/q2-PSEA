@@ -119,7 +119,7 @@ class TestFilterPeptideSets(TestPluginBase):
         self.assertIn("sp2", tested)
         self.assertNotIn("sp1", tested)
 
-    def test_with_epitope_map_expands_sibling_epitopes(self):
+    def test_with_epitope_map_removes_direct_match(self):
         psea = self._psea([
             {"ID": "sp1", "p.adjust": 0.01, "NES": 2.0,
              "all_tested_peptides": "ep1"},
@@ -133,11 +133,9 @@ class TestFilterPeptideSets(TestPluginBase):
         )
         updated, _, _ = filter_peptide_sets(
             psea, gmt, set(), 0.05, 1.0, True,
-            epitope_map=epitope_map
         )
         sp2_genes = updated[updated["term"] == "sp2"]["gene"].tolist()
         self.assertNotIn("ep1", sp2_genes)
-        self.assertNotIn("ep2", sp2_genes)
 
 # ---------------------------------------------------------------------------
 # remove_peptides — unit tests

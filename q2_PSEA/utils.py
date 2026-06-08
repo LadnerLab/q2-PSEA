@@ -21,7 +21,6 @@ def filter_peptide_sets(
             p_value: int,
             enrichment_score: int,
             include_negative_enrichment: bool,
-            epitope_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
     psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)
 

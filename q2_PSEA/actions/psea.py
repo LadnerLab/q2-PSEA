@@ -380,7 +380,6 @@ def _run_iterative_process_single_pair(
                 p_value,
                 enrichment_score,
                 include_negative_enrichment,
-                epitope_map=epitope_map,
             )
 
         iteration += 1

@@ -143,8 +143,7 @@ class TestComputePairFitIntegration(TestPluginBase):
     def _run(self, spline_type="py-smooth", **kwargs):
         result, = self.method(
             processed_zscores=self.processed_art,
-            sample_a="sA",
-            sample_b="sB",
+            pair="sA~sB",
             spline_type=spline_type,
             degree=3,
             **kwargs,
@@ -214,8 +213,7 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
         compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
         self.spline_art, = compute_fit(
             processed_zscores=self.processed_art,
-            sample_a="sA",
-            sample_b="sB",
+            pair="sA~sB",
             spline_type="py-smooth",
             degree=3,
         )
@@ -402,7 +400,7 @@ class TestComputePairFitDirect(TestPluginBase):
 
     def _call(self, **kwargs):
         return _compute_pair_fit_and_residuals(
-            self.view, "sA", "sB", "py-smooth", 3, **kwargs
+            self.view, "sA~sB", "py-smooth", 3, **kwargs
         )
 
     def test_no_inf_in_output(self):
@@ -462,8 +460,7 @@ class TestRunIterativeProcessSinglePairIntegration(TestPluginBase):
         compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
         self.spline_art, = compute_fit(
             processed_zscores=self.processed_art,
-            sample_a="sA",
-            sample_b="sB",
+            pair="sA~sB",
             spline_type="py-smooth",
             degree=3,
         )
@@ -584,7 +581,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 pairs=self.pairs_art,
                 peptide_sets=self.gmt_art,
                 threshold=0.0,
-                map=False,
+                use_epitope_mapping=False,
                 # peptide_metadata intentionally omitted
             )
 
@@ -592,7 +589,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
         # Providing epitope_map without scores_map/peptide_sets_map is invalid.
         # Note: create_epitope_map uses the input name "epitope", not
         # "peptide_metadata".
-        epi_map_art, _ = self.plugin.methods["create_epitope_map"](
+        epi_map_art, = self.plugin.methods["create_epitope_map"](
             epitope=self.epi_art, collapse="Viral"
         )
         with self.assertRaises(Exception):
@@ -601,7 +598,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 pairs=self.pairs_art,
                 peptide_sets=self.gmt_art,
                 threshold=0.0,
-                map=True,
+                use_epitope_mapping=True,
                 epitope_map=epi_map_art,
                 # scores_map and peptide_sets_map omitted → partial → error
             )
@@ -616,7 +613,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
         scores_9_art = qiime2.Artifact.import_data(
             "FeatureTable[Zscore]", raw_9
         )
-        epi_map_art, pep_map_art = self.plugin.methods["create_epitope_map"](
+        epi_map_art, = self.plugin.methods["create_epitope_map"](
             epitope=self.epi_art, collapse="Viral"
         )
         scores_map_art, = self.plugin.methods["epitope_zscore"](
@@ -625,10 +622,10 @@ class TestMakePseaTableIntegration(TestPluginBase):
         peptide_sets_map_art, = self.plugin.methods["taxa_to_epitope"](
             epitope=epi_map_art
         )
-        return epi_map_art, pep_map_art, scores_map_art, peptide_sets_map_art
+        return epi_map_art, scores_map_art, peptide_sets_map_art
 
     def test_raises_when_map_false_and_epitope_map_provided(self):
-        epi_map_art, _, scores_map_art, peptide_sets_map_art = (
+        epi_map_art, scores_map_art, peptide_sets_map_art = (
             self._make_mapped_artifacts()
         )
         with self.assertRaises(Exception):
@@ -637,7 +634,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 pairs=self.pairs_art,
                 peptide_sets=self.gmt_art,
                 threshold=0.0,
-                map=False,
+                use_epitope_mapping=False,
                 epitope_map=epi_map_art,
                 scores_map=scores_map_art,
                 peptide_sets_map=peptide_sets_map_art,
@@ -656,7 +653,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
             p_value=1.0,
             enrichment_score=0.0,
             iterative_analysis=False,
-            map=False,
+            use_epitope_mapping=False,
             seed=42,
         )
         self.assertIn("sA~sB", psea_tables)

@@ -26,21 +26,21 @@ class TestCreateEpitopeMap(TestPluginBase):
         )
 
     def test_viral_collapse_creates_combined_ids(self):
-        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("sp001_C1_W1", result.index)
         self.assertIn("sp002_C2_W2", result.index)
 
     def test_non_collapsed_category_keeps_original_index(self):
-        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
         self.assertIn("pep_03", result.index)
 
     def test_two_peptides_share_same_epitope(self):
-        result, _ = create_epitope_map(self.epitope.copy(), collapse="Viral")
+        result = create_epitope_map(self.epitope.copy(), collapse="Viral")
         codenames = result.loc["sp001_C1_W1", "CodeName"]
         self.assertEqual(set(codenames), {"pep_00", "pep_01"})
 
     def test_both_collapse_includes_bacterial(self):
-        result, _ = create_epitope_map(self.epitope.copy(), collapse="Both")
+        result = create_epitope_map(self.epitope.copy(), collapse="Both")
         self.assertIn("sp003_C3_W3", result.index)
 
     def test_semicolon_entries_exploded_into_separate_rows(self):
@@ -55,7 +55,7 @@ class TestCreateEpitopeMap(TestPluginBase):
             },
             index=pd.Index(["pep_X"], name="CodeName"),
         )
-        result, _ = create_epitope_map(multi, collapse="Viral")
+        result = create_epitope_map(multi, collapse="Viral")
         self.assertIn("sp001_C1_W1", result.index)
         self.assertIn("sp002_C2_W2", result.index)
 
@@ -111,10 +111,10 @@ class TestTaxaToEpitope(TestPluginBase):
         raw = pd.read_csv(
             self.get_data_path("epitope.tsv"), sep="\t", index_col=0
         )
-        self.epitope_map_viral, _ = create_epitope_map(
+        self.epitope_map_viral = create_epitope_map(
             raw.copy(), collapse="Viral"
         )
-        self.epitope_map_both, _ = create_epitope_map(
+        self.epitope_map_both = create_epitope_map(
             raw.copy(), collapse="Both"
         )
 
