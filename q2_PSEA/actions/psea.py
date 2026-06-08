@@ -45,7 +45,7 @@ def make_psea_table(
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
-    map: bool = True,
+    use_epitope_mapping: bool = True,
     residual_threshold: float = .5,
     debug_per_iteration_table_path: str = None,
 ) -> tuple[
@@ -93,11 +93,11 @@ def make_psea_table(
         ]
     )
 
-    if not map and map_provided:
+    if not use_epitope_mapping and map_provided:
         raise ValueError("You provided mapped artifacts but indicated you do"
                          " not want mapping.")
 
-    if map and any(
+    if use_epitope_mapping and any(
                 param is not None for param in [
                     epitope_map, scores_map, peptide_sets_map
                 ]
@@ -108,13 +108,13 @@ def make_psea_table(
             " If you provide none, this pipeline will do the mapping."
         )
 
-    if map and not map_provided and peptide_metadata is None:
+    if use_epitope_mapping and not map_provided and peptide_metadata is None:
         raise ValueError(
-            f"Must provide peptide metadata if doing a mapped analysis without"
+            "Must provide peptide metadata if doing a mapped analysis without"
             " providing mapped artifacts."
         )
 
-    if map and map_provided and iterative_analysis and not peptide_map:
+    if use_epitope_mapping and map_provided and iterative_analysis and not peptide_map:
         raise ValueError(
             "If doing mapped iterative analysis, you must pass in a"
             " peptide_map, or not provide mapped Artifacts and allow this"
@@ -156,7 +156,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
-    if map and not map_provided:
+    if use_epitope_mapping and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
@@ -172,7 +172,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     processed_zscores, = _process_scores(filtered_zscores)
     mapped_processed_zscores = None
-    if map:
+    if use_epitope_mapping:
         mapped_processed_zscores, = _process_scores(scores_map)
 
     # ------------------------------------------------------------------
@@ -186,7 +186,7 @@ def make_psea_table(
     # of pairs
     split_processed_zscores, = _split_scores(processed_zscores, pairs)
     split_mapped_processed_zscores = None
-    if map:
+    if use_epitope_mapping:
         split_mapped_processed_zscores, = _split_scores(
             mapped_processed_zscores, pairs
         )
@@ -217,7 +217,7 @@ def make_psea_table(
         # down below whether we use mapped or unmapped depends on the type of
         # analysis requested
         used_zscores = \
-            split_mapped_processed_zscores[pair] if map else \
+            split_mapped_processed_zscores[pair] if use_epitope_mapping else \
             split_processed_zscores[pair]
 
         # ------------------------------------------------------------------
@@ -245,7 +245,7 @@ def make_psea_table(
             )
         else:
             pair_pep_sets_dict[pair] = \
-                peptide_sets_map if map else peptide_sets
+                peptide_sets_map if use_epitope_mapping else peptide_sets
 
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis
@@ -395,6 +395,7 @@ def _run_iterative_process_single_pair(
                 peptide_map=peptide_map
             )
 
+        print(f"ITERATION: {iteration}")
         iteration += 1
 
     return updated_peptide_sets

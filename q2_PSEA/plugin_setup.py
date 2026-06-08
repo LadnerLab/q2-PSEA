@@ -426,7 +426,7 @@ plugin.pipelines.register_function(
         "seed": Int,
         "species_taxa": Metadata,
         "species_colors": Metadata,
-        "map": Bool,
+        "use_epitope_mapping": Bool,
         "residual_threshold": Float,
         "debug_per_iteration_table_path": Str,
     },
@@ -473,6 +473,12 @@ plugin.pipelines.register_function(
         "species_colors": (
             "Optional Metadata mapping species names (IDs) to HEX color"
             " codes used in output visualizations."
+        ),
+        "use_epitope_mapping": (
+            "If true, the analysis will be run with data collapsed to epitope"
+            " level. This requires you to either pass 'peptide_metadata' so"
+            " the pipeline can do the collapsing, or all of epitope_map,"
+            " scores_map, and peptide_sets_map along with peptide_map"
         ),
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
