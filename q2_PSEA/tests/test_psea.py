@@ -589,7 +589,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
             )
 
     def test_raises_when_partial_map_artifacts_provided(self):
-        # Providing epitope_map without mapped_zscores/mapped_gmt is invalid.
+        # Providing epitope_map without scores_map/peptide_sets_map is invalid.
         # Note: create_epitope_map uses the input name "epitope", not
         # "peptide_metadata".
         epi_map_art, _ = self.plugin.methods["create_epitope_map"](
@@ -603,7 +603,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 threshold=0.0,
                 map=True,
                 epitope_map=epi_map_art,
-                # mapped_zscores and mapped_gmt omitted → partial → error
+                # scores_map and peptide_sets_map omitted → partial → error
             )
 
     def _make_mapped_artifacts(self):
@@ -619,16 +619,16 @@ class TestMakePseaTableIntegration(TestPluginBase):
         epi_map_art, pep_map_art = self.plugin.methods["create_epitope_map"](
             epitope=self.epi_art, collapse="Viral"
         )
-        mapped_zscores_art, = self.plugin.methods["epitope_zscore"](
+        scores_map_art, = self.plugin.methods["epitope_zscore"](
             zscores=scores_9_art, epitope_map=epi_map_art
         )
-        mapped_gmt_art, = self.plugin.methods["taxa_to_epitope"](
+        peptide_sets_map_art, = self.plugin.methods["taxa_to_epitope"](
             epitope=epi_map_art
         )
-        return epi_map_art, pep_map_art, mapped_zscores_art, mapped_gmt_art
+        return epi_map_art, pep_map_art, scores_map_art, peptide_sets_map_art
 
     def test_raises_when_map_false_and_epitope_map_provided(self):
-        epi_map_art, _, mapped_zscores_art, mapped_gmt_art = (
+        epi_map_art, _, scores_map_art, peptide_sets_map_art = (
             self._make_mapped_artifacts()
         )
         with self.assertRaises(Exception):
@@ -639,12 +639,12 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 threshold=0.0,
                 map=False,
                 epitope_map=epi_map_art,
-                mapped_zscores=mapped_zscores_art,
-                mapped_gmt=mapped_gmt_art,
+                scores_map=scores_map_art,
+                peptide_sets_map=peptide_sets_map_art,
             )
 
     def test_raises_when_mapped_iterative_without_peptide_map(self):
-        epi_map_art, _, mapped_zscores_art, mapped_gmt_art = (
+        epi_map_art, _, scores_map_art, peptide_sets_map_art = (
             self._make_mapped_artifacts()
         )
         with self.assertRaises(Exception):
@@ -656,8 +656,8 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 map=True,
                 iterative_analysis=True,
                 epitope_map=epi_map_art,
-                mapped_zscores=mapped_zscores_art,
-                mapped_gmt=mapped_gmt_art,
+                scores_map=scores_map_art,
+                peptide_sets_map=peptide_sets_map_art,
             )
 
     def test_psea_tables_keyed_by_pair_name(self):

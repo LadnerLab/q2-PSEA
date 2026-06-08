@@ -24,7 +24,7 @@ def filter_peptide_sets(
             epitope_map: pd.DataFrame = None,
             peptide_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
-    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)\
+    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)
 
     sig_found = True
     for _, row in psea_table.iterrows():

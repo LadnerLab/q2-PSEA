@@ -29,8 +29,8 @@ def make_psea_table(
     peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
     peptide_map: qiime2.Artifact = None,
-    mapped_zscores: qiime2.Artifact = None,
-    mapped_gmt: qiime2.Artifact = None,
+    scores_map: qiime2.Artifact = None,
+    peptide_sets_map: qiime2.Artifact = None,
     collapse: str = "Viral",
     p_value: float = 0.05,
     enrichment_score: float = 1,
@@ -89,7 +89,7 @@ def make_psea_table(
     # ------------------------------------------------------------------
     map_provided = all(
         param is not None for param in [
-            epitope_map, mapped_zscores, mapped_gmt
+            epitope_map, scores_map, peptide_sets_map
         ]
     )
 
@@ -99,12 +99,12 @@ def make_psea_table(
 
     if map and any(
                 param is not None for param in [
-                    epitope_map, mapped_zscores, mapped_gmt
+                    epitope_map, scores_map, peptide_sets_map
                 ]
             ) and not map_provided:
         raise ValueError(
-            "Please pass either all of 'epitope_map', 'mapped_zscores',"
-            " and 'mapped_gmt' or none of them when running mapped analysis."
+            "Please pass either all of 'epitope_map', 'scores_map',"
+            " and 'peptide_sets_map' or none of them when running mapped analysis."
             " If you provide none, this pipeline will do the mapping."
         )
 
@@ -164,8 +164,8 @@ def make_psea_table(
         epitope_map, peptide_map = create_epitope_map(
             peptide_metadata, collapse
         )
-        mapped_zscores, = create_epitope_zscore(filtered_zscores, epitope_map)
-        mapped_gmt, = create_epitope_gmt(epitope_map)
+        scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
+        peptide_sets_map, = create_epitope_gmt(epitope_map)
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
@@ -173,7 +173,7 @@ def make_psea_table(
     processed_zscores, = _process_scores(filtered_zscores)
     mapped_processed_zscores = None
     if map:
-        mapped_processed_zscores, = _process_scores(mapped_zscores)
+        mapped_processed_zscores, = _process_scores(scores_map)
 
     # ------------------------------------------------------------------
     # Split scores out by pair
@@ -230,7 +230,7 @@ def make_psea_table(
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
                 peptide_map=peptide_map,
-                mapped_peptide_sets=mapped_gmt,
+                mapped_peptide_sets=peptide_sets_map,
                 threshold=threshold,
                 permutation_num=permutation_num,
                 min_size=min_size,
@@ -245,7 +245,7 @@ def make_psea_table(
             )
         else:
             pair_pep_sets_dict[pair] = \
-                mapped_gmt if map else peptide_sets
+                peptide_sets_map if map else peptide_sets
 
         # ------------------------------------------------------------------
         # Final per-pair PSEA analysis

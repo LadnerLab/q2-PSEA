@@ -407,8 +407,8 @@ plugin.pipelines.register_function(
         "peptide_metadata": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
         "peptide_map": FeatureData[MappedPeptide],
-        "mapped_zscores": FeatureTable[Zscore % Properties("mapped")],
-        "mapped_gmt": GMT % Properties("mapped")
+        "scores_map": FeatureTable[Zscore % Properties("mapped")],
+        "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
         "threshold": Float,
@@ -504,24 +504,24 @@ plugin.pipelines.register_function(
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
             " table is used in GSEA. Maps epitopes to peptides and species."
-            "NOTE: Must be passed with mapped_zscores and mapped_gmt."
+            "NOTE: Must be passed with scores_map and peptide_sets_map."
         ),
         "peptide_map": (
             "Optional already collapsed epitope table. When provided, this "
             " table is used to aid in filtering species in iterative analysis"
             " in GSEA. Maps peptides to epitopes."
-            "NOTE: Must be passed with epitope_map, mapped_zscores, mapped_gmt"
+            "NOTE: Must be passed with epitope_map, scores_map, peptide_sets_map"
             ", and iterative analysis."
         ),
-        "mapped_zscores": (
+        "scores_map": (
             "Optional already collapsed zscores. When provided, these"
             " scores are used in GSEA but NOT for spline fitting."
-            "NOTE: Must be passed with eptiope_map and mapped_gmt."
+            "NOTE: Must be passed with eptiope_map and peptide_sets_map."
         ),
-        "mapped_gmt": (
+        "peptide_sets_map": (
             "Optional already collapsed epitope peptide sets. When provided,"
             " these peptides are used in GSEA."
-            "NOTE: Must be passed with epitope_map and mapped_zscores."
+            "NOTE: Must be passed with epitope_map and scores_map."
         )
     },
     outputs=[
