@@ -5,8 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from typing import Tuple
-
 import numpy as np
 import pandas as pd
 from biom import Table
