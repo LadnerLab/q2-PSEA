@@ -16,7 +16,7 @@ from q2_types.feature_table import BIOMV210Format
 
 def create_epitope_map(
             epitope: pd.DataFrame, collapse: str = 'Viral'
-        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        ) -> pd.DataFrame:
     epitope = _create_EpitopeID_row(epitope, collapse)
     epitope = epitope.reset_index()
 
