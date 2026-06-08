@@ -383,7 +383,6 @@ def _run_iterative_process_single_pair(
                 epitope_map=epitope_map,
             )
 
-        print(f"ITERATION: {iteration}")
         iteration += 1
 
     return updated_peptide_sets
