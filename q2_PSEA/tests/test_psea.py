@@ -643,23 +643,6 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 peptide_sets_map=peptide_sets_map_art,
             )
 
-    def test_raises_when_mapped_iterative_without_peptide_map(self):
-        epi_map_art, _, scores_map_art, peptide_sets_map_art = (
-            self._make_mapped_artifacts()
-        )
-        with self.assertRaises(Exception):
-            self.pipeline(
-                scores=self.scores_art,
-                pairs=self.pairs_art,
-                peptide_sets=self.gmt_art,
-                threshold=0.0,
-                map=True,
-                iterative_analysis=True,
-                epitope_map=epi_map_art,
-                scores_map=scores_map_art,
-                peptide_sets_map=peptide_sets_map_art,
-            )
-
     def test_psea_tables_keyed_by_pair_name(self):
         _, _, _, psea_tables, _ = self.pipeline(
             scores=self.scores_art,

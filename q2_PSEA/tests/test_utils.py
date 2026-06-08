@@ -5,7 +5,6 @@ from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.utils import (
     filter_peptide_sets,
-    _get_mapped_features,
     collapse_residuals_to_epitope,
     remove_peptides,
 )
@@ -132,94 +131,18 @@ class TestFilterPeptideSets(TestPluginBase):
             {"CodeName": [["pep1"], ["pep1"]]},
             index=pd.Index(["ep1", "ep2"], name="EpitopeID"),
         )
-        peptide_map = pd.DataFrame(
-            {"EpitopeID": [["ep1", "ep2"]]},
-            index=pd.Index(["pep1"], name="CodeName"),
-        )
         updated, _, _ = filter_peptide_sets(
             psea, gmt, set(), 0.05, 1.0, True,
-            epitope_map=epitope_map, peptide_map=peptide_map,
+            epitope_map=epitope_map
         )
         sp2_genes = updated[updated["term"] == "sp2"]["gene"].tolist()
         self.assertNotIn("ep1", sp2_genes)
         self.assertNotIn("ep2", sp2_genes)
 
-
-# ---------------------------------------------------------------------------
-# _get_mapped_features — unit tests
-# ---------------------------------------------------------------------------
-
-class TestGetMappedFeatures(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    # epitope_map: indexed by EpitopeID, 'CodeName' cell is a list of peptide
-    # names that belong to that epitope (mirrors create_epitope_map output).
-    # peptide_map: indexed by CodeName, 'EpitopeID' cell is a list of epitope
-    # IDs that share that peptide (mirrors create_epitope_map output).
-
-    def _make_maps(self, ep_to_peps, pep_to_eps):
-        """Build minimal epitope_map and peptide_map fixtures.
-
-        ep_to_peps : dict[str, list[str]]   epitope → peptides
-        pep_to_eps : dict[str, list[str]]   peptide → epitopes
-        """
-        epitope_map = pd.DataFrame(
-            {"CodeName": list(ep_to_peps.values())},
-            index=pd.Index(list(ep_to_peps.keys()), name="EpitopeID"),
-        )
-        peptide_map = pd.DataFrame(
-            {"EpitopeID": list(pep_to_eps.values())},
-            index=pd.Index(list(pep_to_eps.keys()), name="CodeName"),
-        )
-        return epitope_map, peptide_map
-
-    def test_single_feature_returns_sibling_epitopes(self):
-        # ep1 maps to pep1; pep1 is also shared by ep2
-        emap, pmap = self._make_maps(
-            {"ep1": ["pep1"], "ep2": ["pep1"]},
-            {"pep1": ["ep1", "ep2"]},
-        )
-        result = _get_mapped_features(emap, pmap, {"ep1"})
-        self.assertEqual(result, {"ep1", "ep2"})
-
-    def test_feature_with_no_shared_peptide_returns_only_itself(self):
-        emap, pmap = self._make_maps(
-            {"ep1": ["pep1"], "ep2": ["pep2"]},
-            {"pep1": ["ep1"], "pep2": ["ep2"]},
-        )
-        result = _get_mapped_features(emap, pmap, {"ep1"})
-        self.assertEqual(result, {"ep1"})
-
-    def test_multiple_features_union_all_siblings(self):
-        emap, pmap = self._make_maps(
-            {"ep1": ["pep1"], "ep2": ["pep1"],
-             "ep3": ["pep2"], "ep4": ["pep2"]},
-            {"pep1": ["ep1", "ep2"], "pep2": ["ep3", "ep4"]},
-        )
-        result = _get_mapped_features(emap, pmap, {"ep1", "ep3"})
-        self.assertEqual(result, {"ep1", "ep2", "ep3", "ep4"})
-
-    def test_epitope_mapping_multiple_peptides(self):
-        # ep1 maps to two peptides; each peptide brings in another epitope
-        emap, pmap = self._make_maps(
-            {"ep1": ["pep1", "pep2"], "ep2": ["pep1"], "ep3": ["pep2"]},
-            {"pep1": ["ep1", "ep2"], "pep2": ["ep1", "ep3"]},
-        )
-        result = _get_mapped_features(emap, pmap, {"ep1"})
-        self.assertEqual(result, {"ep1", "ep2", "ep3"})
-
-    def test_empty_features_returns_empty_set(self):
-        emap, pmap = self._make_maps(
-            {"ep1": ["pep1"]},
-            {"pep1": ["ep1"]},
-        )
-        result = _get_mapped_features(emap, pmap, set())
-        self.assertEqual(result, set())
-
-
 # ---------------------------------------------------------------------------
 # remove_peptides — unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestRemovePeptides(TestPluginBase):
     package = "q2_PSEA.tests"

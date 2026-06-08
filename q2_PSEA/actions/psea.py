@@ -28,7 +28,6 @@ def make_psea_table(
     threshold: float,
     peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
-    peptide_map: qiime2.Artifact = None,
     scores_map: qiime2.Artifact = None,
     peptide_sets_map: qiime2.Artifact = None,
     collapse: str = "Viral",
@@ -114,13 +113,6 @@ def make_psea_table(
             " providing mapped artifacts."
         )
 
-    if use_epitope_mapping and map_provided and iterative_analysis and not peptide_map:
-        raise ValueError(
-            "If doing mapped iterative analysis, you must pass in a"
-            " peptide_map, or not provide mapped Artifacts and allow this"
-            " pipeline to do the mapping."
-        )
-
     _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
     _process_scores = ctx.get_action("psea", "_process_scores")
     _split_scores = ctx.get_action("psea", "_split_scores")
@@ -161,9 +153,7 @@ def make_psea_table(
         create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map, peptide_map = create_epitope_map(
-            peptide_metadata, collapse
-        )
+        epitope_map, = create_epitope_map(peptide_metadata, collapse)
         scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
         peptide_sets_map, = create_epitope_gmt(epitope_map)
 
@@ -229,7 +219,6 @@ def make_psea_table(
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 epitope_map=epitope_map,
-                peptide_map=peptide_map,
                 mapped_peptide_sets=peptide_sets_map,
                 threshold=threshold,
                 permutation_num=permutation_num,
@@ -324,7 +313,6 @@ def _run_iterative_process_single_pair(
     enrichment_score: float,
     precomputed_fit: pd.DataFrame = None,
     epitope_map: pd.DataFrame = None,
-    peptide_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
     seed: CaptureHolder[int] = None,
     include_negative_enrichment: bool = True,
@@ -392,7 +380,6 @@ def _run_iterative_process_single_pair(
                 enrichment_score,
                 include_negative_enrichment,
                 epitope_map=epitope_map,
-                peptide_map=peptide_map
             )
 
         print(f"ITERATION: {iteration}")

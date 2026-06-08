@@ -6,7 +6,6 @@ from q2_pepsirf.format_types import (
     Enriched,
     Epitope,
     MappedEpitope,
-    MappedPeptide,
     GMT,
     Zscore,
     PSEAAECounts,
@@ -311,7 +310,6 @@ plugin.methods.register_function(
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
         "epitope_map": FeatureData[MappedEpitope],
-        "peptide_map": FeatureData[MappedPeptide],
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
@@ -366,10 +364,6 @@ plugin.methods.register_function(
             "Optional epitope map passed in if data is collapsed to epitope"
             " level."
         ),
-        "peptide_map": (
-            "Optional peptide map passed in if data is collapsed to peptide"
-            " level."
-        ),
         "mapped_peptide_sets": (
             "Optional mapped peptide sets passed in if data is collapsed to"
             " epitope level."
@@ -406,7 +400,6 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "peptide_metadata": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
-        "peptide_map": FeatureData[MappedPeptide],
         "scores_map": FeatureTable[Zscore % Properties("mapped")],
         "peptide_sets_map": GMT % Properties("mapped")
     },
@@ -478,7 +471,7 @@ plugin.pipelines.register_function(
             "If true, the analysis will be run with data collapsed to epitope"
             " level. This requires you to either pass 'peptide_metadata' so"
             " the pipeline can do the collapsing, or all of epitope_map,"
-            " scores_map, and peptide_sets_map along with peptide_map"
+            " scores_map, and peptide_sets_map"
         ),
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
@@ -511,13 +504,6 @@ plugin.pipelines.register_function(
             "Optional already collapsed epitope table. When provided, this"
             " table is used in GSEA. Maps epitopes to peptides and species."
             "NOTE: Must be passed with scores_map and peptide_sets_map."
-        ),
-        "peptide_map": (
-            "Optional already collapsed epitope table. When provided, this "
-            " table is used to aid in filtering species in iterative analysis"
-            " in GSEA. Maps peptides to epitopes."
-            "NOTE: Must be passed with epitope_map, scores_map, peptide_sets_map"
-            ", and iterative analysis."
         ),
         "scores_map": (
             "Optional already collapsed zscores. When provided, these"
@@ -732,8 +718,7 @@ plugin.methods.register_function(
         'collapse': Str % Choices(['Bacterial', 'Viral', 'Both'])
     },
     outputs=[
-        ('epitope_map', FeatureData[MappedEpitope]),
-        ('peptide_map', FeatureData[MappedPeptide])
+        ('epitope_map', FeatureData[MappedEpitope])
     ],
     input_descriptions={'epitope': 'FeatureTable containing at least '
                         'CodeName, SpeciesID, ClusterID, EpitopeWindow, '
@@ -741,7 +726,6 @@ plugin.methods.register_function(
     parameter_descriptions={},
     output_descriptions={
         'epitope_map': 'FeatureTable mapping epitopes to peptides and species',
-        'peptide_map': 'FeatureTable mapping peptides to epitopes'
     },
     name='create epitope map',
     description='Creates the fully defined epitope name '

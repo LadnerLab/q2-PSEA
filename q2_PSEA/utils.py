@@ -22,7 +22,6 @@ def filter_peptide_sets(
             enrichment_score: int,
             include_negative_enrichment: bool,
             epitope_map: pd.DataFrame = None,
-            peptide_map: pd.DataFrame = None,
         ) -> tuple[pd.DataFrame, set, bool]:
     psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)
 
@@ -38,11 +37,6 @@ def filter_peptide_sets(
         ):
             all_tested_features = set(row["all_tested_peptides"].split("/"))
 
-            if peptide_map is not None:
-                all_tested_features = _get_mapped_features(
-                    epitope_map, peptide_map, all_tested_features
-                )
-
             mask = (
                 (updated_peptide_sets["term"].astype(str) != row_id)
                 & updated_peptide_sets["gene"].isin(all_tested_features)
@@ -55,40 +49,6 @@ def filter_peptide_sets(
         sig_found = False
 
     return updated_peptide_sets, tested_species, sig_found
-
-
-def _get_mapped_features(epitope_map, peptide_map, all_tested_features):
-    """
-    This function is only run if we are using epitope mapping. An epitope maps
-    to one peptide and one species; however, multiple epitopes from multiple
-    species can map to the same peptide. We need to map epitopes we hit back
-    to peptides so we can get all the epitopes that map to that peptide.
-
-    Parameters
-    ----------
-    epitope_map : pd.DataFrame
-        Maps epitopes to peptides.
-    peptide_map : pd.DataFrame
-        Maps peptides to epitopes.
-    all_tested_features : set[str]
-        A set of all features, epitopes or peptides that have been tested so
-        far.
-
-    Returns
-    -------
-    set[str]
-        All features the peptide we tested map to
-    """
-    expanded = set()
-
-    for tested_feature in all_tested_features:
-        codenames = epitope_map.loc[tested_feature, 'CodeName']
-        for codename in codenames:
-            expanded = expanded.union(
-                set(peptide_map.loc[codename, 'EpitopeID'])
-            )
-
-    return expanded
 
 
 def collapse_residuals_to_epitope(peptide_residuals, epitope_map):

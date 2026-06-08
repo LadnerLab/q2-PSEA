@@ -25,13 +25,7 @@ def create_epitope_map(
             'EpitopeID').agg(list).reset_index()
     epitope_map.set_index('EpitopeID', inplace=True)
 
-    peptide_map = \
-        epitope.groupby(
-            'CodeName').agg(list).reset_index()
-    peptide_map = peptide_map[['CodeName', 'EpitopeID']]
-    peptide_map.set_index('CodeName', inplace=True)
-
-    return epitope_map, peptide_map
+    return epitope_map
 
 
 def epitope_zscore(
