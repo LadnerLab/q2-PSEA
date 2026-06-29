@@ -6,7 +6,7 @@ from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 from scipy import interpolate
 
 
-SPLINE_TYPES = ["r-smooth", "py-smooth", "cubic"]
+SPLINE_TYPES = ["r-smooth", "py-smooth", "cubic", "linear"]
 
 
 def smooth_spline(x, y, knots=3, s=0.788458):
@@ -31,6 +31,25 @@ def smooth_spline(x, y, knots=3, s=0.788458):
     q_knots = np.quantile(x, x_new)
     t, c, k = interpolate.splrep(x, y, t=q_knots, s=s)
     return interpolate.BSpline(t, c, k)(x)
+
+
+def linear_regression(x, y, x_pred=None, through_origin=False):
+    """Returns predicted values based on a linear fit from (x, y)."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    if x_pred is None:
+        x_pred = x
+
+    if through_origin:
+        denom = np.dot(x, x)
+        if denom == 0:
+            raise ValueError("Cannot fit through origin: all x values are zero.")
+        slope = np.dot(x, y) / denom
+        return slope * np.asarray(x_pred)
+
+    slope, intercept = np.polyfit(x, y, 1)
+    return slope * np.asarray(x_pred) + intercept
 
 
 r_splines = """

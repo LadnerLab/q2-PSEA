@@ -38,6 +38,8 @@ def make_psea_table(
     max_size: int = 2000,
     permutation_num: int = 10000,
     spline_type: str = "r-smooth",
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
     degree: int = 3,
     dof: int = None,
     iterative_analysis: bool = True,
@@ -46,6 +48,8 @@ def make_psea_table(
     species_colors: qiime2.Metadata = None,
     use_epitope_mapping: bool = True,
     residual_threshold: float = .5,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
@@ -199,6 +203,8 @@ def make_psea_table(
             processed_zscores=split_processed_zscores[pair],
             pair=pair,
             spline_type=spline_type,
+            fit_threshold=fit_threshold,
+            linear_through_origin=linear_through_origin,
             degree=degree,
             epitope_map=epitope_map,
             dof=dof,
@@ -232,6 +238,8 @@ def make_psea_table(
                 species_taxa=species_taxa,
                 debug_per_iteration_table_path=debug_per_iteration_table_path,
                 pair=pair,
+                residual_abs_thresh=residual_abs_thresh,
+                residual_min_peptides=residual_min_peptides,
             )
         else:
             pair_pep_sets_dict[pair] = \
@@ -250,6 +258,8 @@ def make_psea_table(
             seed=seed,
             species_taxa=species_taxa,
             precomputed_fit=pair_splines[pair],
+            residual_abs_thresh=residual_abs_thresh,
+            residual_min_peptides=residual_min_peptides,
         )
 
         enrichment_tables[pair], = count_enriched(
@@ -319,7 +329,9 @@ def _run_iterative_process_single_pair(
     include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
     debug_per_iteration_table_path: str = None,
-    pair: str = None
+    pair: str = None,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
 ) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
@@ -363,6 +375,8 @@ def _run_iterative_process_single_pair(
             seed=seed,
             species_taxa=species_taxa,
             precomputed_fit=precomputed_fit,
+            residual_abs_thresh=residual_abs_thresh,
+            residual_min_peptides=residual_min_peptides,
         )
 
         if debug_per_iteration_table_path:
@@ -397,6 +411,8 @@ def _create_fgsea_table_for_pair(
     max_size: int,
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -428,6 +444,12 @@ def _create_fgsea_table_for_pair(
     idx = filtered_zscores.index
     maxZ = maxZ_all.reindex(idx)
     deltaZ = deltaZ_all.reindex(idx)
+    peptide_sets_for_analysis = utils.filter_peptide_sets_by_residual(
+        peptide_sets_for_analysis,
+        deltaZ,
+        residual_abs_thresh=residual_abs_thresh,
+        residual_min_peptides=residual_min_peptides,
+    )
 
     # This ought to ensure this file is accessible where this code is actually
     # being run if run cross node on HPC for instance
@@ -516,6 +538,8 @@ def _compute_pair_fit_and_residuals(
     pair: str,
     spline_type: str,
     degree: int,
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
     epitope_map: pd.DataFrame = None,
     dof: int = None,
 ) -> pd.DataFrame:
@@ -543,6 +567,28 @@ def _compute_pair_fit_and_residuals(
         yfit = splines.smooth_spline(x, y)
     elif spline_type == "py-LinearGAM":
         yfit = splines.smooth_gam(x, y)
+    elif spline_type == "linear":
+        if fit_threshold is not None:
+            filtered_mask = (x > fit_threshold) & (y > fit_threshold)
+            x_filtered = x[filtered_mask]
+            y_filtered = y[filtered_mask]
+        else:
+            x_filtered, y_filtered = x, y
+
+        if len(x_filtered) < 2 or len(y_filtered) < 2:
+            raise ValueError(
+                "Not enough points to fit linear spline after threshold"
+                f" filter: len(x_filtered)={len(x_filtered)},"
+                f" len(y_filtered)={len(y_filtered)},"
+                f" fit_threshold={fit_threshold}, pair={pair}"
+            )
+
+        yfit = splines.linear_regression(
+            x_filtered,
+            y_filtered,
+            x_pred=x,
+            through_origin=linear_through_origin,
+        )
     elif spline_type == "cubic":
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
