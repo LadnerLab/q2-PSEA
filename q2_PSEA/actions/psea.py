@@ -592,6 +592,8 @@ def _compute_pair_fit_and_residuals(
     elif spline_type == "cubic":
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.cubic_spline(x, y, degree, dof)
+    elif spline_type == "natural-cubic":
+        yfit = splines.natural_cubic_spline(x, y)
     else:
         with numpy2ri.converter.context():
             yfit = splines.R_SPLINES.smooth_spline(x, y)
