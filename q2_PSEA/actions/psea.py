@@ -215,6 +215,22 @@ def make_psea_table(
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
+            # TODO: Look into determining if species have changed and only
+            # calling the R GSEA function on those that have.
+            #
+            # 1. For the first iteration use the full GMT file.
+            #
+            # 2. Track species for which the list of peptides changed from the
+            # previous iteration and only pass those to R GSEA. For any species
+            # for which their peptide lists did not change then just copy the
+            # previous iterations GSEA results and append them to the new
+            # iterations R GSEA outputs.
+            #
+            # One thing we will have to be careful of is the p.adjust and
+            # qvalues will need to be recalculated after the table is merged
+            # back together because R GSEA will base these on only the species
+            # for which their peptide lists changed, not the full number of
+            # species.
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
                 processed_zscores=used_zscores,
                 peptide_sets=peptide_sets,
@@ -299,6 +315,12 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
+    # TODO: Create a wrapper that unzips these in manner discussed previously
+    # i.e. output unzipped raw files along with manifests keeping track of them
+    # Also, include imports in the wrapper so
+    # 1. import
+    # 2. run
+    # 3. export
     return (scatter_plots, volcano_plots, ae_plot, psea_tables,
             enrichment_tables)
 
