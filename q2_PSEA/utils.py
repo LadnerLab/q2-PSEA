@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 
 def remove_peptides(scores, peptide_sets) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -48,6 +49,36 @@ def filter_peptide_sets(
         sig_found = False
 
     return updated_peptide_sets, tested_species, sig_found
+
+
+def filter_peptide_sets_by_residual(
+    peptide_sets: pd.DataFrame,
+    deltaZ: pd.Series,
+    residual_abs_thresh: float,
+    residual_min_peptides: int = 1,
+    species_col: str = "term",
+    gene_col: str = "gene",
+) -> pd.DataFrame:
+    if residual_abs_thresh is None:
+        return peptide_sets
+
+    df = peptide_sets.copy()
+    abs_residuals = deltaZ.abs()
+    df["_passes_residual_threshold"] = (
+        df[gene_col].map(abs_residuals).fillna(-np.inf)
+        > residual_abs_thresh
+    )
+
+    keep_species = (
+        df.groupby(species_col)["_passes_residual_threshold"]
+        .sum()
+        .loc[lambda counts: counts >= residual_min_peptides]
+        .index
+    )
+
+    return df[df[species_col].isin(keep_species)].drop(
+        columns="_passes_residual_threshold"
+    )
 
 
 def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
