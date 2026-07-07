@@ -137,6 +137,8 @@ plugin.methods.register_function(
     parameters={
         "pair": Str,
         "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "fit_threshold": Float,
+        "linear_through_origin": Bool,
         "degree": Int,
         "dof": Int,
     },
@@ -153,6 +155,15 @@ plugin.methods.register_function(
     parameter_descriptions={
         "pair": "Name of the pair.",
         "spline_type": "Spline method used to fit the Z-score scatter.",
+        "fit_threshold": (
+            "Optional threshold used only for linear spline fitting; only"
+            " points where x and y are both greater than this threshold are"
+            " used to fit the line."
+        ),
+        "linear_through_origin": (
+            "If True and spline_type is linear, force the regression line"
+            " through (0, 0)."
+        ),
         "degree": (
             "Polynomial degree for spline fitting (affects 'cubic' only)."
         ),
@@ -249,6 +260,8 @@ plugin.methods.register_function(
         "max_size": Int,
         "seed": Int,
         "species_taxa": Metadata,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int,
     },
     parameter_descriptions={
         "threshold": (
@@ -270,6 +283,14 @@ plugin.methods.register_function(
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
             " When provided, enrichment results are annotated with species"
             " names."
+        ),
+        "residual_abs_thresh": (
+            "Optional absolute residual threshold for peptide-set filtering"
+            " before GSEA."
+        ),
+        "residual_min_peptides": (
+            "Minimum number of peptides required per species with absolute"
+            " residual greater than residual_abs_thresh to keep that species."
         ),
     },
     input_descriptions={
@@ -324,6 +345,8 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
         "debug_per_iteration_table_path": Str,
         "pair": Str,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int,
     },
     parameter_descriptions={
         "threshold": "Minimum Z-score for GSEA inclusion.",
@@ -351,6 +374,14 @@ plugin.methods.register_function(
         "pair": (
             "The name of the pair we are running iterative analysis on. Only"
             " needed when writing debug tables."
+        ),
+        "residual_abs_thresh": (
+            "Optional absolute residual threshold for peptide-set filtering"
+            " before each GSEA run."
+        ),
+        "residual_min_peptides": (
+            "Minimum number of peptides required per species with absolute"
+            " residual greater than residual_abs_thresh to keep that species."
         ),
     },
     input_descriptions={
@@ -413,6 +444,8 @@ plugin.pipelines.register_function(
         "max_size": Int,
         "permutation_num": Int,
         "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "fit_threshold": Float,
+        "linear_through_origin": Bool,
         "degree": Int,
         "dof": Int,
         "iterative_analysis": Bool,
@@ -421,6 +454,8 @@ plugin.pipelines.register_function(
         "species_colors": Metadata,
         "use_epitope_mapping": Bool,
         "residual_threshold": Float,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int,
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
@@ -446,6 +481,15 @@ plugin.pipelines.register_function(
             " ~1/perm."
         ),
         "spline_type": "Spline method used to fit the Z-score scatter.",
+        "fit_threshold": (
+            "Optional threshold used only for linear spline fitting; only"
+            " points where x and y are both greater than this threshold are"
+            " used to fit the line."
+        ),
+        "linear_through_origin": (
+            "If True and spline_type is linear, force the regression line"
+            " through (0, 0)."
+        ),
         "degree": (
             "Polynomial degree for spline fitting (affects 'cubic' only)."
         ),
@@ -476,6 +520,14 @@ plugin.pipelines.register_function(
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
             " be counted in count_enriched."
+        ),
+        "residual_abs_thresh": (
+            "Optional absolute residual threshold for peptide-set filtering"
+            " before GSEA."
+        ),
+        "residual_min_peptides": (
+            "Minimum number of peptides required per species with absolute"
+            " residual greater than residual_abs_thresh to keep that species."
         ),
         "debug_per_iteration_table_path": (
             "Path to write per pair and per iteration psea tables to as .tsvs."

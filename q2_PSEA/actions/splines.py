@@ -6,7 +6,7 @@ from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 from scipy import interpolate
 
 
-SPLINE_TYPES = ["r-smooth", "py-smooth", "cubic"]
+SPLINE_TYPES = ["r-smooth", "py-smooth", "cubic", "natural-cubic", "linear"]
 
 
 def smooth_spline(x, y, knots=3, s=0.788458):
@@ -31,6 +31,42 @@ def smooth_spline(x, y, knots=3, s=0.788458):
     q_knots = np.quantile(x, x_new)
     t, c, k = interpolate.splrep(x, y, t=q_knots, s=s)
     return interpolate.BSpline(t, c, k)(x)
+
+
+def natural_cubic_spline(x, y):
+    """Returns predicted values from a natural cubic spline."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    x_unique, inverse = np.unique(x, return_inverse=True)
+    if len(x_unique) < 2:
+        raise ValueError(
+            "Cannot fit natural cubic spline: at least two unique x values"
+            " are required."
+        )
+
+    y_unique = np.bincount(inverse, weights=y) / np.bincount(inverse)
+    spline = interpolate.CubicSpline(x_unique, y_unique, bc_type="natural")
+    return spline(x)
+
+
+def linear_regression(x, y, x_pred=None, through_origin=False):
+    """Returns predicted values based on a linear fit from (x, y)."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    if x_pred is None:
+        x_pred = x
+
+    if through_origin:
+        denom = np.dot(x, x)
+        if denom == 0:
+            raise ValueError("Cannot fit through origin: all x values are zero.")
+        slope = np.dot(x, y) / denom
+        return slope * np.asarray(x_pred)
+
+    slope, intercept = np.polyfit(x, y, 1)
+    return slope * np.asarray(x_pred) + intercept
 
 
 r_splines = """
@@ -71,6 +107,7 @@ cubic_spline <- function(x, y, degree, df)
 
     return(cubic_spline_preds$fit)
 }
+
 """
 
 R_SPLINES = SignatureTranslatedAnonymousPackage(r_splines, "internal")
