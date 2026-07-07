@@ -385,9 +385,22 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
+    last_psea_table = None
+    current_psea_table = None
+    unchanged_taxa = None
     while (sig_found):
+        # TODO: First iteration pass everything
+        #
+        # After first iteration, calc diff and only pass forward taxa that
+        # changed in last iteration drop taxa that did not change from gmt
+        # before next iteration.
+        if last_psea_table is not None:
+            # Do whatever diff calc here
+            pass
+
         # Called as a raw Python function not a QIIME 2 Method
-        psea_table = _create_fgsea_table_for_pair(
+        last_psea_table = current_psea_table
+        current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=updated_peptide_sets,
             threshold=threshold,
@@ -402,7 +415,7 @@ def _run_iterative_process_single_pair(
         )
 
         if debug_per_iteration_table_path:
-            psea_table.to_csv(
+            current_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -410,7 +423,7 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                psea_table,
+                current_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
@@ -419,6 +432,9 @@ def _run_iterative_process_single_pair(
             )
 
         iteration += 1
+
+    # TODO: Add back unchanged taxa here and recalc p.adj and q... This means
+    # we do actually have to track all taxa
 
     return updated_peptide_sets
 
