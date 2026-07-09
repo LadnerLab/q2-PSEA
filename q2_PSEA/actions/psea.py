@@ -361,9 +361,21 @@ def _run_iterative_process_single_pair(
         if not pair:
             raise ValueError("Pair name must be provided when debugging.")
 
-        os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
+        debug_pair_path = os.path.join(debug_per_iteration_table_path, pair)
+        os.mkdir(debug_pair_path)
+        selected_species_debug = []
+    else:
+        debug_pair_path = None
+        selected_species_debug = None
 
     while (sig_found):
+        if debug_pair_path:
+            updated_peptide_sets.to_csv(
+                os.path.join(
+                    debug_pair_path, f'{iteration}_gmt_before_filter.tsv'
+                ), sep='\t', index=False
+            )
+
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
@@ -382,8 +394,29 @@ def _run_iterative_process_single_pair(
         if debug_per_iteration_table_path:
             psea_table.to_csv(
                 os.path.join(
-                    debug_per_iteration_table_path, pair, f'{iteration}.tsv'
+                    debug_pair_path, f'{iteration}.tsv'
                 ), sep='\t', index=False
+            )
+            _format_species_id_audit(
+                psea_table,
+                updated_peptide_sets,
+            ).to_csv(
+                os.path.join(
+                    debug_pair_path, f'{iteration}_species_id_audit.tsv'
+                ), sep='\t', index=False
+            )
+
+        debug_selected_row = None
+        if debug_pair_path:
+            debug_selected_row = _get_selected_iteration_row(
+                psea_table,
+                tested_species,
+                p_value,
+                enrichment_score,
+                include_negative_enrichment,
+            )
+            before_term_counts = (
+                updated_peptide_sets["term"].astype(str).value_counts()
             )
 
         updated_peptide_sets, tested_species, sig_found = \
@@ -396,9 +429,144 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
+        if debug_pair_path:
+            updated_peptide_sets.to_csv(
+                os.path.join(
+                    debug_pair_path, f'{iteration}_gmt_after_filter.tsv'
+                ), sep='\t', index=False
+            )
+            selected_species_debug.append(
+                _format_selected_species_debug(
+                    iteration,
+                    debug_selected_row,
+                    sig_found,
+                    before_term_counts,
+                    updated_peptide_sets,
+                )
+            )
+            pd.DataFrame(selected_species_debug).to_csv(
+                os.path.join(debug_pair_path, "selected_species.tsv"),
+                sep='\t',
+                index=False,
+            )
+
         iteration += 1
 
     return updated_peptide_sets
+
+
+def _get_selected_iteration_row(
+    psea_table: pd.DataFrame,
+    tested_species: set,
+    p_value: float,
+    enrichment_score: float,
+    include_negative_enrichment: bool,
+) -> pd.Series:
+    psea_table = psea_table.sort_values(by=["p.adjust"], ascending=True)
+
+    for _, row in psea_table.iterrows():
+        row_id = str(row["ID"])
+        if (
+            row["p.adjust"] < p_value
+            and (abs(row["NES"]) > enrichment_score
+                 if include_negative_enrichment
+                 else row["NES"] > enrichment_score)
+            and row_id not in tested_species
+        ):
+            return row
+
+    return None
+
+
+def _format_selected_species_debug(
+    iteration: int,
+    selected_row: pd.Series,
+    sig_found: bool,
+    before_term_counts: pd.Series,
+    updated_peptide_sets: pd.DataFrame,
+) -> dict:
+    if selected_row is None:
+        return {
+            "iteration": iteration,
+            "sig_found": sig_found,
+            "selected_row_id": "",
+            "selected_row_id_raw": "",
+            "selected_row_id_type": "",
+            "species_name": "",
+            "p.adjust": "",
+            "pvalue": "",
+            "NES": "",
+            "enrichmentScore": "",
+            "all_tested_peptides": "",
+            "core_enrichment": "",
+            "gmt_rows_before_for_selected_id": "",
+            "gmt_rows_after_for_selected_id": "",
+            "gmt_rows_removed_for_selected_id": "",
+        }
+
+    selected_id_raw = selected_row["ID"]
+    selected_row_id = str(selected_id_raw)
+    after_term_counts = updated_peptide_sets["term"].astype(str).value_counts()
+    before_count = int(before_term_counts.get(selected_row_id, 0))
+    after_count = int(after_term_counts.get(selected_row_id, 0))
+
+    return {
+        "iteration": iteration,
+        "sig_found": sig_found,
+        "selected_row_id": selected_row_id,
+        "selected_row_id_raw": repr(selected_id_raw),
+        "selected_row_id_type": type(selected_id_raw).__name__,
+        "species_name": selected_row.get("species_name", ""),
+        "p.adjust": selected_row.get("p.adjust", ""),
+        "pvalue": selected_row.get("pvalue", ""),
+        "NES": selected_row.get("NES", ""),
+        "enrichmentScore": selected_row.get("enrichmentScore", ""),
+        "all_tested_peptides": selected_row.get("all_tested_peptides", ""),
+        "core_enrichment": selected_row.get("core_enrichment", ""),
+        "gmt_rows_before_for_selected_id": before_count,
+        "gmt_rows_after_for_selected_id": after_count,
+        "gmt_rows_removed_for_selected_id": before_count - after_count,
+    }
+
+
+def _format_species_id_audit(
+    psea_table: pd.DataFrame,
+    updated_peptide_sets: pd.DataFrame,
+) -> pd.DataFrame:
+    audit_rows = []
+
+    for value, count in psea_table["ID"].value_counts(dropna=False).items():
+        audit_rows.append(_format_species_id_audit_row("psea", value, count))
+
+    for value, count in (
+        updated_peptide_sets["term"].value_counts(dropna=False).items()
+    ):
+        audit_rows.append(_format_species_id_audit_row("gmt", value, count))
+
+    return pd.DataFrame(
+        audit_rows,
+        columns=[
+            "source",
+            "id_value",
+            "id_raw",
+            "id_type",
+            "count",
+        ],
+    )
+
+
+def _format_species_id_audit_row(
+    source: str,
+    value,
+    count: int,
+) -> dict:
+    return {
+        "source": source,
+        "id_value": str(value),
+        "id_raw": repr(value),
+        "id_type": type(value).__name__,
+        "count": count,
+    }
 
 
 def _create_fgsea_table_for_pair(

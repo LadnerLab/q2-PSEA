@@ -367,9 +367,10 @@ plugin.methods.register_function(
             "Optional Metadata mapping species names (IDs) to taxonomy IDs."
         ),
         "debug_per_iteration_table_path": (
-            "Path to write per pair and per iteration psea tables to as .tsvs."
-            " Only to be used when debugging and meaningless if not doing"
-            " iterative analysis."
+            "Path to write per-pair debug TSVs: each iteration's PSEA table,"
+            " GMT before filtering, GMT after filtering, and selected species"
+            " summary. Only to be used when debugging and meaningless if not"
+            " doing iterative analysis."
         ),
         "pair": (
             "The name of the pair we are running iterative analysis on. Only"
@@ -530,9 +531,10 @@ plugin.pipelines.register_function(
             " residual greater than residual_abs_thresh to keep that species."
         ),
         "debug_per_iteration_table_path": (
-            "Path to write per pair and per iteration psea tables to as .tsvs."
-            " Only to be used when debugging and meaningless if not doing"
-            " iterative analysis."
+            "Path to write per-pair debug TSVs: each iteration's PSEA table,"
+            " GMT before filtering, GMT after filtering, and selected species"
+            " summary. Only to be used when debugging and meaningless if not"
+            " doing iterative analysis."
         ),
     },
     input_descriptions={
