@@ -375,6 +375,21 @@ def _run_iterative_process_single_pair(
                     debug_pair_path, f'{iteration}_gmt_before_filter.tsv'
                 ), sep='\t', index=False
             )
+            debug_gene_list, debug_pathway_summary = _format_gene_list_debug(
+                processed_zscores,
+                updated_peptide_sets,
+                precomputed_fit,
+                threshold,
+                min_size,
+                max_size,
+                residual_abs_thresh,
+                residual_min_peptides,
+            )
+            debug_gene_list.to_csv(
+                os.path.join(debug_pair_path, f'{iteration}_gene_list.tsv'),
+                sep='\t',
+                index=False,
+            )
 
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = _create_fgsea_table_for_pair(
@@ -403,6 +418,16 @@ def _run_iterative_process_single_pair(
             ).to_csv(
                 os.path.join(
                     debug_pair_path, f'{iteration}_species_id_audit.tsv'
+                ), sep='\t', index=False
+            )
+            returned_terms = set(psea_table["ID"].astype(str))
+            debug_pathway_summary["returned_in_psea_table"] = (
+                debug_pathway_summary["term"].astype(str).isin(returned_terms)
+            )
+            debug_pathway_summary.to_csv(
+                os.path.join(
+                    debug_pair_path,
+                    f'{iteration}_pathway_gene_list_overlap.tsv'
                 ), sep='\t', index=False
             )
 
@@ -567,6 +592,68 @@ def _format_species_id_audit_row(
         "id_type": type(value).__name__,
         "count": count,
     }
+
+
+def _format_gene_list_debug(
+    processed_zscores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    precomputed_fit: pd.DataFrame,
+    threshold: float,
+    min_size: int,
+    max_size: int,
+    residual_abs_thresh: float,
+    residual_min_peptides: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    processed_zscores = processed_zscores.transpose()
+    maxZ_all = precomputed_fit["maxZ"].dropna()
+    deltaZ_all = precomputed_fit["deltaZ"].dropna()
+
+    filtered_zscores, peptide_sets_for_analysis = utils.remove_peptides(
+        processed_zscores,
+        peptide_sets,
+    )
+
+    idx = filtered_zscores.index
+    maxZ = maxZ_all.reindex(idx)
+    deltaZ = deltaZ_all.reindex(idx)
+    peptide_sets_for_analysis = utils.filter_peptide_sets_by_residual(
+        peptide_sets_for_analysis,
+        deltaZ,
+        residual_abs_thresh=residual_abs_thresh,
+        residual_min_peptides=residual_min_peptides,
+    )
+
+    gene_list_mask = (maxZ > threshold) & (deltaZ != 0)
+    gene_list = (
+        pd.DataFrame({
+            "gene": deltaZ[gene_list_mask].index,
+            "deltaZ": deltaZ[gene_list_mask].values,
+            "maxZ": maxZ[gene_list_mask].values,
+        })
+        .sort_values("deltaZ", ascending=False)
+        .reset_index(drop=True)
+    )
+    gene_list.insert(0, "rank", range(1, len(gene_list) + 1))
+
+    gene_list_genes = set(gene_list["gene"])
+    pathway_summary = (
+        peptide_sets_for_analysis
+        .groupby("term")["gene"]
+        .agg(
+            raw_gene_count="count",
+            unique_gene_count=lambda genes: len(set(genes)),
+            gene_list_overlap=lambda genes: len(set(genes) & gene_list_genes),
+        )
+        .reset_index()
+    )
+    pathway_summary["passes_min_size_by_overlap"] = (
+        pathway_summary["gene_list_overlap"] >= min_size
+    )
+    pathway_summary["passes_max_size_by_overlap"] = (
+        pathway_summary["gene_list_overlap"] <= max_size
+    )
+
+    return gene_list, pathway_summary
 
 
 def _create_fgsea_table_for_pair(
