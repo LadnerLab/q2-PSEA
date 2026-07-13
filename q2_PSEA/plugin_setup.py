@@ -823,17 +823,29 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=taxa_to_epitope,
     inputs={
-        'epitope': FeatureData[MappedEpitope],
+        'peptide_metadata': FeatureData[Epitope],
+        'peptide_sets': GMT,
     },
-    parameters={},
+    parameters={
+        'collapse': Str % Choices(['Bacterial', 'Viral', 'Both']),
+    },
     outputs=[
         ('epitope_gmt', GMT % Properties("mapped")),
     ],
     input_descriptions={
-        'epitope': 'Feature table containing at least SpeciesID, ClusterID, '
-                   'and EpitopeWindow columns',
+        'peptide_metadata': 'Feature table containing at least SpeciesID, '
+                            'ClusterID, and EpitopeWindow columns keyed on '
+                            'SpeciesID column.',
+        'peptide_sets': 'GMT file mapping species identifiers to the peptides '
+                        'linked to them. Collapsed to epitope level if '
+                        'epitope is provided.'
     },
-    parameter_descriptions={},
+    parameter_descriptions={
+        'collapse': (
+            'Category to collapse to epitope level. Only used when the'
+            ' epitope input is provided.'
+        ),
+    },
     output_descriptions={
         'epitope_gmt': 'GMT mapping SpeciesIDs to associated epitopes.',
     },
