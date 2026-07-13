@@ -160,6 +160,29 @@ def make_psea_table(
 
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
         scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
+        # TODO: Need to include unmapped GMT file here because same peptide can
+        # be mapped to by different epitopes and this does not capture that.
+        #
+        # NOTE: I'm not actually positive the above TODO is correct. This is
+        # being called with a collapsed epitope_map which maps epitopes to
+        # lists of peptides.
+        #
+        # I just came across something that we will need to update. When we are
+        # collapsing the peptides to the epitope level and creating the epitope
+        # level GMT that is currently only based on the input metadata file.
+        # The metadata only has the species from which the peptide was designed
+        # and does not control for similar peptides across multiple species.
+        # That information is in the peptide level GMT file that is input in
+        # the “--i-peptide-set” flag. We will also want to include the input
+        # peptide level GMT file as well when collapsing to the epitope level.
+        # For this we will want to take all of the species linked to all of the
+        # peptides in an epitope and link the epitope to all of those species
+        # in the new epitope level GMT file.
+        #
+        # The GMT file by default will also include the species the peptides
+        # were designed from, so the epitope level GMT creation could probably
+        # be solely based on the input peptide level GMT file using the peptide
+        # to epitope links created from the metadata file.
         peptide_sets_map, = create_epitope_gmt(epitope_map)
 
     # ------------------------------------------------------------------
@@ -395,7 +418,9 @@ def _run_iterative_process_single_pair(
         # changed in last iteration drop taxa that did not change from gmt
         # before next iteration.
         if last_psea_table is not None:
-            # Do whatever diff calc here
+            # Compare last_psea_table to current_psea_table. If a taxa did not
+            # have changes to its peptide list, drop it from
+            # updated_peptide_sets
             pass
 
         # Called as a raw Python function not a QIIME 2 Method

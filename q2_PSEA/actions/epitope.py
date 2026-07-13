@@ -60,6 +60,14 @@ def epitope_zscore(
     return result
 
 
+# TODO: Add the peptide level GMT to this.
+#
+# The original input metadata only maps a peptide to the species it was designed
+# from, but a peptide with the same designation can actually map to multiple species.
+#
+# This mapping is seen in the GMT file, and can be reverse engineered from there.
+#
+# Honestly, probably just go through the peptide level GMT and plop the epitopes in for the peptides
 def taxa_to_epitope(epitope: pd.DataFrame) -> pd.DataFrame:
     epitope = epitope.reset_index()
     epitope = epitope[['SpeciesID', 'EpitopeID']]
