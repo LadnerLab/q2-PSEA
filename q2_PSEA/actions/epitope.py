@@ -65,8 +65,8 @@ def taxa_to_epitope(
             peptide_sets: pd.DataFrame,
             collapse: bool = 'Viral'
         ) -> pd.DataFrame:
-    def _get_epitope_id(metadata_row):
-        peptide = metadata_row['gene']
+    def _get_epitope_id(row):
+        peptide = row['gene']
         metadata_row = peptide_metadata.loc[peptide]
         if collapse == 'Both' or metadata_row['Category'] == collapse:
             return \
