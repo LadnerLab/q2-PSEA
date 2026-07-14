@@ -65,17 +65,17 @@ def taxa_to_epitope(
             peptide_sets: pd.DataFrame,
             collapse: bool = 'Viral'
         ) -> pd.DataFrame:
-    def _get_epitope_id(peptide):
-        row = peptide_metadata.loc[peptide]
-        if collapse == 'Both' or row['Category'] == collapse:
+    def _get_epitope_id(metadata_row):
+        peptide = metadata_row['gene']
+        metadata_row = peptide_metadata.loc[peptide]
+        if collapse == 'Both' or metadata_row['Category'] == collapse:
             return \
-                f"{row['SpeciesID']}_{row['ClusterID']}_{row['EpitopeWindow']}"
+                f"{metadata_row['SpeciesID']}_{metadata_row['ClusterID']}_" \
+                f"{metadata_row['EpitopeWindow']}"
 
-        return row.name
+        return metadata_row.name
 
-    peptide_sets['gene'] = peptide_sets.apply(
-        lambda row: _get_epitope_id(row['gene']), axis=1
-    )
+    peptide_sets['gene'] = peptide_sets.apply(_get_epitope_id, axis=1)
     return peptide_sets
 
 
