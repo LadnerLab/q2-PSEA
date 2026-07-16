@@ -398,9 +398,9 @@ def _run_iterative_process_single_pair(
                 used_peptide_sets[used_peptide_sets['term'] != taxa]
 
     while (sig_found):
-        #  First iteration pass everything
+        # First two iterations pass everything
         #
-        # After first iteration, calc diff and only pass forward taxa that
+        # After first two iterations, calc diff and only pass forward taxa that
         # changed in last iteration drop taxa that did not change from gmt
         # before next iteration.
         if last_psea_table is not None:
@@ -425,11 +425,7 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
-        # Add back unchanged taxa here and recalc p.adj and q... This means we
-        # do have to track all taxa.
-        #
-        # Originally, I had this elsewhere, but I now believe it needs to
-        # happen here
+        # Add back unchanged taxa here and recalc p.adj and q
         readded_psea_table = pd.concat(
             [current_psea_table, *unchanged_taxa],
             ignore_index=True
