@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import copy
 import pandas as pd
 import qiime2
 import random
@@ -8,6 +9,7 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
+from statsmodels.stats.multitest import multipletests
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
@@ -223,22 +225,6 @@ def make_psea_table(
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
-            # TODO: Look into determining if species have changed and only
-            # calling the R GSEA function on those that have.
-            #
-            # 1. For the first iteration use the full GMT file.
-            #
-            # 2. Track species for which the list of peptides changed from the
-            # previous iteration and only pass those to R GSEA. For any species
-            # for which their peptide lists did not change then just copy the
-            # previous iterations GSEA results and append them to the new
-            # iterations R GSEA outputs.
-            #
-            # One thing we will have to be careful of is the p.adjust and
-            # qvalues will need to be recalculated after the table is merged
-            # back together because R GSEA will base these on only the species
-            # for which their peptide lists changed, not the full number of
-            # species.
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
                 processed_zscores=used_zscores,
                 peptide_sets=peptide_sets,
@@ -376,6 +362,7 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
+    used_peptide_sets = copy.deepcopy(updated_peptide_sets)
 
     tested_species = set()
     iteration = 1
@@ -389,9 +376,29 @@ def _run_iterative_process_single_pair(
 
     last_psea_table = None
     current_psea_table = None
-    unchanged_taxa = None
+    unchanged_taxa = []
+
+    def _filter_unchanged_taxa(current_psea_table_row):
+        # I hate using this, but Python is a dork about accessing external
+        # vars in closures sometimes. It's complaining because I overwrite this
+        # var in this closure
+        nonlocal used_peptide_sets
+
+        taxa = current_psea_table_row.name
+        last_psea_table_row = last_psea_table.loc[taxa]
+
+        if set(current_psea_table_row['core_enrichment']) == \
+                set(last_psea_table_row['core_enrichment']):
+            # Need to copy the row because it only adds a pointer to the object
+            # to the list. If I don't copy it we will end up with a bunch of
+            # pointers to the same object which will all be the last row we saw
+            # here.
+            unchanged_taxa.append(copy.deepcopy(current_psea_table_row))
+            used_peptide_sets = \
+                used_peptide_sets[used_peptide_sets['term'] != taxa]
+
     while (sig_found):
-        # TODO: First iteration pass everything
+        #  First iteration pass everything
         #
         # After first iteration, calc diff and only pass forward taxa that
         # changed in last iteration drop taxa that did not change from gmt
@@ -400,13 +407,13 @@ def _run_iterative_process_single_pair(
             # Compare last_psea_table to current_psea_table. If a taxa did not
             # have changes to its peptide list, drop it from
             # updated_peptide_sets
-            pass
+            current_psea_table.apply(_filter_unchanged_taxa, axis=1)
 
-        # Called as a raw Python function not a QIIME 2 Method
         last_psea_table = current_psea_table
+        # Called as a raw Python function not a QIIME 2 Method
         current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
-            peptide_sets=updated_peptide_sets,
+            peptide_sets=used_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -418,8 +425,26 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
+        # Add back unchanged taxa here and recalc p.adj and q... This means we
+        # do have to track all taxa.
+        #
+        # Originally, I had this elsewhere, but I now believe it needs to
+        # happen here
+        readded_psea_table = pd.concat(
+            [current_psea_table, *unchanged_taxa],
+            ignore_index=True
+        )
+        readded_psea_table['p.adjust'] = \
+            multipletests(
+                readded_psea_table['pvalue'], method='bonferroni'
+            )[1]
+        readded_psea_table['qvalue'] = \
+            multipletests(
+                readded_psea_table['pvalue'], method='fdr_bh'
+            )[1]
+
         if debug_per_iteration_table_path:
-            current_psea_table.to_csv(
+            readded_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -427,7 +452,7 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                current_psea_table,
+                readded_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
@@ -435,10 +460,11 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
-        iteration += 1
+        # Also drop regularly filtered peptide sets from used_peptide_sets
+        used_peptide_sets = \
+            pd.merge(used_peptide_sets, updated_peptide_sets, how='inner')
 
-    # TODO: Add back unchanged taxa here and recalc p.adj and q... This means
-    # we do actually have to track all taxa
+        iteration += 1
 
     return updated_peptide_sets
 
@@ -517,7 +543,6 @@ def _create_fgsea_table_for_pair(
                 max_size,
                 seed,
             )
-
             table = ro.conversion.get_conversion().rpy2py(table)
 
     return table
