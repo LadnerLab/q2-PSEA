@@ -56,8 +56,10 @@ psea <- function(
     {
         species <- read.csv(file=species_file, sep="\t", header=FALSE)
         species[, 2] <- trimws(as.character(species[, 2]))
-        outtable[, 1] <- trimws(as.numeric(outtable[, 1]))
-        species_name <- species[match(outtable[, "ID"], species[, 2]), 1]
+        outtable[, "ID"] <- trimws(as.character(outtable[, "ID"]))
+        species_name <- species[
+            match(as.numeric(outtable[, "ID"]), as.numeric(species[, 2])), 1
+        ]
         outtable <- cbind(outtable, species_name)
     }
 
