@@ -684,11 +684,12 @@ def _format_species_id_audit_row(
 
 
 def _write_debug_table(
-    table: pd.DataFrame,
+    table,
     output_dir: str,
     filename: str,
     header: bool = True,
 ) -> None:
+    table = _as_debug_dataframe(table)
     table.to_csv(
         os.path.join(output_dir, filename),
         sep="\t",
@@ -698,12 +699,13 @@ def _write_debug_table(
 
 
 def _write_id_snapshot(
-    table: pd.DataFrame,
+    table,
     column,
     output_dir: str,
     filename: str,
     source: str,
 ) -> None:
+    table = _as_debug_dataframe(table)
     if table is None:
         snapshot = pd.DataFrame([{
             "source": source,
@@ -739,6 +741,14 @@ def _write_id_snapshot(
         sep="\t",
         index=False,
     )
+
+
+def _as_debug_dataframe(table):
+    if table is None or isinstance(table, pd.DataFrame):
+        return table
+    if hasattr(table, "view"):
+        return table.view(pd.DataFrame)
+    return table
 
 
 def _write_psea_id_trace(
