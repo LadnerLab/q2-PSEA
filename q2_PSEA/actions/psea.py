@@ -9,6 +9,7 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
+from rpy2.robjects.packages import importr
 from statsmodels.stats.multitest import multipletests
 
 from math import log, pow
@@ -20,6 +21,9 @@ from q2_PSEA.actions.r_functions import INTERNAL
 # Need a random signed 32 bit int for R
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
+
+# Used to recalculate qvalue using Storey method
+qvalue = importr('qvalue')
 
 
 def make_psea_table(
@@ -424,19 +428,24 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
-        # Add back unchanged taxa here and recalc p.adj and q
+        # Add back unchanged taxa here and recalc p.adj and q using same
+        # methods as R GSEA.
         readded_psea_table = pd.concat(
             [current_psea_table, *unchanged_taxa],
             ignore_index=True
         )
+
+        # Calc p.adjust using Python basic Benjamini-Hochberg FDR
         readded_psea_table['p.adjust'] = \
-            multipletests(
-                readded_psea_table['pvalue'], method='bonferroni'
-            )[1]
-        readded_psea_table['qvalue'] = \
             multipletests(
                 readded_psea_table['pvalue'], method='fdr_bh'
             )[1]
+
+        # The q value uses the Storey method which is more involved, but we
+        # already have access to it from the R packages we installed
+        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
+        r_qvalues = qvalue.qvalue(p=r_pvalues)
+        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
 
         if debug_per_iteration_table_path:
             readded_psea_table.to_csv(
