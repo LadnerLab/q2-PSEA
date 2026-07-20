@@ -22,6 +22,8 @@ from q2_PSEA.actions.r_functions import INTERNAL
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
+# Used to calculate p.adjust
+stats = importr('stats')
 # Used to recalculate qvalue using Storey method
 qvalue = importr('qvalue')
 
@@ -427,6 +429,10 @@ def _run_iterative_process_single_pair(
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
         )
+
+        # Our aggressive diff filtering caused us to wrap up early.
+        if current_psea_table.empty:
+            break
 
         # Add back unchanged taxa here and recalc p.adj and q using same
         # methods as R GSEA.
