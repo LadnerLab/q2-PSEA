@@ -431,7 +431,7 @@ def _run_iterative_process_single_pair(
         # Add back unchanged taxa here and recalc p.adj and q using same
         # methods as R GSEA.
         readded_psea_table = pd.concat(
-            [current_psea_table, *unchanged_taxa],
+            [current_psea_table, pd.DataFrame(unchanged_taxa)],
             ignore_index=True
         )
 
