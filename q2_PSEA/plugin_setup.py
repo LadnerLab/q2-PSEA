@@ -262,6 +262,8 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
+        "debug_output_dir": Str,
+        "debug_label": Str,
     },
     parameter_descriptions={
         "threshold": (
@@ -291,6 +293,12 @@ plugin.methods.register_function(
         "residual_min_peptides": (
             "Minimum number of peptides required per species with absolute"
             " residual greater than residual_abs_thresh to keep that species."
+        ),
+        "debug_output_dir": (
+            "Optional directory for debug-only intermediate TSV outputs."
+        ),
+        "debug_label": (
+            "Optional label prefix for debug-only intermediate TSV outputs."
         ),
     },
     input_descriptions={

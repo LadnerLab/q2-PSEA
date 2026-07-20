@@ -12,7 +12,8 @@ psea <- function(
         permutation_num = 10000,
         min_size,
         max_size,
-        seed
+        seed,
+        debug_ids = FALSE
 ) {
     library(clusterProfiler)
     peptide_sets <- peptide_sets[order(peptide_sets$gene), , drop=FALSE]
@@ -51,12 +52,22 @@ psea <- function(
     )]
 
     outtable <- cbind(outtable_pre, all_tested_peptides)
+    if (debug_ids)
+    {
+        ID_before_species_name_lookup <- trimws(as.character(outtable[, "ID"]))
+        outtable <- cbind(outtable, ID_before_species_name_lookup)
+    }
 
     if (species_file != "")
     {
         species <- read.csv(file=species_file, sep="\t", header=FALSE)
         species[, 2] <- trimws(as.character(species[, 2]))
         outtable[, 1] <- trimws(as.numeric(outtable[, 1]))
+        if (debug_ids)
+        {
+            ID_after_species_name_lookup <- trimws(as.character(outtable[, "ID"]))
+            outtable <- cbind(outtable, ID_after_species_name_lookup)
+        }
         species_name <- species[match(outtable[, "ID"], species[, 2]), 1]
         outtable <- cbind(outtable, species_name)
     }

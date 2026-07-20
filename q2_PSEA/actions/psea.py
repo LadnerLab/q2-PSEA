@@ -139,6 +139,19 @@ def make_psea_table(
     aeplots = ctx.get_action("psea", "aeplots")
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
+    if debug_per_iteration_table_path:
+        _write_debug_table(
+            peptide_sets,
+            debug_per_iteration_table_path,
+            "00_input_peptide_sets_view.tsv",
+        )
+        _write_id_snapshot(
+            peptide_sets,
+            "term",
+            debug_per_iteration_table_path,
+            "00_input_peptide_sets_term_id_audit.tsv",
+            "input_peptide_sets",
+        )
 
     # ------------------------------------------------------------------
     # Filter scores
@@ -161,6 +174,32 @@ def make_psea_table(
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
         scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
         peptide_sets_map, = create_epitope_gmt(epitope_map)
+        if debug_per_iteration_table_path:
+            _write_debug_table(
+                peptide_sets_map,
+                debug_per_iteration_table_path,
+                "00_generated_peptide_sets_map_view.tsv",
+            )
+            _write_id_snapshot(
+                peptide_sets_map,
+                "term",
+                debug_per_iteration_table_path,
+                "00_generated_peptide_sets_map_term_id_audit.tsv",
+                "generated_peptide_sets_map",
+            )
+    elif use_epitope_mapping and debug_per_iteration_table_path:
+        _write_debug_table(
+            peptide_sets_map,
+            debug_per_iteration_table_path,
+            "00_provided_peptide_sets_map_view.tsv",
+        )
+        _write_id_snapshot(
+            peptide_sets_map,
+            "term",
+            debug_per_iteration_table_path,
+            "00_provided_peptide_sets_map_term_id_audit.tsv",
+            "provided_peptide_sets_map",
+        )
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
@@ -368,6 +407,40 @@ def _run_iterative_process_single_pair(
         debug_pair_path = None
         selected_species_debug = None
 
+    if debug_pair_path:
+        _write_debug_table(
+            peptide_sets,
+            debug_pair_path,
+            "00_input_peptide_sets_for_pair.tsv",
+        )
+        _write_id_snapshot(
+            peptide_sets,
+            "term",
+            debug_pair_path,
+            "00_input_peptide_sets_for_pair_term_id_audit.tsv",
+            "input_peptide_sets_for_pair",
+        )
+        if mapped_peptide_sets is not None:
+            _write_debug_table(
+                mapped_peptide_sets,
+                debug_pair_path,
+                "00_mapped_peptide_sets_for_pair.tsv",
+            )
+            _write_id_snapshot(
+                mapped_peptide_sets,
+                "term",
+                debug_pair_path,
+                "00_mapped_peptide_sets_for_pair_term_id_audit.tsv",
+                "mapped_peptide_sets_for_pair",
+            )
+        _write_id_snapshot(
+            updated_peptide_sets,
+            "term",
+            debug_pair_path,
+            "00_selected_working_peptide_sets_term_id_audit.tsv",
+            "selected_working_peptide_sets",
+        )
+
     while (sig_found):
         if debug_pair_path:
             updated_peptide_sets.to_csv(
@@ -390,6 +463,13 @@ def _run_iterative_process_single_pair(
                 sep='\t',
                 index=False,
             )
+            _write_id_snapshot(
+                updated_peptide_sets,
+                "term",
+                debug_pair_path,
+                f"{iteration}_gmt_before_filter_term_id_audit.tsv",
+                "gmt_before_filter",
+            )
 
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = _create_fgsea_table_for_pair(
@@ -404,6 +484,8 @@ def _run_iterative_process_single_pair(
             precomputed_fit=precomputed_fit,
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
+            debug_output_dir=debug_pair_path,
+            debug_label=str(iteration),
         )
 
         if debug_per_iteration_table_path:
@@ -459,6 +541,13 @@ def _run_iterative_process_single_pair(
                 os.path.join(
                     debug_pair_path, f'{iteration}_gmt_after_filter.tsv'
                 ), sep='\t', index=False
+            )
+            _write_id_snapshot(
+                updated_peptide_sets,
+                "term",
+                debug_pair_path,
+                f"{iteration}_gmt_after_filter_term_id_audit.tsv",
+                "gmt_after_filter",
             )
             selected_species_debug.append(
                 _format_selected_species_debug(
@@ -594,6 +683,133 @@ def _format_species_id_audit_row(
     }
 
 
+def _write_debug_table(
+    table: pd.DataFrame,
+    output_dir: str,
+    filename: str,
+    header: bool = True,
+) -> None:
+    table.to_csv(
+        os.path.join(output_dir, filename),
+        sep="\t",
+        index=False,
+        header=header,
+    )
+
+
+def _write_id_snapshot(
+    table: pd.DataFrame,
+    column,
+    output_dir: str,
+    filename: str,
+    source: str,
+) -> None:
+    if table is None:
+        snapshot = pd.DataFrame([{
+            "source": source,
+            "column": column,
+            "id_value": "",
+            "id_raw": "",
+            "id_type": "NoneType",
+            "id_length": "",
+            "numeric_normalized_id": "",
+            "is_zero_padded_numeric_string": "",
+            "count": 0,
+        }])
+    elif column not in table.columns:
+        snapshot = pd.DataFrame([{
+            "source": source,
+            "column": column,
+            "id_value": "",
+            "id_raw": "",
+            "id_type": "missing_column",
+            "id_length": "",
+            "numeric_normalized_id": "",
+            "is_zero_padded_numeric_string": "",
+            "count": 0,
+        }])
+    else:
+        rows = []
+        for value, count in table[column].value_counts(dropna=False).items():
+            rows.append(_format_detailed_id_row(source, column, value, count))
+        snapshot = pd.DataFrame(rows)
+
+    snapshot.to_csv(
+        os.path.join(output_dir, filename),
+        sep="\t",
+        index=False,
+    )
+
+
+def _write_psea_id_trace(
+    psea_table: pd.DataFrame,
+    output_dir: str,
+    filename: str,
+) -> None:
+    columns = [
+        column for column in [
+            "ID",
+            "ID_before_species_name_lookup",
+            "ID_after_species_name_lookup",
+            "species_name",
+        ] if column in psea_table.columns
+    ]
+    rows = []
+    for _, row in psea_table[columns].iterrows():
+        trace_row = {}
+        for column in columns:
+            value = row[column]
+            trace_row[f"{column}_value"] = str(value)
+            trace_row[f"{column}_raw"] = repr(value)
+            trace_row[f"{column}_type"] = type(value).__name__
+            trace_row[f"{column}_numeric_normalized"] = (
+                _numeric_normalized_id(value)
+            )
+            trace_row[f"{column}_is_zero_padded_numeric_string"] = (
+                _is_zero_padded_numeric_string(value)
+            )
+        rows.append(trace_row)
+
+    pd.DataFrame(rows).to_csv(
+        os.path.join(output_dir, filename),
+        sep="\t",
+        index=False,
+    )
+
+
+def _format_detailed_id_row(
+    source: str,
+    column,
+    value,
+    count: int,
+) -> dict:
+    id_value = str(value)
+    return {
+        "source": source,
+        "column": column,
+        "id_value": id_value,
+        "id_raw": repr(value),
+        "id_type": type(value).__name__,
+        "id_length": len(id_value),
+        "numeric_normalized_id": _numeric_normalized_id(value),
+        "is_zero_padded_numeric_string": _is_zero_padded_numeric_string(value),
+        "count": count,
+    }
+
+
+def _numeric_normalized_id(value) -> str:
+    id_value = str(value).strip()
+    if id_value.isdigit():
+        return str(int(id_value))
+    return id_value
+
+
+def _is_zero_padded_numeric_string(value) -> bool:
+    return isinstance(value, str) and len(value) > 1 and value.isdigit() and (
+        value.startswith("0")
+    )
+
+
 def _format_gene_list_debug(
     processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
@@ -668,6 +884,8 @@ def _create_fgsea_table_for_pair(
     species_taxa: qiime2.Metadata = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
+    debug_output_dir: str = None,
+    debug_label: str = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -696,6 +914,20 @@ def _create_fgsea_table_for_pair(
     filtered_zscores, peptide_sets_for_analysis = \
         utils.remove_peptides(processed_zscores, peptide_sets)
 
+    if debug_output_dir:
+        _write_debug_table(
+            peptide_sets_for_analysis,
+            debug_output_dir,
+            f"{debug_label}_term_to_gene_after_remove_peptides.tsv",
+        )
+        _write_id_snapshot(
+            peptide_sets_for_analysis,
+            "term",
+            debug_output_dir,
+            f"{debug_label}_term_to_gene_after_remove_peptides_id_audit.tsv",
+            "term_to_gene_after_remove_peptides",
+        )
+
     idx = filtered_zscores.index
     maxZ = maxZ_all.reindex(idx)
     deltaZ = deltaZ_all.reindex(idx)
@@ -706,6 +938,20 @@ def _create_fgsea_table_for_pair(
         residual_min_peptides=residual_min_peptides,
     )
 
+    if debug_output_dir:
+        _write_debug_table(
+            peptide_sets_for_analysis,
+            debug_output_dir,
+            f"{debug_label}_term_to_gene_before_r.tsv",
+        )
+        _write_id_snapshot(
+            peptide_sets_for_analysis,
+            "term",
+            debug_output_dir,
+            f"{debug_label}_term_to_gene_before_r_id_audit.tsv",
+            "term_to_gene_before_r",
+        )
+
     # This ought to ensure this file is accessible where this code is actually
     # being run if run cross node on HPC for instance
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -715,6 +961,20 @@ def _create_fgsea_table_for_pair(
             taxa_df.to_csv(
                 species_taxa_file, sep="\t", header=False, index=False
             )
+            if debug_output_dir:
+                _write_debug_table(
+                    taxa_df,
+                    debug_output_dir,
+                    f"{debug_label}_species_taxa_for_r.tsv",
+                    header=False,
+                )
+                _write_id_snapshot(
+                    taxa_df,
+                    taxa_df.columns[1],
+                    debug_output_dir,
+                    f"{debug_label}_species_taxa_for_r_id_audit.tsv",
+                    "species_taxa_for_r",
+                )
         else:
             species_taxa_file = ""
 
@@ -729,9 +989,22 @@ def _create_fgsea_table_for_pair(
                 min_size,
                 max_size,
                 seed,
+                debug_output_dir is not None,
             )
 
             table = ro.conversion.get_conversion().rpy2py(table)
+
+    if debug_output_dir:
+        _write_debug_table(
+            table,
+            debug_output_dir,
+            f"{debug_label}_psea_after_r.tsv",
+        )
+        _write_psea_id_trace(
+            table,
+            debug_output_dir,
+            f"{debug_label}_psea_after_r_id_trace.tsv",
+        )
 
     return table
 
