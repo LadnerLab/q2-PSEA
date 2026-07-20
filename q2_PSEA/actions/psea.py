@@ -377,7 +377,6 @@ def _run_iterative_process_single_pair(
     last_psea_table = None
     current_psea_table = None
     unchanged_taxa = []
-
     def _filter_unchanged_taxa(current_psea_table_row):
         # I hate using this, but Python is a dork about accessing external
         # vars in closures sometimes. It's complaining because I overwrite this
@@ -387,8 +386,8 @@ def _run_iterative_process_single_pair(
         taxa = current_psea_table_row.name
         last_psea_table_row = last_psea_table.loc[taxa]
 
-        if set(current_psea_table_row['core_enrichment']) == \
-                set(last_psea_table_row['core_enrichment']):
+        if set(current_psea_table_row['all_tested_peptides']) == \
+                set(last_psea_table_row['all_tested_peptides']):
             # Need to copy the row because it only adds a pointer to the object
             # to the list. If I don't copy it we will end up with a bunch of
             # pointers to the same object which will all be the last row we saw
