@@ -4,8 +4,8 @@
 
 ## Installation
 ```sh
-conda env create -n q2-psea-dev -f ./environment-files/q2-psea-qiime2-tiny-2026.7.yml
-conda activate q2-psea-dev
+conda env create -n q2-psea-add-wrapper -f ./environment-files/q2-psea-qiime2-tiny-2026.7.yml
+conda activate q2-psea-add-wrapper
 Rscript install_r_packages.R
 ```
 
