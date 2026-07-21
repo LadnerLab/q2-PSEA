@@ -389,7 +389,6 @@ def _run_iterative_process_single_pair(
 
     while (sig_found):
         # Called as a raw Python function not a QIIME 2 Method
-        last_psea_table = current_psea_table
         current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=updated_peptide_sets,
