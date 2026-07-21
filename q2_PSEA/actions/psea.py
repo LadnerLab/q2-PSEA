@@ -46,7 +46,7 @@ def make_psea_table(
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
-    use_epitope_mapping: bool = True,
+    use_epitope_mapping: bool = False,
     residual_threshold: float = .5,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
