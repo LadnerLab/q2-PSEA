@@ -25,6 +25,7 @@ from q2_PSEA.actions.psea import (
     _run_iterative_process_single_pair,
     _split_scores,
     make_psea_table,
+    make_psea_table_wrapper,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.actions.epitope import (
@@ -416,6 +417,192 @@ plugin.methods.register_function(
         " _create_fgsea_table_for_pair method, identifies the top significant"
         " untested species, and removes its leading-edge peptides from all"
         " other species in the GMT."
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Register make_psea_table_wrapper as a pipeline
+# ---------------------------------------------------------------------------
+
+plugin.pipelines.register_function(
+    function=make_psea_table_wrapper,
+    inputs={
+    },
+    parameters={
+        "scores": Str,
+        "pairs": Str,
+        "peptide_sets": Str,
+        "unzipped_output_dir": Str,
+        "peptide_metadata": Str,
+        "epitope_map": Str,
+        "scores_map": Str,
+        "peptide_sets_map": Str,
+        "threshold": Float,
+        "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
+        "p_value": Float,
+        "enrichment_score": Float,
+        "include_negative_enrichment": Bool,
+        "min_size": Int,
+        "max_size": Int,
+        "permutation_num": Int,
+        "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "fit_threshold": Float,
+        "linear_through_origin": Bool,
+        "degree": Int,
+        "dof": Int,
+        "iterative_analysis": Bool,
+        "seed": Int,
+        "species_taxa": Metadata,
+        "species_colors": Metadata,
+        "use_epitope_mapping": Bool,
+        "residual_threshold": Float,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int,
+        "debug_per_iteration_table_path": Str,
+    },
+    parameter_descriptions={
+        "scores": (
+            "Z-score matrix. Collapsed to epitope level if epitope is"
+            " provided."
+        ),
+        "pairs": (
+            "Tab-delimited file listing pairs of sample names (one pair per"
+            " row, header required)."
+        ),
+        "peptide_sets": (
+            "GMT file mapping species identifiers to the peptides linked to"
+            " them. Collapsed to epitope level if epitope is provided."
+        ),
+        "unzipped_output_dir": (
+            "Dir to output unzipped results to."
+        ),
+        "peptide_metadata": (
+            "Optional epitope table. When provided, peptide-level residuals"
+            " are collapsed to the epitope level before GSEA."
+        ),
+        "epitope_map": (
+            "Optional already collapsed epitope table. When provided, this"
+            " table is used in GSEA. Maps epitopes to peptides and species."
+            "NOTE: Must be passed with scores_map and peptide_sets_map."
+        ),
+        "scores_map": (
+            "Optional already collapsed zscores. When provided, these"
+            " scores are used in GSEA but NOT for spline fitting."
+            "NOTE: Must be passed with eptiope_map and peptide_sets_map."
+        ),
+        "peptide_sets_map": (
+            "Optional already collapsed epitope peptide sets. When provided,"
+            " these peptides are used in GSEA."
+            "NOTE: Must be passed with epitope_map and scores_map."
+        ),
+        "threshold": (
+            "Minimum Z-score a peptide must have to be included in GSEA."
+        ),
+        "collapse": (
+            "Category to collapse to epitope level. Only used when the"
+            " epitope input is provided."
+        ),
+        "p_value": (
+            "Adjusted p-value threshold for significance in volcano and"
+            " scatter plots."
+        ),
+        "enrichment_score": "NES threshold for significance.",
+        "include_negative_enrichment": (
+            "Whether or not to include negative enrichment."
+        ),
+        "min_size": "Minimum peptide-set size for GSEA.",
+        "max_size": "Maximum peptide-set size for GSEA.",
+        "permutation_num": (
+            "Number of GSEA permutations. Minimum nominal p-value is"
+            " ~1/perm."
+        ),
+        "spline_type": "Spline method used to fit the Z-score scatter.",
+        "fit_threshold": (
+            "Optional threshold used only for linear spline fitting; only"
+            " points where x and y are both greater than this threshold are"
+            " used to fit the line."
+        ),
+        "linear_through_origin": (
+            "If True and spline_type is linear, force the regression line"
+            " through (0, 0)."
+        ),
+        "degree": (
+            "Polynomial degree for spline fitting (affects 'cubic' only)."
+        ),
+        "dof": (
+            "Degrees of freedom for spline fitting (affects 'cubic' only)."
+        ),
+        "iterative_analysis": (
+            "If True, run the iterative peptide-filtering procedure to"
+            " remove cross-reactive peptides before the final analysis."
+            " Requires a GMT peptide_sets input."
+        ),
+        "seed": "Random seed for GSEA permutations.",
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+            " When provided, enrichment results are annotated with species"
+            " names."
+        ),
+        "species_colors": (
+            "Optional Metadata mapping species names (IDs) to HEX color"
+            " codes used in output visualizations."
+        ),
+        "use_epitope_mapping": (
+            "If true, the analysis will be run with data collapsed to epitope"
+            " level. This requires you to either pass 'peptide_metadata' so"
+            " the pipeline can do the collapsing, or all of epitope_map,"
+            " scores_map, and peptide_sets_map"
+        ),
+        "residual_threshold": (
+            "The threshold above which a peptide residual must be in order to"
+            " be counted in count_enriched."
+        ),
+        "residual_abs_thresh": (
+            "Optional absolute residual threshold for peptide-set filtering"
+            " before GSEA."
+        ),
+        "residual_min_peptides": (
+            "Minimum number of peptides required per species with absolute"
+            " residual greater than residual_abs_thresh to keep that species."
+        ),
+        "debug_per_iteration_table_path": (
+            "Path to write per pair and per iteration psea tables to as .tsvs."
+            " Only to be used when debugging and meaningless if not doing"
+            " iterative analysis."
+        ),
+    },
+    input_descriptions={
+    },
+    outputs=[
+        ("scatter_plots", Collection[Visualization]),
+        ("volcano_plots", Collection[Visualization]),
+        ("ae_plots", Visualization),
+        ("psea_tables", Collection[FeatureData[PSEAScores]]),
+        ("enrichment_tables", Collection[FeatureData[Enriched]])
+    ],
+    output_descriptions={
+        "scatter_plots": (
+            "per-pair z-score scatter plots with spline fit and highlighted"
+            " leading-edge peptides for significant taxa."
+        ),
+        "volcano_plots": (
+            "per-pair volcano plots of normalized enrichment scores vs."
+            " adjusted p-values."
+        ),
+        "ae_plots": "Antibody-event summary bar plots.",
+        "psea_tables": (
+            "Per-pair PSEA result tables containing enrichment scores,"
+            " p-values, and leading-edge peptides."
+        ),
+        "enrichment_tables": (
+            "Tables showing counts of enriched epitopes per subspecies, and"
+            " enriched subspecies per epitope."
+        )
+    },
+    name="Make PSEA Table",
+    description=(
+        "Wrapper for make_psea_table that takes unzipped .tsv files and also"
+        " outputs them."
     ),
 )
 

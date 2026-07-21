@@ -20,6 +20,168 @@ MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
 
+def make_psea_table_wrapper(
+    ctx: IContext,
+    scores: str,
+    pairs: str,
+    peptide_sets: str,
+    unzipped_output_dir: str,
+    threshold: float,
+    peptide_metadata: str = None,
+    epitope_map: str = None,
+    scores_map: str = None,
+    peptide_sets_map: str = None,
+    collapse: str = "Viral",
+    p_value: float = 0.05,
+    enrichment_score: float = 1,
+    include_negative_enrichment: bool = True,
+    min_size: int = 15,
+    max_size: int = 2000,
+    permutation_num: int = 10000,
+    spline_type: str = "r-smooth",
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
+    degree: int = 3,
+    dof: int = None,
+    iterative_analysis: bool = True,
+    seed: CaptureHolder[int] = None,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
+    use_epitope_mapping: bool = False,
+    residual_threshold: float = .5,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
+    debug_per_iteration_table_path: str = None,
+) -> tuple[
+    qiime2.Visualization,
+    qiime2.Visualization,
+    qiime2.Visualization,
+    dict[str, qiime2.Artifact],
+    dict[str, qiime2.Artifact],
+]:
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
+
+    make_psea_table_pipeline = ctx.get_action("psea", "make_psea_table")
+
+    if os.path.exists(unzipped_output_dir):
+        raise ValueError(
+            f"Output dir '{unzipped_output_dir}' already exists. Please remove it, or"
+            " choose a different directory."
+        )
+
+    scores = qiime2.Artifact.import_data('FeatureTable[Zscore]', scores)
+    pairs = qiime2.Artifact.import_data('PSEAPairs', pairs)
+    peptide_sets = qiime2.Artifact.import_data('GMT', peptide_sets)
+
+    if peptide_metadata is not None:
+        peptide_metadata = qiime2.Artifact.import_data(
+            'FeatureData[Epitope]', peptide_metadata
+        )
+
+    if epitope_map is not None:
+        epitope_map = qiime2.Artifact.import_data(
+            'FeatureData[MappedEpitope]', epitope_map
+        )
+
+    if scores_map is not None:
+        scores_map = qiime2.Artifact.import_data(
+            'FeatureTable[Zscore % Properties("mapped")]', scores_map
+        )
+
+    if peptide_sets_map is not None:
+        peptide_sets_map = qiime2.Artifact.import_data(
+            'GMT % Properties("mapped")', peptide_sets_map
+        )
+
+    scatter_plots, volcano_plots, ae_plot, psea_tables, enrichment_tables = \
+        make_psea_table_pipeline(
+            scores=scores,
+            pairs=pairs,
+            peptide_sets=peptide_sets,
+            threshold=threshold,
+            peptide_metadata=peptide_metadata,
+            epitope_map=epitope_map,
+            scores_map=scores_map,
+            peptide_sets_map=peptide_sets_map,
+            collapse=collapse,
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            include_negative_enrichment=include_negative_enrichment,
+            min_size=min_size,
+            max_size=max_size,
+            permutation_num=permutation_num,
+            spline_type=spline_type,
+            fit_threshold=fit_threshold,
+            linear_through_origin=linear_through_origin,
+            degree=degree,
+            dof=dof,
+            iterative_analysis=iterative_analysis,
+            seed=seed,
+            species_taxa=species_taxa,
+            species_colors=species_colors,
+            use_epitope_mapping=use_epitope_mapping,
+            residual_threshold=residual_threshold,
+            residual_abs_thresh=residual_abs_thresh,
+            residual_min_peptides=residual_min_peptides,
+            debug_per_iteration_table_path=debug_per_iteration_table_path
+        )
+
+    # Unzip all outputs
+    os.makedirs(unzipped_output_dir)
+
+    # scatter_plots
+    scatter_plots_out = os.path.join(unzipped_output_dir, 'scatter_plots')
+    utils.unzip_collection(
+        scatter_plots_out, scatter_plots, 'index.html', '.html'
+    )
+    scatter_plots_md5_manifest_path = \
+        os.path.join(unzipped_output_dir, 'scatter_plots_md5')
+    utils.md5_directory(scatter_plots_out, scatter_plots_md5_manifest_path)
+
+    # volcano_plots
+    volcano_plots_out = os.path.join(unzipped_output_dir, 'volcano_plots')
+    utils.unzip_collection(
+        volcano_plots_out, volcano_plots, 'index.html', '.html'
+    )
+    volcano_plots_md5_manifest_path = \
+        os.path.join(unzipped_output_dir, 'volcano_plots_md5')
+    utils.md5_directory(volcano_plots_out, volcano_plots_md5_manifest_path)
+
+    # ae_plot
+    # little hack to make this match the rest of the outputs *wink*
+    ae_plots = {'ae_plots': ae_plot}
+    ae_plots_out = os.path.join(unzipped_output_dir, 'ae_plots')
+    utils.unzip_collection(ae_plots_out, ae_plots, 'index.html', '.html')
+    ae_plots_md5_manifest_path = \
+        os.path.join(unzipped_output_dir, 'ae_plots_md5')
+    utils.md5_directory(ae_plots_out, ae_plots_md5_manifest_path)
+
+    # psea_tables
+    psea_tables_out = os.path.join(unzipped_output_dir, 'psea_tables')
+    utils.unzip_collection(psea_tables_out, psea_tables, 'scores.tsv', '.tsv')
+    psea_tables_md5_manifest_path = \
+        os.path.join(unzipped_output_dir, 'psea_tables_md5')
+    utils.md5_directory(psea_tables_out, psea_tables_md5_manifest_path)
+
+    # enrichment_tables
+    enrichment_tables_out = os.path.join(
+        unzipped_output_dir, 'enrichment_tables'
+    )
+    utils.unzip_collection(
+        enrichment_tables_out, enrichment_tables, 'enriched.tsv', '.tsv'
+    )
+    enrichment_tables_md5_manifest_path = \
+        os.path.join(unzipped_output_dir, 'enrichment_tables_md5')
+    utils.md5_directory(
+        enrichment_tables_out, enrichment_tables_md5_manifest_path
+    )
+
+    return (scatter_plots, volcano_plots, ae_plot, psea_tables,
+            enrichment_tables)
+
+
 def make_psea_table(
     ctx: IContext,
     scores: qiime2.Artifact,

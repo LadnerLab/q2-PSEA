@@ -1,3 +1,6 @@
+import os
+import io
+import hashlib
 import pandas as pd
 import numpy as np
 
@@ -107,3 +110,29 @@ def collate_ae_counts(ae_counts: list[pd.DataFrame]):
         ae_counts, ignore_index=True
     ).groupby('Species', as_index=False)['Events'].sum() \
         .sort_values('Events', ascending=False)
+
+
+def unzip_collection(outpath, collection, filename, ext):
+    os.makedirs(outpath)
+    for name, result in collection.items():
+        result.export_data(outpath)
+        os.rename(
+            os.path.join(outpath , filename),
+            os.path.join(outpath, f'{name}{ext}')
+        )
+
+
+def md5_file(fp):
+    hash_obj = hashlib.md5()
+    with open(fp, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(io.DEFAULT_BUFFER_SIZE), b''):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()
+
+
+def md5_directory(directory_path, md5_manifest_path):
+    with open(md5_manifest_path, 'w') as fh:
+        for file in os.listdir(directory_path):
+            full_path = os.path.join(directory_path, file)
+            file_hash = md5_file(full_path)
+            fh.write(f"{file}    {file_hash}\n")
