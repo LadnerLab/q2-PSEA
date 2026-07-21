@@ -27,7 +27,7 @@ def smooth_spline(x, y, knots=3, s=0.788458):
     list(float)
         Predicted y value for every given x value
     """
-    x_new = np.linspace(0, 1, knots+2)[1:-1]
+    x_new = np.linspace(0, 1, knots + 2)[1:-1]
     q_knots = np.quantile(x, x_new)
     t, c, k = interpolate.splrep(x, y, t=q_knots, s=s)
     return interpolate.BSpline(t, c, k)(x)
@@ -46,7 +46,7 @@ def natural_cubic_spline(x, y, knots=3):
         )
 
     y_unique = np.bincount(inverse, weights=y) / np.bincount(inverse)
-        knot_count = min(knots + 2, len(x_unique))
+    knot_count = min(knots + 2, len(x_unique))
     knot_probs = np.linspace(0, 1, knot_count)
     spline_knots = np.unique(np.quantile(x_unique, knot_probs))
 
@@ -128,7 +128,7 @@ cubic_spline <- function(x, y, degree, df)
     cubic_spline_preds <- predict(
         cubic_spline_obj,
         newdata = list(sorted.x),
-        se=TRUE
+        se = TRUE
     )
     cubic_spline_se_bands <- cbind(
         cubic_spline_preds$fit + 2 * cubic_spline_preds$se.fit,
