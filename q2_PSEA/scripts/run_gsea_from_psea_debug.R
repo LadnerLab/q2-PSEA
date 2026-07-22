@@ -4,7 +4,7 @@ usage <- paste(
     "Usage:",
     "Rscript run_gsea_from_psea_debug.R <gsea_input.tsv> <output.tsv>",
     "[--permutation-num N] [--min-size N] [--max-size N] [--seed N]",
-    "[--missing-output missing.tsv]",
+    "[--missing-output missing.tsv] [--diagnostics-output diagnostics.tsv]",
     sep = "\n  "
 )
 
@@ -21,6 +21,7 @@ min_size <- 15
 max_size <- 2000
 seed <- 1
 missing_output <- NA_character_
+diagnostics_output <- NA_character_
 
 i <- 3
 while (i <= length(args)) {
@@ -40,6 +41,8 @@ while (i <= length(args)) {
         seed <- as.integer(value)
     } else if (flag == "--missing-output") {
         missing_output <- value
+    } else if (flag == "--diagnostics-output") {
+        diagnostics_output <- value
     } else {
         stop(paste("Unknown argument:", flag, "\n", usage), call. = FALSE)
     }
@@ -119,6 +122,75 @@ if (!is.na(missing_output)) {
     write.table(
         missing_table,
         file = missing_output,
+        sep = "\t",
+        quote = FALSE,
+        row.names = FALSE
+    )
+}
+
+if (!is.na(diagnostics_output)) {
+    output_terms <- sort(unique(as.character(outtable$ID)))
+
+    diagnostics <- do.call(
+        rbind,
+        lapply(
+            split(gsea_input, as.character(gsea_input$term)),
+            function(term_rows) {
+                in_gene_list <- term_rows[
+                    term_rows$in_gene_list %in% c(TRUE, "TRUE", "True", "true", 1),
+                    ,
+                    drop = FALSE
+                ]
+                ranked_scores <- in_gene_list$deltaZ
+                ranked_scores <- ranked_scores[!is.na(ranked_scores)]
+                term_id <- as.character(term_rows$term[[1]])
+                effective_size <- length(unique(as.character(in_gene_list$gene)))
+
+                data.frame(
+                    ID = term_id,
+                    input_term_gene_rows = nrow(term_rows),
+                    unique_input_genes = length(unique(as.character(term_rows$gene))),
+                    genes_in_gene_list = effective_size,
+                    positive_deltaZ = sum(ranked_scores > 0),
+                    negative_deltaZ = sum(ranked_scores < 0),
+                    zero_deltaZ = sum(term_rows$deltaZ == 0, na.rm = TRUE),
+                    na_deltaZ = sum(is.na(term_rows$deltaZ)),
+                    min_deltaZ = if (length(ranked_scores) > 0) min(ranked_scores) else NA_real_,
+                    max_deltaZ = if (length(ranked_scores) > 0) max(ranked_scores) else NA_real_,
+                    passes_min_size = effective_size >= min_size,
+                    passes_max_size = effective_size <= max_size,
+                    appears_in_gsea_output = term_id %in% output_terms,
+                    output_has_na_pvalue = if (term_id %in% output_terms) {
+                        any(is.na(outtable$pvalue[as.character(outtable$ID) == term_id]))
+                    } else {
+                        NA
+                    },
+                    output_has_na_p_adjust = if (term_id %in% output_terms) {
+                        any(is.na(outtable$p.adjust[as.character(outtable$ID) == term_id]))
+                    } else {
+                        NA
+                    },
+                    likely_exclusion_reason = if (effective_size < min_size) {
+                        "below_min_size_after_gene_list_filter"
+                    } else if (effective_size > max_size) {
+                        "above_max_size_after_gene_list_filter"
+                    } else if (effective_size == 0) {
+                        "no_genes_in_ranked_gene_list"
+                    } else if (!(term_id %in% output_terms)) {
+                        "not_returned_by_clusterProfiler_or_fgsea"
+                    } else {
+                        "returned_by_gsea"
+                    },
+                    stringsAsFactors = FALSE
+                )
+            }
+        )
+    )
+
+    diagnostics <- diagnostics[order(diagnostics$appears_in_gsea_output, diagnostics$ID), ]
+    write.table(
+        diagnostics,
+        file = diagnostics_output,
         sep = "\t",
         quote = FALSE,
         row.names = FALSE
