@@ -6,6 +6,7 @@ usage <- paste(
     "[--permutation-num N] [--min-size N] [--max-size N] [--seed N]",
     "[--missing-output missing.tsv] [--diagnostics-output diagnostics.tsv]",
     "[--fgsea-output raw_fgsea.tsv] [--diagnostics-plot-output plots.pdf]",
+    "[--plot-terms comma,separated,ids]",
     sep = "\n  "
 )
 
@@ -25,6 +26,7 @@ missing_output <- NA_character_
 diagnostics_output <- NA_character_
 fgsea_output <- NA_character_
 diagnostics_plot_output <- NA_character_
+plot_terms <- c("138951")
 
 i <- 3
 while (i <= length(args)) {
@@ -50,6 +52,8 @@ while (i <= length(args)) {
         fgsea_output <- value
     } else if (flag == "--diagnostics-plot-output") {
         diagnostics_plot_output <- value
+    } else if (flag == "--plot-terms") {
+        plot_terms <- trimws(strsplit(value, ",")[[1]])
     } else {
         stop(paste("Unknown argument:", flag, "\n", usage), call. = FALSE)
     }
@@ -247,7 +251,7 @@ build_diagnostics <- function(gsea_input, outtable, min_size, max_size) {
     diagnostics
 }
 
-plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
+plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, plot_terms) {
     pdf(output_path, width = 11, height = 8.5)
     on.exit(dev.off(), add = TRUE)
 
@@ -260,6 +264,12 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
         ,
         drop = FALSE
     ]
+    comparison <- diagnostics[
+        diagnostics$ID %in% plot_terms,
+        ,
+        drop = FALSE
+    ]
+    highlighted <- unique(rbind(suspicious, comparison))
 
     par(mfrow = c(2, 2), mar = c(4.5, 4.5, 3, 1))
     plot(
@@ -279,11 +289,11 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
         pch = 19,
         bty = "n"
     )
-    if (nrow(suspicious) > 0) {
+    if (nrow(highlighted) > 0) {
         text(
-            suspicious$genes_in_gene_list,
-            suspicious$positive_fraction,
-            labels = suspicious$ID,
+            highlighted$genes_in_gene_list,
+            highlighted$positive_fraction,
+            labels = highlighted$ID,
             pos = 4,
             cex = 0.75
         )
@@ -300,11 +310,11 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
         main = "Set Size vs Score Skewness"
     )
     abline(h = 0, lty = 2, col = "gray50")
-    if (nrow(suspicious) > 0) {
+    if (nrow(highlighted) > 0) {
         text(
-            suspicious$genes_in_gene_list,
-            suspicious$skewness_deltaZ,
-            labels = suspicious$ID,
+            highlighted$genes_in_gene_list,
+            highlighted$skewness_deltaZ,
+            labels = highlighted$ID,
             pos = 4,
             cex = 0.75
         )
@@ -327,16 +337,19 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
     )
     abline(h = 0, lty = 2, col = "gray50")
 
-    if (nrow(suspicious) == 0) {
+    if (nrow(highlighted) == 0) {
         plot.new()
-        title("No Missing Species Passed Size Filters")
+        title("No Highlighted Species Found")
         return(invisible(NULL))
     }
 
     ranked_names <- names(gene_list)
     ranked_scores <- as.numeric(gene_list)
 
-    for (term_id in suspicious$ID) {
+    for (term_id in highlighted$ID) {
+        term_diag <- highlighted[highlighted$ID == term_id, , drop = FALSE]
+        term_status <- ifelse(term_diag$appears_in_gsea_output, "returned", "missing")
+        term_col <- ifelse(term_diag$appears_in_gsea_output, "#377eb8", "#e41a1c")
         term_rows <- gsea_input[
             as.character(gsea_input$term) == term_id
                 & gsea_input$in_gene_list %in% c(TRUE, "TRUE", "True", "true", 1),
@@ -356,16 +369,16 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
             col = "gray55",
             xlab = "Rank in gene_list",
             ylab = "deltaZ",
-            main = paste("Rank Positions for Missing Species", term_id)
+            main = paste("Rank Positions for", term_status, "Species", term_id)
         )
         abline(h = 0, lty = 2, col = "gray70")
         if (length(positions) > 0) {
-            rug(positions, col = "#e41a1c", ticksize = 0.08)
+            rug(positions, col = term_col, ticksize = 0.08)
             points(
                 positions,
                 ranked_scores[positions],
                 pch = 16,
-                col = rgb(0.89, 0.10, 0.11, 0.35),
+                col = adjustcolor(term_col, alpha.f = 0.35),
                 cex = 0.65
             )
         }
@@ -373,16 +386,18 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
         hist(
             term_scores,
             breaks = 30,
-            col = "#e41a1c",
+            col = term_col,
             border = "white",
             xlab = "deltaZ for this species",
             main = paste(
                 "Score Distribution:",
                 term_id,
+                "|",
+                term_status,
                 "| n =",
                 length(term_scores),
                 "| positive fraction =",
-                round(suspicious$positive_fraction[suspicious$ID == term_id], 3)
+                round(term_diag$positive_fraction, 3)
             )
         )
         abline(v = 0, lty = 2, col = "gray30")
@@ -405,5 +420,11 @@ if (!is.na(diagnostics_output)) {
 }
 
 if (!is.na(diagnostics_plot_output)) {
-    plot_diagnostics(gsea_input, diagnostics, gene_list, diagnostics_plot_output)
+    plot_diagnostics(
+        gsea_input,
+        diagnostics,
+        gene_list,
+        diagnostics_plot_output,
+        plot_terms
+    )
 }
