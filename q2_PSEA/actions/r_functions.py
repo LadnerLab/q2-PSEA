@@ -34,6 +34,23 @@ psea <- function(
         nPermSimple=permutation_num,
         exponent=1
     )
+    
+    if (nrow(out) == 0){
+        return(
+            data.frame(
+                ID = numeric(),
+                enrichmentScore = numeric(),
+                NES = numeric(),
+                p.adjust = numeric(),
+                core_enrichment = character(),
+                pvalue = numeric(),
+                qvalue = numeric(),
+                all_tested_peptides = character(),
+                species_name=character()
+            )
+        )
+    }
+
     outtable_pre <- attributes(out)[[1]][,c(
         "ID", "enrichmentScore", "NES", "p.adjust",
         "core_enrichment", "pvalue", "qvalue"
@@ -56,8 +73,10 @@ psea <- function(
     {
         species <- read.csv(file=species_file, sep="\t", header=FALSE)
         species[, 2] <- trimws(as.character(species[, 2]))
-        outtable[, 1] <- trimws(as.numeric(outtable[, 1]))
-        species_name <- species[match(outtable[, "ID"], species[, 2]), 1]
+        outtable[, "ID"] <- trimws(as.character(outtable[, "ID"]))
+        species_name <- species[
+            match(as.numeric(outtable[, "ID"]), as.numeric(species[, 2])), 1
+        ]
         outtable <- cbind(outtable, species_name)
     }
 

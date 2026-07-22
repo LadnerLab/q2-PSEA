@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import copy
 import pandas as pd
 import qiime2
 import random
@@ -8,6 +9,8 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
+from rpy2.robjects.packages import importr
+from statsmodels.stats.multitest import multipletests
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
@@ -18,6 +21,11 @@ from q2_PSEA.actions.r_functions import INTERNAL
 # Need a random signed 32 bit int for R
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
+
+# Used to calculate p.adjust
+stats = importr('stats')
+# Used to recalculate qvalue using Storey method
+qvalue = importr('qvalue')
 
 
 def make_psea_table(
@@ -46,11 +54,12 @@ def make_psea_table(
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
-    use_epitope_mapping: bool = True,
+    use_epitope_mapping: bool = False,
     residual_threshold: float = .5,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
     qiime2.Visualization,
@@ -86,6 +95,22 @@ def make_psea_table(
             )
 
         os.mkdir(debug_per_iteration_table_path)
+
+    if debug_gsea_input_table_path is not None:
+        warnings.warn(
+            f"You have set a value of {debug_gsea_input_table_path} for"
+            " 'debug_gsea_input_table_path.' Please only set this value if"
+            " you intend to inspect the exact tables passed to R GSEA.",
+            RachisWarning
+        )
+
+        if os.path.exists(debug_gsea_input_table_path):
+            raise ValueError(
+                f"Path {debug_gsea_input_table_path} already exists. Please"
+                " provide a path for debug .tsvs that does not already exist."
+            )
+
+        os.mkdir(debug_gsea_input_table_path)
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
@@ -160,7 +185,9 @@ def make_psea_table(
 
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
         scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
-        peptide_sets_map, = create_epitope_gmt(epitope_map)
+        peptide_sets_map, = create_epitope_gmt(
+            peptide_metadata, peptide_sets, collapse=collapse
+        )
 
     # ------------------------------------------------------------------
     # Process (log-scale) scores
@@ -237,6 +264,7 @@ def make_psea_table(
                 include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
                 debug_per_iteration_table_path=debug_per_iteration_table_path,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
                 pair=pair,
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
@@ -260,6 +288,9 @@ def make_psea_table(
             precomputed_fit=pair_splines[pair],
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
+            debug_gsea_input_table_path=debug_gsea_input_table_path,
+            debug_pair=pair,
+            debug_iteration="final",
         )
 
         enrichment_tables[pair], = count_enriched(
@@ -309,6 +340,12 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
+    # TODO: Create a wrapper that unzips these in manner discussed previously
+    # i.e. output unzipped raw files along with manifests keeping track of them
+    # Also, include imports in the wrapper so
+    # 1. import
+    # 2. run
+    # 3. export
     return (scatter_plots, volcano_plots, ae_plot, psea_tables,
             enrichment_tables)
 
@@ -329,6 +366,7 @@ def _run_iterative_process_single_pair(
     include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
     pair: str = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
@@ -352,6 +390,7 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
+    used_peptide_sets = copy.deepcopy(updated_peptide_sets)
 
     tested_species = set()
     iteration = 1
@@ -363,11 +402,46 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
-    while (sig_found):
+    last_psea_table = None
+    current_psea_table = None
+    unchanged_taxa = []
+
+    def _filter_unchanged_taxa(current_psea_table_row):
+        # I hate using this, but Python is a dork about accessing external
+        # vars in closures sometimes. It's complaining because I overwrite this
+        # var in this closure
+        nonlocal used_peptide_sets
+
+        taxa = current_psea_table_row.name
+        last_psea_table_row = last_psea_table.loc[taxa]
+
+        if set(current_psea_table_row['all_tested_peptides']) == \
+                set(last_psea_table_row['all_tested_peptides']):
+            # Need to copy the row because it only adds a pointer to the object
+            # to the list. If I don't copy it we will end up with a bunch of
+            # pointers to the same object which will all be the last row we saw
+            # here.
+            unchanged_taxa.append(copy.deepcopy(current_psea_table_row))
+            used_peptide_sets = \
+                used_peptide_sets[used_peptide_sets['term'] != taxa]
+
+    while sig_found:
+        # First two iterations pass everything
+        #
+        # After first two iterations, calc diff and only pass forward taxa that
+        # changed in last iteration drop taxa that did not change from gmt
+        # before next iteration.
+        if last_psea_table is not None:
+            # Compare last_psea_table to current_psea_table. If a taxa did not
+            # have changes to its peptide list, drop it from
+            # updated_peptide_sets
+            current_psea_table.apply(_filter_unchanged_taxa, axis=1)
+
+        last_psea_table = current_psea_table
         # Called as a raw Python function not a QIIME 2 Method
-        psea_table = _create_fgsea_table_for_pair(
+        current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
-            peptide_sets=updated_peptide_sets,
+            peptide_sets=used_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -377,10 +451,36 @@ def _run_iterative_process_single_pair(
             precomputed_fit=precomputed_fit,
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
+            debug_gsea_input_table_path=debug_gsea_input_table_path,
+            debug_pair=pair,
+            debug_iteration=f"{iteration:03d}",
         )
 
+        # Our aggressive diff filtering caused us to wrap up early.
+        if current_psea_table.empty:
+            break
+
+        # Add back unchanged taxa here and recalc p.adj and q using same
+        # methods as R GSEA.
+        readded_psea_table = pd.concat(
+            [current_psea_table, pd.DataFrame(unchanged_taxa)],
+            ignore_index=True
+        )
+
+        # Calc p.adjust using Python basic Benjamini-Hochberg FDR
+        readded_psea_table['p.adjust'] = \
+            multipletests(
+                readded_psea_table['pvalue'], method='fdr_bh'
+            )[1]
+
+        # The q value uses the Storey method which is more involved, but we
+        # already have access to it from the R packages we installed
+        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
+        r_qvalues = qvalue.qvalue(p=r_pvalues)
+        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
+
         if debug_per_iteration_table_path:
-            psea_table.to_csv(
+            readded_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -388,7 +488,7 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                psea_table,
+                readded_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
@@ -396,9 +496,75 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
+        # Also drop regularly filtered peptide sets from used_peptide_sets
+        used_peptide_sets = \
+            pd.merge(used_peptide_sets, updated_peptide_sets, how='inner')
+
         iteration += 1
 
     return updated_peptide_sets
+
+
+def _build_gsea_input_table(
+    maxZ: pd.Series,
+    deltaZ: pd.Series,
+    peptide_sets_for_analysis: pd.DataFrame,
+    threshold: float,
+) -> pd.DataFrame:
+    """Build a single TSV-friendly table containing R GSEA inputs."""
+    gsea_input = peptide_sets_for_analysis.loc[:, ["term", "gene"]].copy()
+    gsea_input["maxZ"] = gsea_input["gene"].map(maxZ)
+    gsea_input["deltaZ"] = gsea_input["gene"].map(deltaZ)
+    gsea_input["in_gene_list"] = (
+        (gsea_input["maxZ"] > threshold)
+        & (gsea_input["deltaZ"] != 0)
+        & gsea_input["deltaZ"].notna()
+    )
+
+    ranked = (
+        gsea_input.loc[gsea_input["in_gene_list"], ["gene", "deltaZ"]]
+        .drop_duplicates(subset=["gene"])
+        .sort_values("deltaZ", ascending=False)
+        .reset_index(drop=True)
+    )
+    ranks = pd.Series(ranked.index + 1, index=ranked["gene"])
+    gsea_input["gene_list_rank"] = gsea_input["gene"].map(ranks)
+    gsea_input["gene_list_score"] = gsea_input["deltaZ"].where(
+        gsea_input["in_gene_list"]
+    )
+
+    return gsea_input.sort_values(["gene", "term"]).reset_index(drop=True)
+
+
+def _write_gsea_input_table(
+    debug_gsea_input_table_path: str,
+    gsea_input_table: pd.DataFrame,
+    pair: str = None,
+    iteration=None,
+) -> None:
+    """Write a GSEA input table to either a file path or debug directory."""
+    if debug_gsea_input_table_path is None:
+        return
+
+    path_root, path_ext = os.path.splitext(debug_gsea_input_table_path)
+    if path_ext.lower() == ".tsv" and pair is None and iteration is None:
+        out_path = debug_gsea_input_table_path
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    else:
+        out_dir = debug_gsea_input_table_path
+        if pair is not None:
+            out_dir = os.path.join(out_dir, pair)
+        os.makedirs(out_dir, exist_ok=True)
+
+        if iteration is None:
+            filename = "gsea_input.tsv"
+        elif isinstance(iteration, int):
+            filename = f"{iteration:03d}_gsea_input.tsv"
+        else:
+            filename = f"{iteration}_gsea_input.tsv"
+        out_path = os.path.join(out_dir, filename)
+
+    gsea_input_table.to_csv(out_path, sep="\t", index=False)
 
 
 def _create_fgsea_table_for_pair(
@@ -413,6 +579,9 @@ def _create_fgsea_table_for_pair(
     species_taxa: qiime2.Metadata = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
+    debug_gsea_input_table_path: str = None,
+    debug_pair: str = None,
+    debug_iteration: str = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -451,6 +620,16 @@ def _create_fgsea_table_for_pair(
         residual_min_peptides=residual_min_peptides,
     )
 
+    gsea_input_table = _build_gsea_input_table(
+        maxZ, deltaZ, peptide_sets_for_analysis, threshold
+    )
+    _write_gsea_input_table(
+        debug_gsea_input_table_path,
+        gsea_input_table,
+        pair=debug_pair,
+        iteration=debug_iteration,
+    )
+
     # This ought to ensure this file is accessible where this code is actually
     # being run if run cross node on HPC for instance
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -475,7 +654,6 @@ def _create_fgsea_table_for_pair(
                 max_size,
                 seed,
             )
-
             table = ro.conversion.get_conversion().rpy2py(table)
 
     return table

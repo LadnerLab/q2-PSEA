@@ -262,6 +262,9 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
+        "debug_gsea_input_table_path": Str,
+        "debug_pair": Str,
+        "debug_iteration": Str,
     },
     parameter_descriptions={
         "threshold": (
@@ -291,6 +294,17 @@ plugin.methods.register_function(
         "residual_min_peptides": (
             "Minimum number of peptides required per species with absolute"
             " residual greater than residual_abs_thresh to keep that species."
+        ),
+        "debug_gsea_input_table_path": (
+            "Optional path for writing the exact TSV input table passed to R"
+            " GSEA. Intended only for debugging."
+        ),
+        "debug_pair": (
+            "Optional sample-pair label used to organize GSEA input debug"
+            " tables."
+        ),
+        "debug_iteration": (
+            "Optional iteration label used to name GSEA input debug tables."
         ),
     },
     input_descriptions={
@@ -344,6 +358,7 @@ plugin.methods.register_function(
         "include_negative_enrichment": Bool,
         "species_taxa": Metadata,
         "debug_per_iteration_table_path": Str,
+        "debug_gsea_input_table_path": Str,
         "pair": Str,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
@@ -370,6 +385,10 @@ plugin.methods.register_function(
             "Path to write per pair and per iteration psea tables to as .tsvs."
             " Only to be used when debugging and meaningless if not doing"
             " iterative analysis."
+        ),
+        "debug_gsea_input_table_path": (
+            "Optional path for writing the exact TSV input tables passed to R"
+            " GSEA at each iteration. Intended only for debugging."
         ),
         "pair": (
             "The name of the pair we are running iterative analysis on. Only"
@@ -457,6 +476,7 @@ plugin.pipelines.register_function(
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
         "debug_per_iteration_table_path": Str,
+        "debug_gsea_input_table_path": Str,
     },
     parameter_descriptions={
         "threshold": (
@@ -533,6 +553,11 @@ plugin.pipelines.register_function(
             "Path to write per pair and per iteration psea tables to as .tsvs."
             " Only to be used when debugging and meaningless if not doing"
             " iterative analysis."
+        ),
+        "debug_gsea_input_table_path": (
+            "Optional path to write the exact TSV input tables passed to R"
+            " GSEA. When used with iterative analysis, tables are organized"
+            " by pair and iteration; the final GSEA input is also written."
         ),
     },
     input_descriptions={
@@ -823,17 +848,29 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=taxa_to_epitope,
     inputs={
-        'epitope': FeatureData[MappedEpitope],
+        'peptide_metadata': FeatureData[Epitope],
+        'peptide_sets': GMT,
     },
-    parameters={},
+    parameters={
+        'collapse': Str % Choices(['Bacterial', 'Viral', 'Both']),
+    },
     outputs=[
         ('epitope_gmt', GMT % Properties("mapped")),
     ],
     input_descriptions={
-        'epitope': 'Feature table containing at least SpeciesID, ClusterID, '
-                   'and EpitopeWindow columns',
+        'peptide_metadata': 'Feature table containing at least SpeciesID, '
+                            'ClusterID, and EpitopeWindow columns keyed on '
+                            'SpeciesID column.',
+        'peptide_sets': 'GMT file mapping species identifiers to the peptides '
+                        'linked to them. Collapsed to epitope level if '
+                        'epitope is provided.'
     },
-    parameter_descriptions={},
+    parameter_descriptions={
+        'collapse': (
+            'Category to collapse to epitope level. Only used when the'
+            ' epitope input is provided.'
+        ),
+    },
     output_descriptions={
         'epitope_gmt': 'GMT mapping SpeciesIDs to associated epitopes.',
     },

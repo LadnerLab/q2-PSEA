@@ -27,14 +27,14 @@ def smooth_spline(x, y, knots=3, s=0.788458):
     list(float)
         Predicted y value for every given x value
     """
-    x_new = np.linspace(0, 1, knots + 2)[1:-1]
+    x_new = np.linspace(0, 1, knots+2)[1:-1]
     q_knots = np.quantile(x, x_new)
     t, c, k = interpolate.splrep(x, y, t=q_knots, s=s)
     return interpolate.BSpline(t, c, k)(x)
 
 
-def natural_cubic_spline(x, y, knots=3):
-    """Returns predicted values from a natural cubic regression spline."""
+def natural_cubic_spline(x, y):
+    """Returns predicted values from a natural cubic spline."""
     x = np.asarray(x)
     y = np.asarray(y)
 
@@ -46,38 +46,8 @@ def natural_cubic_spline(x, y, knots=3):
         )
 
     y_unique = np.bincount(inverse, weights=y) / np.bincount(inverse)
-    knot_count = min(knots + 2, len(x_unique))
-    knot_probs = np.linspace(0, 1, knot_count)
-    spline_knots = np.unique(np.quantile(x_unique, knot_probs))
-
-    if len(spline_knots) < 3:
-        return linear_regression(x_unique, y_unique, x_pred=x)
-
-    lower = spline_knots[0]
-    upper = spline_knots[-1]
-
-    def _d(value, knot):
-        return (
-            np.maximum(value - knot, 0) ** 3
-            - np.maximum(value - upper, 0) ** 3
-        ) / (upper - knot)
-
-    basis = [np.ones_like(x_unique), x_unique]
-    reference_knot = spline_knots[-2]
-    reference = _d(x_unique, reference_knot)
-    for knot in spline_knots[:-2]:
-        basis.append(_d(x_unique, knot) - reference)
-
-    design = np.column_stack(basis)
-    coefficients, *_ = np.linalg.lstsq(design, y_unique, rcond=None)
-
-    pred_basis = [np.ones_like(x), x]
-    pred_reference = _d(x, reference_knot)
-    for knot in spline_knots[:-2]:
-        pred_basis.append(_d(x, knot) - pred_reference)
-
-    pred_design = np.column_stack(pred_basis)
-    return pred_design @ coefficients
+    spline = interpolate.CubicSpline(x_unique, y_unique, bc_type="natural")
+    return spline(x)
 
 
 def linear_regression(x, y, x_pred=None, through_origin=False):
@@ -128,7 +98,7 @@ cubic_spline <- function(x, y, degree, df)
     cubic_spline_preds <- predict(
         cubic_spline_obj,
         newdata = list(sorted.x),
-        se = TRUE
+        se=TRUE
     )
     cubic_spline_se_bands <- cbind(
         cubic_spline_preds$fit + 2 * cubic_spline_preds$se.fit,

@@ -60,16 +60,23 @@ def epitope_zscore(
     return result
 
 
-def taxa_to_epitope(epitope: pd.DataFrame) -> pd.DataFrame:
-    epitope = epitope.reset_index()
-    epitope = epitope[['SpeciesID', 'EpitopeID']]
-    epitope = epitope.explode('SpeciesID')
-    epitope.drop_duplicates(inplace=True)
-    epitope = epitope.rename(
-        columns={'SpeciesID': 'term', 'EpitopeID': 'gene'}
-    )
+def taxa_to_epitope(
+            peptide_metadata: pd.DataFrame,
+            peptide_sets: pd.DataFrame,
+            collapse: bool = 'Viral'
+        ) -> pd.DataFrame:
+    def _get_epitope_id(gmt_row):
+        peptide = gmt_row['gene']
+        metadata_row = peptide_metadata.loc[peptide]
+        if collapse == 'Both' or metadata_row['Category'] == collapse:
+            return \
+                f"{metadata_row['SpeciesID']}_{metadata_row['ClusterID']}_" \
+                f"{metadata_row['EpitopeWindow']}"
 
-    return epitope
+        return metadata_row.name
+
+    peptide_sets['gene'] = peptide_sets.apply(_get_epitope_id, axis=1)
+    return peptide_sets
 
 
 def _create_EpitopeID_row(epitope, collapse):

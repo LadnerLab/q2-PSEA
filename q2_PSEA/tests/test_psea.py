@@ -8,6 +8,7 @@ from pandas.testing import assert_series_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
+    _build_gsea_input_table,
     _compute_pair_fit_and_residuals,
     _process_scores,
 )
@@ -264,6 +265,49 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
         pd.testing.assert_frame_equal(
             df1.sort_values("ID").reset_index(drop=True),
             df2.sort_values("ID").reset_index(drop=True),
+        )
+
+
+class TestGseaInputDebugTable(unittest.TestCase):
+
+    def test_debug_table_contains_term_gene_and_ranked_gene_list_fields(self):
+        maxZ = pd.Series(
+            {"pep_01": 2.0, "pep_02": 0.5, "pep_03": 3.0}
+        )
+        deltaZ = pd.Series(
+            {"pep_01": 1.2, "pep_02": 4.0, "pep_03": 0.0}
+        )
+        peptide_sets = pd.DataFrame({
+            "term": ["sp1", "sp1", "sp2"],
+            "gene": ["pep_01", "pep_02", "pep_03"],
+        })
+
+        table = _build_gsea_input_table(
+            maxZ=maxZ,
+            deltaZ=deltaZ,
+            peptide_sets_for_analysis=peptide_sets,
+            threshold=1.0,
+        )
+
+        self.assertEqual(
+            list(table.columns),
+            [
+                "term", "gene", "maxZ", "deltaZ", "in_gene_list",
+                "gene_list_rank", "gene_list_score",
+            ],
+        )
+        self.assertTrue(
+            table.loc[table["gene"] == "pep_01", "in_gene_list"].iloc[0]
+        )
+        self.assertFalse(
+            table.loc[table["gene"] == "pep_02", "in_gene_list"].iloc[0]
+        )
+        self.assertFalse(
+            table.loc[table["gene"] == "pep_03", "in_gene_list"].iloc[0]
+        )
+        self.assertEqual(
+            table.loc[table["gene"] == "pep_01", "gene_list_rank"].iloc[0],
+            1,
         )
 
 
