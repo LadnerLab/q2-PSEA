@@ -5,6 +5,7 @@ usage <- paste(
     "Rscript run_gsea_from_psea_debug.R <gsea_input.tsv> <output.tsv>",
     "[--permutation-num N] [--min-size N] [--max-size N] [--seed N]",
     "[--missing-output missing.tsv] [--diagnostics-output diagnostics.tsv]",
+    "[--fgsea-output raw_fgsea.tsv]",
     sep = "\n  "
 )
 
@@ -22,6 +23,7 @@ max_size <- 2000
 seed <- 1
 missing_output <- NA_character_
 diagnostics_output <- NA_character_
+fgsea_output <- NA_character_
 
 i <- 3
 while (i <= length(args)) {
@@ -43,6 +45,8 @@ while (i <= length(args)) {
         missing_output <- value
     } else if (flag == "--diagnostics-output") {
         diagnostics_output <- value
+    } else if (flag == "--fgsea-output") {
+        fgsea_output <- value
     } else {
         stop(paste("Unknown argument:", flag, "\n", usage), call. = FALSE)
     }
@@ -50,6 +54,7 @@ while (i <= length(args)) {
 }
 
 suppressPackageStartupMessages(library(clusterProfiler))
+suppressPackageStartupMessages(library(fgsea))
 
 gsea_input <- read.delim(
     input_path,
@@ -69,6 +74,7 @@ if (length(missing_cols) > 0) {
 
 term_to_gene <- gsea_input[, c("term", "gene")]
 term_to_gene <- term_to_gene[order(term_to_gene$gene), , drop = FALSE]
+pathways <- split(as.character(term_to_gene$gene), as.character(term_to_gene$term))
 
 gene_rows <- gsea_input[gsea_input$in_gene_list %in% c(TRUE, "TRUE", "True", "true", 1), ]
 gene_rows <- gene_rows[!duplicated(gene_rows$gene), ]
@@ -88,6 +94,37 @@ out <- GSEA(
     nPermSimple = permutation_num,
     exponent = 1
 )
+
+if (!is.na(fgsea_output)) {
+    set.seed(seed)
+    fgsea_table <- fgsea::fgseaMultilevel(
+        pathways = pathways,
+        stats = gene_list,
+        minSize = min_size,
+        maxSize = max_size,
+        eps = 1e-30,
+        nPermSimple = permutation_num,
+        gseaParam = 1,
+        scoreType = "std"
+    )
+
+    if ("leadingEdge" %in% colnames(fgsea_table)) {
+        fgsea_table$leadingEdge <- vapply(
+            fgsea_table$leadingEdge,
+            paste,
+            collapse = "/",
+            FUN.VALUE = character(1)
+        )
+    }
+
+    write.table(
+        as.data.frame(fgsea_table),
+        file = fgsea_output,
+        sep = "\t",
+        quote = FALSE,
+        row.names = FALSE
+    )
+}
 
 if (nrow(out) == 0) {
     outtable <- data.frame(
