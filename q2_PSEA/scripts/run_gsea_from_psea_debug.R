@@ -5,7 +5,7 @@ usage <- paste(
     "Rscript run_gsea_from_psea_debug.R <gsea_input.tsv> <output.tsv>",
     "[--permutation-num N] [--min-size N] [--max-size N] [--seed N]",
     "[--missing-output missing.tsv] [--diagnostics-output diagnostics.tsv]",
-    "[--fgsea-output raw_fgsea.tsv]",
+    "[--fgsea-output raw_fgsea.tsv] [--diagnostics-plot-output plots.pdf]",
     sep = "\n  "
 )
 
@@ -24,6 +24,7 @@ seed <- 1
 missing_output <- NA_character_
 diagnostics_output <- NA_character_
 fgsea_output <- NA_character_
+diagnostics_plot_output <- NA_character_
 
 i <- 3
 while (i <= length(args)) {
@@ -47,6 +48,8 @@ while (i <= length(args)) {
         diagnostics_output <- value
     } else if (flag == "--fgsea-output") {
         fgsea_output <- value
+    } else if (flag == "--diagnostics-plot-output") {
+        diagnostics_plot_output <- value
     } else {
         stop(paste("Unknown argument:", flag, "\n", usage), call. = FALSE)
     }
@@ -165,7 +168,15 @@ if (!is.na(missing_output)) {
     )
 }
 
-if (!is.na(diagnostics_output)) {
+calc_skewness <- function(x) {
+    x <- x[!is.na(x)]
+    if (length(x) < 3 || sd(x) == 0) {
+        return(NA_real_)
+    }
+    mean((x - mean(x))^3) / sd(x)^3
+}
+
+build_diagnostics <- function(gsea_input, outtable, min_size, max_size) {
     output_terms <- sort(unique(as.character(outtable$ID)))
 
     diagnostics <- do.call(
@@ -190,8 +201,16 @@ if (!is.na(diagnostics_output)) {
                     genes_in_gene_list = effective_size,
                     positive_deltaZ = sum(ranked_scores > 0),
                     negative_deltaZ = sum(ranked_scores < 0),
+                    positive_fraction = if (length(ranked_scores) > 0) {
+                        sum(ranked_scores > 0) / length(ranked_scores)
+                    } else {
+                        NA_real_
+                    },
                     zero_deltaZ = sum(term_rows$deltaZ == 0, na.rm = TRUE),
                     na_deltaZ = sum(is.na(term_rows$deltaZ)),
+                    mean_deltaZ = if (length(ranked_scores) > 0) mean(ranked_scores) else NA_real_,
+                    median_deltaZ = if (length(ranked_scores) > 0) median(ranked_scores) else NA_real_,
+                    skewness_deltaZ = calc_skewness(ranked_scores),
                     min_deltaZ = if (length(ranked_scores) > 0) min(ranked_scores) else NA_real_,
                     max_deltaZ = if (length(ranked_scores) > 0) max(ranked_scores) else NA_real_,
                     passes_min_size = effective_size >= min_size,
@@ -225,6 +244,157 @@ if (!is.na(diagnostics_output)) {
     )
 
     diagnostics <- diagnostics[order(diagnostics$appears_in_gsea_output, diagnostics$ID), ]
+    diagnostics
+}
+
+plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path) {
+    pdf(output_path, width = 11, height = 8.5)
+    on.exit(dev.off(), add = TRUE)
+
+    status <- ifelse(diagnostics$appears_in_gsea_output, "Returned", "Missing")
+    point_cols <- ifelse(diagnostics$appears_in_gsea_output, "#377eb8", "#e41a1c")
+    suspicious <- diagnostics[
+        !diagnostics$appears_in_gsea_output
+            & diagnostics$passes_min_size
+            & diagnostics$passes_max_size,
+        ,
+        drop = FALSE
+    ]
+
+    par(mfrow = c(2, 2), mar = c(4.5, 4.5, 3, 1))
+    plot(
+        diagnostics$genes_in_gene_list,
+        diagnostics$positive_fraction,
+        log = "x",
+        pch = 19,
+        col = point_cols,
+        xlab = "Genes in ranked gene list (log scale)",
+        ylab = "Fraction positive deltaZ",
+        main = "Set Size vs Sign Balance"
+    )
+    legend(
+        "topright",
+        legend = c("Returned", "Missing"),
+        col = c("#377eb8", "#e41a1c"),
+        pch = 19,
+        bty = "n"
+    )
+    if (nrow(suspicious) > 0) {
+        text(
+            suspicious$genes_in_gene_list,
+            suspicious$positive_fraction,
+            labels = suspicious$ID,
+            pos = 4,
+            cex = 0.75
+        )
+    }
+
+    plot(
+        diagnostics$genes_in_gene_list,
+        diagnostics$skewness_deltaZ,
+        log = "x",
+        pch = 19,
+        col = point_cols,
+        xlab = "Genes in ranked gene list (log scale)",
+        ylab = "deltaZ skewness",
+        main = "Set Size vs Score Skewness"
+    )
+    abline(h = 0, lty = 2, col = "gray50")
+    if (nrow(suspicious) > 0) {
+        text(
+            suspicious$genes_in_gene_list,
+            suspicious$skewness_deltaZ,
+            labels = suspicious$ID,
+            pos = 4,
+            cex = 0.75
+        )
+    }
+
+    boxplot(
+        positive_fraction ~ status,
+        data = diagnostics,
+        col = c("#e41a1c", "#377eb8"),
+        ylab = "Fraction positive deltaZ",
+        main = "Sign Balance by Output Status"
+    )
+
+    boxplot(
+        skewness_deltaZ ~ status,
+        data = diagnostics,
+        col = c("#e41a1c", "#377eb8"),
+        ylab = "deltaZ skewness",
+        main = "Score Skewness by Output Status"
+    )
+    abline(h = 0, lty = 2, col = "gray50")
+
+    if (nrow(suspicious) == 0) {
+        plot.new()
+        title("No Missing Species Passed Size Filters")
+        return(invisible(NULL))
+    }
+
+    ranked_names <- names(gene_list)
+    ranked_scores <- as.numeric(gene_list)
+
+    for (term_id in suspicious$ID) {
+        term_rows <- gsea_input[
+            as.character(gsea_input$term) == term_id
+                & gsea_input$in_gene_list %in% c(TRUE, "TRUE", "True", "true", 1),
+            ,
+            drop = FALSE
+        ]
+        positions <- match(unique(as.character(term_rows$gene)), ranked_names)
+        positions <- sort(positions[!is.na(positions)])
+        term_scores <- term_rows$deltaZ[match(ranked_names[positions], term_rows$gene)]
+        term_scores <- term_scores[!is.na(term_scores)]
+
+        par(mfrow = c(2, 1), mar = c(4.5, 4.5, 3, 1))
+        plot(
+            seq_along(ranked_scores),
+            ranked_scores,
+            type = "l",
+            col = "gray55",
+            xlab = "Rank in gene_list",
+            ylab = "deltaZ",
+            main = paste("Rank Positions for Missing Species", term_id)
+        )
+        abline(h = 0, lty = 2, col = "gray70")
+        if (length(positions) > 0) {
+            rug(positions, col = "#e41a1c", ticksize = 0.08)
+            points(
+                positions,
+                ranked_scores[positions],
+                pch = 16,
+                col = rgb(0.89, 0.10, 0.11, 0.35),
+                cex = 0.65
+            )
+        }
+
+        hist(
+            term_scores,
+            breaks = 30,
+            col = "#e41a1c",
+            border = "white",
+            xlab = "deltaZ for this species",
+            main = paste(
+                "Score Distribution:",
+                term_id,
+                "| n =",
+                length(term_scores),
+                "| positive fraction =",
+                round(suspicious$positive_fraction[suspicious$ID == term_id], 3)
+            )
+        )
+        abline(v = 0, lty = 2, col = "gray30")
+    }
+}
+
+diagnostics <- NULL
+if (!is.na(diagnostics_output) || !is.na(diagnostics_plot_output)) {
+    diagnostics <- build_diagnostics(gsea_input, outtable, min_size, max_size)
+}
+
+if (!is.na(diagnostics_output)) {
     write.table(
         diagnostics,
         file = diagnostics_output,
@@ -232,4 +402,8 @@ if (!is.na(diagnostics_output)) {
         quote = FALSE,
         row.names = FALSE
     )
+}
+
+if (!is.na(diagnostics_plot_output)) {
+    plot_diagnostics(gsea_input, diagnostics, gene_list, diagnostics_plot_output)
 }
