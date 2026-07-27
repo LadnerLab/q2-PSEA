@@ -180,8 +180,9 @@ calc_skewness <- function(x) {
     mean((x - mean(x))^3) / sd(x)^3
 }
 
-build_diagnostics <- function(gsea_input, outtable, min_size, max_size) {
+build_diagnostics <- function(gsea_input, outtable, min_size, max_size, gene_list) {
     output_terms <- sort(unique(as.character(outtable$ID)))
+    total_genes_in_gene_list <- length(unique(names(gene_list)))
 
     diagnostics <- do.call(
         rbind,
@@ -203,6 +204,11 @@ build_diagnostics <- function(gsea_input, outtable, min_size, max_size) {
                     input_term_gene_rows = nrow(term_rows),
                     unique_input_genes = length(unique(as.character(term_rows$gene))),
                     genes_in_gene_list = effective_size,
+                    fraction_of_ranked_gene_list = if (total_genes_in_gene_list > 0) {
+                        effective_size / total_genes_in_gene_list
+                    } else {
+                        NA_real_
+                    },
                     positive_deltaZ = sum(ranked_scores > 0),
                     negative_deltaZ = sum(ranked_scores < 0),
                     positive_fraction = if (length(ranked_scores) > 0) {
@@ -273,14 +279,13 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, pl
 
     par(mfrow = c(2, 2), mar = c(4.5, 4.5, 3, 1))
     plot(
-        diagnostics$genes_in_gene_list,
+        diagnostics$fraction_of_ranked_gene_list,
         diagnostics$positive_fraction,
-        log = "x",
         pch = 19,
         col = point_cols,
-        xlab = "Genes in ranked gene list (log scale)",
+        xlab = "Fraction of ranked gene list",
         ylab = "Fraction positive deltaZ",
-        main = "Set Size vs Sign Balance"
+        main = "Ranked-List Fraction vs Sign Balance"
     )
     legend(
         "topright",
@@ -291,7 +296,7 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, pl
     )
     if (nrow(highlighted) > 0) {
         text(
-            highlighted$genes_in_gene_list,
+            highlighted$fraction_of_ranked_gene_list,
             highlighted$positive_fraction,
             labels = highlighted$ID,
             pos = 4,
@@ -300,19 +305,18 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, pl
     }
 
     plot(
-        diagnostics$genes_in_gene_list,
+        diagnostics$fraction_of_ranked_gene_list,
         diagnostics$skewness_deltaZ,
-        log = "x",
         pch = 19,
         col = point_cols,
-        xlab = "Genes in ranked gene list (log scale)",
+        xlab = "Fraction of ranked gene list",
         ylab = "deltaZ skewness",
-        main = "Set Size vs Score Skewness"
+        main = "Ranked-List Fraction vs Score Skewness"
     )
     abline(h = 0, lty = 2, col = "gray50")
     if (nrow(highlighted) > 0) {
         text(
-            highlighted$genes_in_gene_list,
+            highlighted$fraction_of_ranked_gene_list,
             highlighted$skewness_deltaZ,
             labels = highlighted$ID,
             pos = 4,
@@ -406,7 +410,13 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, pl
 
 diagnostics <- NULL
 if (!is.na(diagnostics_output) || !is.na(diagnostics_plot_output)) {
-    diagnostics <- build_diagnostics(gsea_input, outtable, min_size, max_size)
+    diagnostics <- build_diagnostics(
+        gsea_input,
+        outtable,
+        min_size,
+        max_size,
+        gene_list
+    )
 }
 
 if (!is.na(diagnostics_output)) {
