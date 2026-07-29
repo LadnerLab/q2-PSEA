@@ -24,13 +24,13 @@ from q2_PSEA.actions.psea import (
     _process_scores,
     _run_iterative_process_single_pair,
     _split_scores,
+    _map_residuals_and_zscores,
     make_psea_table,
     make_psea_table_wrapper,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.actions.epitope import (
     create_epitope_map,
-    epitope_zscore,
     taxa_to_epitope,
     count_enriched,
 )
@@ -133,7 +133,6 @@ plugin.methods.register_function(
     function=_compute_pair_fit_and_residuals,
     inputs={
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
-        "epitope_map": FeatureData[MappedEpitope],
     },
     parameters={
         "pair": Str,
@@ -147,10 +146,6 @@ plugin.methods.register_function(
     input_descriptions={
         "processed_zscores": (
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
-        ),
-        "epitope_map": (
-            "Optional mapped-epitope table. When provided, maxZ and deltaZ"
-            " are collapsed from peptide to epitope level."
         ),
     },
     parameter_descriptions={
@@ -618,7 +613,6 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "peptide_metadata": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
-        "scores_map": FeatureTable[Zscore % Properties("mapped")],
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
@@ -701,8 +695,8 @@ plugin.pipelines.register_function(
         "use_epitope_mapping": (
             "If true, the analysis will be run with data collapsed to epitope"
             " level. This requires you to either pass 'peptide_metadata' so"
-            " the pipeline can do the collapsing, or all of epitope_map,"
-            " scores_map, and peptide_sets_map"
+            " the pipeline can do the collapsing, or both of epitope_map,"
+            " and peptide_sets_map"
         ),
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
@@ -742,17 +736,12 @@ plugin.pipelines.register_function(
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
             " table is used in GSEA. Maps epitopes to peptides and species."
-            "NOTE: Must be passed with scores_map and peptide_sets_map."
-        ),
-        "scores_map": (
-            "Optional already collapsed zscores. When provided, these"
-            " scores are used in GSEA but NOT for spline fitting."
-            "NOTE: Must be passed with eptiope_map and peptide_sets_map."
+            "NOTE: Must be passed with peptide_sets_map."
         ),
         "peptide_sets_map": (
             "Optional already collapsed epitope peptide sets. When provided,"
             " these peptides are used in GSEA."
-            "NOTE: Must be passed with epitope_map and scores_map."
+            "NOTE: Must be passed with epitope_map."
         )
     },
     outputs=[
@@ -973,37 +962,6 @@ plugin.methods.register_function(
 )
 
 # ---------------------------------------------------------------------------
-# Register epitope_zscore as a method
-# ---------------------------------------------------------------------------
-
-plugin.methods.register_function(
-    function=epitope_zscore,
-    inputs={
-        'zscores': FeatureTable[Zscore],
-        'epitope_map': FeatureData[MappedEpitope],
-    },
-    parameters={},
-    outputs=[
-        ('epitope_zscore', FeatureTable[Zscore % Properties("mapped")]),
-    ],
-    input_descriptions={
-        'zscores': 'FeatureTable containing the code names of peptides and '
-                   'their per sample z scores',
-        'epitope_map': 'FeatureTable containing epitopes and their associated '
-                       'peptides and subtypes',
-    },
-    parameter_descriptions={},
-    output_descriptions={
-        'epitope_zscore': 'FeatureTable containing the epitopes and their per '
-                          'sample z scores.',
-    },
-    name='zscore',
-    description='Creates a map of epitopes to their max z-score within each '
-                'sample. The maxes are taken by finding the per sample maxes '
-                'among z scores of peptides associated with a given epitope.',
-)
-
-# ---------------------------------------------------------------------------
 # Register taxa_to_epitope as a method
 # ---------------------------------------------------------------------------
 
@@ -1087,4 +1045,22 @@ plugin.methods.register_function(
     ],
     name='split scores',
     description='Splits scores into per-pair artifacts.'
+)
+
+
+plugin.methods.register_function(
+    function=_map_residuals_and_zscores,
+    inputs={
+        'spline': FeatureData[Spline],
+        'zscores': FeatureTable[Zscore % Properties('processed')],
+        'epitope_map': FeatureData[MappedEpitope]
+    },
+    parameters={},
+    outputs=[
+        ('mapped_spline', FeatureData[Spline % Properties('mapped')]),
+        ('mapped_zscores',
+          FeatureTable[Zscore % Properties('processed', 'mapped')])
+    ],
+    name="map residuals and zscores",
+    description="maps residuals and zscores"
 )

@@ -190,7 +190,6 @@ def make_psea_table(
     threshold: float,
     peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
-    scores_map: qiime2.Artifact = None,
     peptide_sets_map: qiime2.Artifact = None,
     collapse: str = "Viral",
     p_value: float = 0.05,
@@ -253,9 +252,7 @@ def make_psea_table(
     # Determine what kind of analysis was asked for
     # ------------------------------------------------------------------
     map_provided = all(
-        param is not None for param in [
-            epitope_map, scores_map, peptide_sets_map
-        ]
+        param is not None for param in [epitope_map, peptide_sets_map ]
     )
 
     if not use_epitope_mapping and map_provided:
@@ -264,14 +261,13 @@ def make_psea_table(
 
     if use_epitope_mapping and any(
                 param is not None for param in [
-                    epitope_map, scores_map, peptide_sets_map
+                    epitope_map, peptide_sets_map
                 ]
             ) and not map_provided:
         raise ValueError(
-            "Please pass either all of 'epitope_map', 'scores_map',"
-            " and 'peptide_sets_map' or none of them when running mapped"
-            " analysis. If you provide None, this pipeline will do the"
-            " mapping."
+            "Please pass either all of 'epitope_map', 'peptide_sets_map' or"
+            " none of them when running mapped analysis. If you provide None,"
+            " this pipeline will do the mapping."
         )
 
     if use_epitope_mapping and not map_provided and peptide_metadata is None:
@@ -286,6 +282,8 @@ def make_psea_table(
     _compute_pair_fit_and_residuals = ctx.get_action(
         "psea", "_compute_pair_fit_and_residuals"
     )
+    _map_residuals_and_zscores = \
+            ctx.get_action("psea", "_map_residuals_and_zscores")
     _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
     )
@@ -317,11 +315,9 @@ def make_psea_table(
     # ------------------------------------------------------------------
     if use_epitope_mapping and not map_provided:
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map, = create_epitope_map(peptide_metadata, collapse)
-        scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
+        epitope_map = create_epitope_map(peptide_metadata, collapse)
         peptide_sets_map, = create_epitope_gmt(
             peptide_metadata, peptide_sets, collapse=collapse
         )
@@ -330,9 +326,6 @@ def make_psea_table(
     # Process (log-scale) scores
     # ------------------------------------------------------------------
     processed_zscores, = _process_scores(filtered_zscores)
-    mapped_processed_zscores = None
-    if use_epitope_mapping:
-        mapped_processed_zscores, = _process_scores(scores_map)
 
     # ------------------------------------------------------------------
     # Split scores out by pair
@@ -344,11 +337,6 @@ def make_psea_table(
     # here, and it takes some time... maybe too long for a large number
     # of pairs
     split_processed_zscores, = _split_scores(processed_zscores, pairs)
-    split_mapped_processed_zscores = None
-    if use_epitope_mapping:
-        split_mapped_processed_zscores, = _split_scores(
-            mapped_processed_zscores, pairs
-        )
 
     pair_splines = {}
     pair_pep_sets_dict = {}
@@ -370,16 +358,19 @@ def make_psea_table(
             fit_threshold=fit_threshold,
             linear_through_origin=linear_through_origin,
             degree=degree,
-            epitope_map=epitope_map,
             dof=dof,
         )
 
-        # We need to use unmapped scores when collapsing no matter what, but
-        # down below whether we use mapped or unmapped depends on the type of
-        # analysis requested
-        used_zscores = \
-            split_mapped_processed_zscores[pair] if use_epitope_mapping else \
-            split_processed_zscores[pair]
+        # Collapse residuals and zscores if using mapping
+        if use_epitope_mapping:
+            pair_splines[pair], used_zscores = \
+                _map_residuals_and_zscores(
+                    pair_splines[pair],
+                    split_processed_zscores[pair],
+                    epitope_map
+                )
+        else:
+            used_zscores = split_processed_zscores[pair]
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
@@ -726,7 +717,6 @@ def _compute_pair_fit_and_residuals(
     degree: int,
     fit_threshold: float = None,
     linear_through_origin: bool = False,
-    epitope_map: pd.DataFrame = None,
     dof: int = None,
 ) -> pd.DataFrame:
     """Fit a spline to the Z-score scatter for a single sample pair and
@@ -790,23 +780,60 @@ def _compute_pair_fit_and_residuals(
     )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
-    if epitope_map is not None:
-        maxZ_out = utils.collapse_residuals_to_epitope(maxZ, epitope_map)
-        deltaZ_out = utils.collapse_residuals_to_epitope(deltaZ, epitope_map)
-    else:
-        maxZ_out = maxZ
-        deltaZ_out = deltaZ
-
     spline_df = pd.concat([
         pd.DataFrame(
             {"x": x, "yfit": yfit},
             index=data_sorted.index,
         ),
-        pd.DataFrame({"maxZ": maxZ_out, "deltaZ": deltaZ_out}),
+        pd.DataFrame({"maxZ": maxZ, "deltaZ": deltaZ}),
     ], axis=1)
     spline_df.index.name = "feature-id"
 
     return spline_df
+
+
+def _map_residuals_and_zscores(
+    spline: pd.DataFrame,
+    zscores: pd.DataFrame,
+    epitope_map: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    zscores = zscores.transpose()
+
+    mapped_spline = pd.DataFrame(columns=spline.columns)
+    mapped_spline_rows = []
+
+    mapped_zscores = pd.DataFrame(columns=zscores.columns)
+    mapped_zscores_rows = []
+
+    def map_helper(row):
+        # Get the row associated with the peptide that has the max abs value
+        # in maxZ
+        max_peptide_row = spline.loc[
+            spline.loc[row['CodeName']]['maxZ'].abs().idxmax()
+        ]
+        max_peptide_zscores = zscores.loc[max_peptide_row.name]
+
+        max_peptide_row.name = row.name
+        max_peptide_zscores.name = row.name
+
+        mapped_spline_rows.append(max_peptide_row)
+        mapped_zscores_rows.append(max_peptide_zscores)
+
+    epitope_map.apply(map_helper, axis=1)
+
+    mapped_spline = pd.concat(
+        [mapped_spline, pd.DataFrame(mapped_spline_rows)],
+        ignore_index=False
+    )
+    mapped_spline.index.name = spline.index.name
+
+    mapped_zscores = pd.concat(
+        [mapped_zscores, pd.DataFrame(mapped_zscores_rows)],
+        ignore_index=False
+    )
+    mapped_zscores.index.name = zscores.index.name
+
+    return mapped_spline, mapped_zscores
 
 
 def _filter_scores_to_pairs(
