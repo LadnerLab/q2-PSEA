@@ -37,7 +37,6 @@ def make_psea_table_wrapper(
     threshold: float,
     peptide_metadata: str = None,
     epitope_map: str = None,
-    scores_map: str = None,
     peptide_sets_map: str = None,
     collapse: str = "Viral",
     p_value: float = 0.05,
@@ -93,11 +92,6 @@ def make_psea_table_wrapper(
             'FeatureData[MappedEpitope]', epitope_map
         )
 
-    if scores_map is not None:
-        scores_map = qiime2.Artifact.import_data(
-            'FeatureTable[Zscore % Properties("mapped")]', scores_map
-        )
-
     if peptide_sets_map is not None:
         peptide_sets_map = qiime2.Artifact.import_data(
             'GMT % Properties("mapped")', peptide_sets_map
@@ -111,7 +105,6 @@ def make_psea_table_wrapper(
             threshold=threshold,
             peptide_metadata=peptide_metadata,
             epitope_map=epitope_map,
-            scores_map=scores_map,
             peptide_sets_map=peptide_sets_map,
             collapse=collapse,
             p_value=p_value,

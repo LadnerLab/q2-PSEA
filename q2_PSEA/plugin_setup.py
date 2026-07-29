@@ -430,7 +430,6 @@ plugin.pipelines.register_function(
         "unzipped_output_dir": Str,
         "peptide_metadata": Str,
         "epitope_map": Str,
-        "scores_map": Str,
         "peptide_sets_map": Str,
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
@@ -478,17 +477,12 @@ plugin.pipelines.register_function(
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
             " table is used in GSEA. Maps epitopes to peptides and species."
-            "NOTE: Must be passed with scores_map and peptide_sets_map."
-        ),
-        "scores_map": (
-            "Optional already collapsed zscores. When provided, these"
-            " scores are used in GSEA but NOT for spline fitting."
-            "NOTE: Must be passed with eptiope_map and peptide_sets_map."
+            "NOTE: Must be passed with peptide_sets_map."
         ),
         "peptide_sets_map": (
             "Optional already collapsed epitope peptide sets. When provided,"
             " these peptides are used in GSEA."
-            "NOTE: Must be passed with epitope_map and scores_map."
+            "NOTE: Must be passed with epitope_map."
         ),
         "threshold": (
             "Minimum Z-score a peptide must have to be included in GSEA."
@@ -546,7 +540,7 @@ plugin.pipelines.register_function(
             "If true, the analysis will be run with data collapsed to epitope"
             " level. This requires you to either pass 'peptide_metadata' so"
             " the pipeline can do the collapsing, or all of epitope_map,"
-            " scores_map, and peptide_sets_map"
+            " and peptide_sets_map"
         ),
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
