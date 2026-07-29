@@ -7,9 +7,6 @@
 # ----------------------------------------------------------------------------
 import numpy as np
 import pandas as pd
-from biom import Table
-
-from q2_types.feature_table import BIOMV210Format
 
 
 def create_epitope_map(
@@ -24,40 +21,6 @@ def create_epitope_map(
     epitope_map.set_index('EpitopeID', inplace=True)
 
     return epitope_map
-
-
-def epitope_zscore(
-            zscores: pd.DataFrame,
-            epitope_map: pd.DataFrame
-        ) -> BIOMV210Format:
-    zscores.fillna(value=0, axis=1, inplace=True)
-    samples = list(zscores.index)
-    observations = list(epitope_map.index)
-
-    data = []
-
-    def get_max_z_scores_per_sample(row):
-        max_z_scores_per_sample = []
-        sample_zscores = zscores.columns[zscores.columns.isin(row['CodeName'])]
-
-        zscores[sample_zscores.values].apply(
-            lambda row: max_z_scores_per_sample.append(
-                max(row.values, key=abs)
-            ), axis=1
-        )
-
-        data.append(max_z_scores_per_sample)
-
-    epitope_map.apply(get_max_z_scores_per_sample, axis=1)
-
-    data = np.array(data)
-    table = Table(data, observations, samples)
-
-    result = BIOMV210Format()
-    with result.open() as fh:
-        table.to_hdf5(fh, generated_by="q2-pepsirf for pepsirf")
-
-    return result
 
 
 def taxa_to_epitope(
