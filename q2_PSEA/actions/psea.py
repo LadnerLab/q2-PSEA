@@ -697,8 +697,7 @@ def _map_residuals_and_zscores(
     mapped_zscores_rows = []
 
     def map_helper(row):
-        # Get the row associated with the peptide that has the max abs value
-        # in maxZ
+        # Get row with peptide with largest residual
         max_peptide_row = spline.loc[
             spline.loc[row['CodeName']]['deltaZ'].abs().idxmax()
         ]
