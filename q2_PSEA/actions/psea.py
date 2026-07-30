@@ -625,28 +625,33 @@ def _map_residuals_and_zscores(
     mapped_zscores_rows = []
 
     def map_helper(row):
-        # Get row with peptide with largest residual
-        max_peptide_row = spline.loc[
-            spline.loc[row['CodeName']]['deltaZ'].abs().idxmax()
-        ]
-        max_peptide_zscores = zscores.loc[max_peptide_row.name]
+        # Skip this if this row is a peptide not an epitope. This check shows
+        # that because row['CodeName'] is all peptides, so if row.name matched
+        # the first (and if it's a peptide only) entry in row['CodeName'] the
+        # row must be an uncollapsed peptide
+        if row.name != row['CodeName'][0]:
+            # Get row with peptide with largest residual
+            max_peptide_row = spline.loc[
+                spline.loc[row['CodeName']]['deltaZ'].abs().idxmax()
+            ]
+            max_peptide_zscores = zscores.loc[max_peptide_row.name]
 
-        max_peptide_row.name = row.name
-        max_peptide_zscores.name = row.name
+            max_peptide_row.name = row.name
+            max_peptide_zscores.name = row.name
 
-        mapped_spline_rows.append(max_peptide_row)
-        mapped_zscores_rows.append(max_peptide_zscores)
+            mapped_spline_rows.append(max_peptide_row)
+            mapped_zscores_rows.append(max_peptide_zscores)
 
     epitope_map.apply(map_helper, axis=1)
 
     mapped_spline = pd.concat(
-        [mapped_spline, pd.DataFrame(mapped_spline_rows)],
+        [spline, pd.DataFrame(mapped_spline_rows)],
         ignore_index=False
     )
     mapped_spline.index.name = spline.index.name
 
     mapped_zscores = pd.concat(
-        [mapped_zscores, pd.DataFrame(mapped_zscores_rows)],
+        [zscores, pd.DataFrame(mapped_zscores_rows)],
         ignore_index=False
     )
     mapped_zscores.index.name = zscores.index.name
