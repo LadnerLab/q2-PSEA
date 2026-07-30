@@ -226,7 +226,6 @@ def make_psea_table(
                 processed_zscores=used_zscores,
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
-                epitope_map=epitope_map,
                 mapped_peptide_sets=peptide_sets_map,
                 threshold=threshold,
                 permutation_num=permutation_num,
@@ -330,7 +329,6 @@ def _run_iterative_process_single_pair(
     p_value: float,
     enrichment_score: float,
     precomputed_fit: pd.DataFrame = None,
-    epitope_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
     seed: CaptureHolder[int] = None,
     include_negative_enrichment: bool = True,
@@ -359,7 +357,6 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
-    used_peptide_sets = copy.deepcopy(updated_peptide_sets)
 
     tested_species = set()
     iteration = 1
@@ -371,45 +368,11 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
-    last_psea_table = None
-    current_psea_table = None
-    unchanged_taxa = []
-    def _filter_unchanged_taxa(current_psea_table_row):
-        # I hate using this, but Python is a dork about accessing external
-        # vars in closures sometimes. It's complaining because I overwrite this
-        # var in this closure
-        nonlocal used_peptide_sets
-
-        taxa = current_psea_table_row.name
-        last_psea_table_row = last_psea_table.loc[taxa]
-
-        if set(current_psea_table_row['all_tested_peptides']) == \
-                set(last_psea_table_row['all_tested_peptides']):
-            # Need to copy the row because it only adds a pointer to the object
-            # to the list. If I don't copy it we will end up with a bunch of
-            # pointers to the same object which will all be the last row we saw
-            # here.
-            unchanged_taxa.append(copy.deepcopy(current_psea_table_row))
-            used_peptide_sets = \
-                used_peptide_sets[used_peptide_sets['term'] != taxa]
-
     while (sig_found):
-        # First two iterations pass everything
-        #
-        # After first two iterations, calc diff and only pass forward taxa that
-        # changed in last iteration drop taxa that did not change from gmt
-        # before next iteration.
-        if last_psea_table is not None:
-            # Compare last_psea_table to current_psea_table. If a taxa did not
-            # have changes to its peptide list, drop it from
-            # updated_peptide_sets
-            current_psea_table.apply(_filter_unchanged_taxa, axis=1)
-
-        last_psea_table = current_psea_table
         # Called as a raw Python function not a QIIME 2 Method
         current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
-            peptide_sets=used_peptide_sets,
+            peptide_sets=updated_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -421,31 +384,8 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
-        # Our aggressive diff filtering caused us to wrap up early.
-        if current_psea_table.empty:
-            break
-
-        # Add back unchanged taxa here and recalc p.adj and q using same
-        # methods as R GSEA.
-        readded_psea_table = pd.concat(
-            [current_psea_table, pd.DataFrame(unchanged_taxa)],
-            ignore_index=True
-        )
-
-        # Calc p.adjust using Python basic Benjamini-Hochberg FDR
-        readded_psea_table['p.adjust'] = \
-            multipletests(
-                readded_psea_table['pvalue'], method='fdr_bh'
-            )[1]
-
-        # The q value uses the Storey method which is more involved, but we
-        # already have access to it from the R packages we installed
-        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
-        r_qvalues = qvalue.qvalue(p=r_pvalues)
-        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
-
         if debug_per_iteration_table_path:
-            readded_psea_table.to_csv(
+            current_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -453,17 +393,13 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                readded_psea_table,
+                current_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
                 enrichment_score,
                 include_negative_enrichment,
             )
-
-        # Also drop regularly filtered peptide sets from used_peptide_sets
-        used_peptide_sets = \
-            pd.merge(used_peptide_sets, updated_peptide_sets, how='inner')
 
         iteration += 1
 
