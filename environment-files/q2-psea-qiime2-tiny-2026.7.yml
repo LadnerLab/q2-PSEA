@@ -20,5 +20,5 @@ dependencies:
   - pip
   - pip:
     # These two can be switched to main once this is all merged
-    - q2-psea@git+https://github.com/LadnerLab/q2-PSEA.git@psea-epitope-modified-Claude
+    - q2-psea@git+https://github.com/LadnerLab/q2-PSEA.git@psea-epitope-modified-Claude-diff-filter
     - q2-pepsirf@git+https://github.com/Oddant1/q2-pepsirf.git@epitope
