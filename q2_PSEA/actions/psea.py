@@ -626,7 +626,7 @@ def _map_residuals_and_zscores(
 
     def map_helper(row):
         # Skip this if this row is a peptide not an epitope. This check shows
-        # that because row['CodeName'] is all peptides, so if row.name matched
+        # that because row['CodeName'] is all peptides, so if row.name matches
         # the first (and if it's a peptide only) entry in row['CodeName'] the
         # row must be an uncollapsed peptide
         if row.name != row['CodeName'][0]:
