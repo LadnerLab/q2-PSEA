@@ -163,7 +163,7 @@ def make_psea_table(
         create_epitope_map = ctx.get_action("psea", "create_epitope_map")
         create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
 
-        epitope_map = create_epitope_map(peptide_metadata, collapse)
+        epitope_map, = create_epitope_map(peptide_metadata, collapse)
         peptide_sets_map, = create_epitope_gmt(
             peptide_metadata, peptide_sets, collapse=collapse
         )
