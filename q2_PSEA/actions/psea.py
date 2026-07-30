@@ -8,7 +8,6 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
-from rpy2.robjects.packages import importr
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
