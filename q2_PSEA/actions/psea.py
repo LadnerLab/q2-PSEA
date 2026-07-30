@@ -20,11 +20,6 @@ from q2_PSEA.actions.r_functions import INTERNAL
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
-# Used to calculate p.adjust
-stats = importr('stats')
-# Used to recalculate qvalue using Storey method
-qvalue = importr('qvalue')
-
 
 def make_psea_table(
     ctx: IContext,
