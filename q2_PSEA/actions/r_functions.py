@@ -34,22 +34,6 @@ psea <- function(
         nPermSimple=permutation_num,
         exponent=1
     )
-    
-    if (nrow(out) == 0){
-        return(
-            data.frame(
-                ID = numeric(),
-                enrichmentScore = numeric(),
-                NES = numeric(),
-                p.adjust = numeric(),
-                core_enrichment = character(),
-                pvalue = numeric(),
-                qvalue = numeric(),
-                all_tested_peptides = character(),
-                species_name=character()
-            )
-        )
-    }
 
     outtable_pre <- attributes(out)[[1]][,c(
         "ID", "enrichmentScore", "NES", "p.adjust",
