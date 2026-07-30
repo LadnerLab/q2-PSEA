@@ -326,7 +326,6 @@ plugin.methods.register_function(
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
-        "epitope_map": FeatureData[MappedEpitope],
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
@@ -386,10 +385,6 @@ plugin.methods.register_function(
         "precomputed_fit": (
             "Optional precomputed maxZ/deltaZ from a prior call. When"
             " provided, spline fitting is skipped."
-        ),
-        "epitope_map": (
-            "Optional epitope map passed in if data is collapsed to epitope"
-            " level."
         ),
         "mapped_peptide_sets": (
             "Optional mapped peptide sets passed in if data is collapsed to"
