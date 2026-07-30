@@ -618,10 +618,9 @@ def _map_residuals_and_zscores(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     zscores = zscores.transpose()
 
-    mapped_spline = pd.DataFrame(columns=spline.columns)
+    spline_name = spline.index.name
     mapped_spline_rows = []
-
-    mapped_zscores = pd.DataFrame(columns=zscores.columns)
+    zscores_name = zscores.index.name
     mapped_zscores_rows = []
 
     def map_helper(row):
@@ -644,19 +643,19 @@ def _map_residuals_and_zscores(
 
     epitope_map.apply(map_helper, axis=1)
 
-    mapped_spline = pd.concat(
+    spline = pd.concat(
         [spline, pd.DataFrame(mapped_spline_rows)],
         ignore_index=False
     )
-    mapped_spline.index.name = spline.index.name
+    spline.index.name = spline_name
 
-    mapped_zscores = pd.concat(
+    zscores = pd.concat(
         [zscores, pd.DataFrame(mapped_zscores_rows)],
         ignore_index=False
     )
-    mapped_zscores.index.name = zscores.index.name
+    zscores.index.name = zscores_name
 
-    return mapped_spline, mapped_zscores
+    return spline, zscores
 
 
 def _filter_scores_to_pairs(
