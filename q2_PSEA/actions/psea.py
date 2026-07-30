@@ -201,21 +201,19 @@ def make_psea_table(
 
         # Collapse residuals and zscores if using mapping
         if use_epitope_mapping:
-            pair_splines[pair], used_zscores = \
+            pair_splines[pair], split_processed_zscores[pair] = \
                 _map_residuals_and_zscores(
                     pair_splines[pair],
                     split_processed_zscores[pair],
                     epitope_map
                 )
-        else:
-            used_zscores = split_processed_zscores[pair]
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
-                processed_zscores=used_zscores,
+                processed_zscores=split_processed_zscores[pair],
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 mapped_peptide_sets=peptide_sets_map,
@@ -241,7 +239,7 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = _create_fgsea_table_for_pair(
-            processed_zscores=used_zscores,
+            processed_zscores=split_processed_zscores[pair],
             peptide_sets=pair_pep_sets_dict[pair],
             threshold=threshold,
             permutation_num=permutation_num,
@@ -265,7 +263,7 @@ def make_psea_table(
         )
 
         scatter_plots[pair], = zscatter(
-            zscores=used_zscores,
+            zscores=split_processed_zscores[pair],
             pair=pair,
             spline=pair_splines[pair],
             p_val_access="p.adjust",
@@ -620,7 +618,7 @@ def _map_residuals_and_zscores(
 
     spline_name = spline.index.name
     mapped_spline_rows = []
-    zscores_name = zscores.index.name
+
     mapped_zscores_rows = []
 
     def map_helper(row):
@@ -640,22 +638,24 @@ def _map_residuals_and_zscores(
 
             mapped_spline_rows.append(max_peptide_row)
             mapped_zscores_rows.append(max_peptide_zscores)
+        else:
+            mapped_zscores_rows.append(zscores.loc[row.name])
 
     epitope_map.apply(map_helper, axis=1)
 
+    # Add our mapped spline info onto the old ones because we need the
+    # per-peptide spline info to stay around
     spline = pd.concat(
         [spline, pd.DataFrame(mapped_spline_rows)],
         ignore_index=False
     )
     spline.index.name = spline_name
 
-    zscores = pd.concat(
-        [zscores, pd.DataFrame(mapped_zscores_rows)],
-        ignore_index=False
-    )
-    zscores.index.name = zscores_name
+    # We do not need the per peptide z scores anymore, so we overwrite them
+    mapped_zscores = pd.DataFrame(mapped_zscores_rows, columns=zscores.columns)
+    mapped_zscores.index.name = zscores.index.name
 
-    return spline, zscores
+    return spline, mapped_zscores
 
 
 def _filter_scores_to_pairs(
