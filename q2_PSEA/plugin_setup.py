@@ -867,7 +867,7 @@ plugin.methods.register_function(
     outputs=[
         ('mapped_spline', FeatureData[Spline % Properties('mapped')]),
         ('mapped_zscores',
-          FeatureTable[Zscore % Properties('processed', 'mapped')])
+         FeatureTable[Zscore % Properties('processed', 'mapped')])
     ],
     name="map residuals and zscores",
     description="maps residuals and zscores"

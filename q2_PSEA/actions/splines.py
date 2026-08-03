@@ -53,7 +53,6 @@ def natural_cubic_spline(x, y, knots=3):
     if len(spline_knots) < 3:
         return linear_regression(x_unique, y_unique, x_pred=x)
 
-    lower = spline_knots[0]
     upper = spline_knots[-1]
 
     def _d(value, knot):
@@ -91,7 +90,9 @@ def linear_regression(x, y, x_pred=None, through_origin=False):
     if through_origin:
         denom = np.dot(x, x)
         if denom == 0:
-            raise ValueError("Cannot fit through origin: all x values are zero.")
+            raise ValueError(
+                "Cannot fit through origin: all x values are zero."
+            )
         slope = np.dot(x, y) / denom
         return slope * np.asarray(x_pred)
 

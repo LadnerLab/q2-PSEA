@@ -537,7 +537,7 @@ class TestMapResidualsAndZscoresIntegration(TestPluginBase):
                 "ClusterID": [f"C{i+1}" for i in range(7)],
                 "EpitopeWindow": [f"W{i+1}" for i in range(7)],
                 "Species": ["InfluenzaA"] * 2 + [f"Species{i}"
-                                                  for i in range(2, 7)],
+                                                 for i in range(2, 7)],
                 "Subtype": ["H1N1", "H3N2", "S2", "S3", "S4", "S5", "S6"],
                 "Category": ["Viral"] * 7,
             },

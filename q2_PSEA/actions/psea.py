@@ -90,7 +90,7 @@ def make_psea_table(
     # Determine what kind of analysis was asked for
     # ------------------------------------------------------------------
     map_provided = all(
-        param is not None for param in [epitope_map, peptide_sets_map ]
+        param is not None for param in [epitope_map, peptide_sets_map]
     )
 
     if not use_epitope_mapping and map_provided:
@@ -121,7 +121,7 @@ def make_psea_table(
         "psea", "_compute_pair_fit_and_residuals"
     )
     _map_residuals_and_zscores = \
-            ctx.get_action("psea", "_map_residuals_and_zscores")
+        ctx.get_action("psea", "_map_residuals_and_zscores")
     _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
     )
