@@ -90,7 +90,7 @@ def count_enriched(
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
     # Short circuit if we weren't collapsed
-    if epitope_map is None or peptide_metadata is None:
+    if peptide_metadata is None or epitope_map is None:
         return pd.DataFrame()
 
     filtered_psea_table = psea_table.loc[psea_table['p.adjust'] <= p_value]

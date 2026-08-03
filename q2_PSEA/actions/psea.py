@@ -103,15 +103,14 @@ def make_psea_table(
                 ]
             ) and not map_provided:
         raise ValueError(
-            "Please pass either all of 'epitope_map', 'peptide_sets_map' or"
-            " none of them when running mapped analysis. If you provide None,"
-            " this pipeline will do the mapping."
+            "Please pass either both of 'epitope_map', 'peptide_sets_map' or"
+            " neither of them when running mapped analysis. If you provide"
+            " neither, this pipeline will do the mapping."
         )
 
-    if use_epitope_mapping and not map_provided and peptide_metadata is None:
+    if use_epitope_mapping and peptide_metadata is None:
         raise ValueError(
-            "Must provide peptide metadata if doing a mapped analysis without"
-            " providing mapped artifacts."
+            "Must provide peptide metadata if doing a mapped analysis."
         )
 
     _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
@@ -255,8 +254,8 @@ def make_psea_table(
         enrichment_tables[pair], = count_enriched(
             psea_table=psea_tables[pair],
             residuals=pair_splines[pair],
-            epitope_map=epitope_map,
             peptide_metadata=peptide_metadata,
+            epitope_map=epitope_map,
             p_value=p_value,
             residual_threshold=residual_threshold,
             include_negative_enrichment=include_negative_enrichment

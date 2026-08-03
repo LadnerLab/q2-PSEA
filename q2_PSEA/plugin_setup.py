@@ -538,8 +538,8 @@ plugin.pipelines.register_function(
             " them. Collapsed to epitope level if epitope is provided."
         ),
         "peptide_metadata": (
-            "Optional epitope table. When provided, peptide-level residuals"
-            " are collapsed to the epitope level before GSEA."
+            "Peptide level metadata. Must be passed when doing epitope mapped"
+            " analysis"
         ),
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
