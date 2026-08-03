@@ -717,9 +717,10 @@ class TestMakePseaTableIntegration(TestPluginBase):
         self.pipeline = self.plugin.pipelines["make_psea_table"]
 
     def test_raises_when_map_true_and_peptide_metadata_missing(self):
-        # peptide_metadata is only required when use_epitope_mapping=True and
-        # no precomputed epitope_map/peptide_sets_map are supplied; with
-        # use_epitope_mapping=False the pipeline just runs unmapped.
+        # peptide_metadata is required any time use_epitope_mapping=True,
+        # regardless of whether precomputed epitope_map/peptide_sets_map are
+        # supplied; with use_epitope_mapping=False the pipeline just runs
+        # unmapped and peptide_metadata is optional.
         with self.assertRaises(Exception):
             self.pipeline(
                 scores=self.scores_art,
@@ -727,6 +728,25 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 peptide_sets=self.gmt_art,
                 threshold=0.0,
                 use_epitope_mapping=True,
+                # peptide_metadata intentionally omitted
+            )
+
+    def test_raises_when_map_with_mapped_artifacts_no_peptide_metadata(
+        self
+    ):
+        # Even when epitope_map/peptide_sets_map are both provided,
+        # peptide_metadata is still required downstream (count_enriched's
+        # collapsed analysis needs it), so this must still raise.
+        epi_map_art, peptide_sets_map_art = self._make_mapped_artifacts()
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                use_epitope_mapping=True,
+                epitope_map=epi_map_art,
+                peptide_sets_map=peptide_sets_map_art,
                 # peptide_metadata intentionally omitted
             )
 
