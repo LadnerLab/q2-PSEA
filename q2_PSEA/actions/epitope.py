@@ -32,13 +32,16 @@ def taxa_to_epitope(
         peptide = gmt_row['gene']
         metadata_row = peptide_metadata.loc[peptide]
         if collapse == 'Both' or metadata_row['Category'] == collapse:
-            return \
-                f"{metadata_row['SpeciesID']}_{metadata_row['ClusterID']}_" \
-                f"{metadata_row['EpitopeWindow']}"
+            species_id = metadata_row['SpeciesID'].split(';')[0]
+            cluster_id = metadata_row['ClusterID'].split(';')[0]
+            epitope_window = metadata_row['EpitopeWindow'].split(';')[0]
+
+            return f"{species_id}_{cluster_id}_{epitope_window}"
 
         return metadata_row.name
 
     peptide_sets['gene'] = peptide_sets.apply(_get_epitope_id, axis=1)
+    peptide_sets.drop_duplicates(inplace=True, ignore_index=True)
     return peptide_sets
 
 
