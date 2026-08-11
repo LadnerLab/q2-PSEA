@@ -21,8 +21,8 @@ class TestMethodsRegistered(TestPluginBase):
     def test_create_epitope_map_registered(self):
         self.assertIn("create_epitope_map", self.plugin.methods)
 
-    def test_epitope_zscore_registered(self):
-        self.assertIn("epitope_zscore", self.plugin.methods)
+    def test_map_residuals_and_zscores_registered(self):
+        self.assertIn("_map_residuals_and_zscores", self.plugin.methods)
 
 
 class TestPipelinesRegistered(TestPluginBase):

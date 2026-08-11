@@ -34,7 +34,7 @@ psea <- function(
         nPermSimple=permutation_num,
         exponent=1
     )
-    
+
     if (nrow(out) == 0){
         return(
             data.frame(

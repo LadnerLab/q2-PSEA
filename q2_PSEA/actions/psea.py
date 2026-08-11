@@ -98,7 +98,7 @@ def make_psea_table(
     # Determine what kind of analysis was asked for
     # ------------------------------------------------------------------
     map_provided = all(
-        param is not None for param in [epitope_map, peptide_sets_map ]
+        param is not None for param in [epitope_map, peptide_sets_map]
     )
 
     if not use_epitope_mapping and map_provided:
@@ -111,15 +111,14 @@ def make_psea_table(
                 ]
             ) and not map_provided:
         raise ValueError(
-            "Please pass either all of 'epitope_map', 'peptide_sets_map' or"
-            " none of them when running mapped analysis. If you provide None,"
-            " this pipeline will do the mapping."
+            "Please pass either both of 'epitope_map', 'peptide_sets_map' or"
+            " neither of them when running mapped analysis. If you provide"
+            " neither, this pipeline will do the mapping."
         )
 
-    if use_epitope_mapping and not map_provided and peptide_metadata is None:
+    if use_epitope_mapping and peptide_metadata is None:
         raise ValueError(
-            "Must provide peptide metadata if doing a mapped analysis without"
-            " providing mapped artifacts."
+            "Must provide peptide metadata if doing a mapped analysis."
         )
 
     _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
@@ -129,7 +128,7 @@ def make_psea_table(
         "psea", "_compute_pair_fit_and_residuals"
     )
     _map_residuals_and_zscores = \
-            ctx.get_action("psea", "_map_residuals_and_zscores")
+        ctx.get_action("psea", "_map_residuals_and_zscores")
     _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair"
     )
@@ -209,21 +208,19 @@ def make_psea_table(
 
         # Collapse residuals and zscores if using mapping
         if use_epitope_mapping:
-            pair_splines[pair], used_zscores = \
+            pair_splines[pair], split_processed_zscores[pair] = \
                 _map_residuals_and_zscores(
                     pair_splines[pair],
                     split_processed_zscores[pair],
                     epitope_map
                 )
-        else:
-            used_zscores = split_processed_zscores[pair]
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
-                processed_zscores=used_zscores,
+                processed_zscores=split_processed_zscores[pair],
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
                 mapped_peptide_sets=peptide_sets_map,
@@ -249,7 +246,7 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = _create_fgsea_table_for_pair(
-            processed_zscores=used_zscores,
+            processed_zscores=split_processed_zscores[pair],
             peptide_sets=pair_pep_sets_dict[pair],
             threshold=threshold,
             permutation_num=permutation_num,
@@ -265,15 +262,15 @@ def make_psea_table(
         enrichment_tables[pair], = count_enriched(
             psea_table=psea_tables[pair],
             residuals=pair_splines[pair],
-            epitope_map=epitope_map,
             peptide_metadata=peptide_metadata,
+            epitope_map=epitope_map,
             p_value=p_value,
             residual_threshold=residual_threshold,
             include_negative_enrichment=include_negative_enrichment
         )
 
         scatter_plots[pair], = zscatter(
-            zscores=used_zscores,
+            zscores=split_processed_zscores[pair],
             pair=pair,
             spline=pair_splines[pair],
             p_val_access="p.adjust",
