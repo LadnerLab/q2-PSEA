@@ -369,9 +369,8 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
-    last_psea_table = None
-    current_psea_table = None
-    unchanged_taxa = []
+    last_peptide_sets = None
+    unchanged_taxa = {}
     def _filter_unchanged_taxa(current_psea_table_row):
         # I hate using this, but Python is a dork about accessing external
         # vars in closures sometimes. It's complaining because I overwrite this
@@ -379,33 +378,24 @@ def _run_iterative_process_single_pair(
         nonlocal used_peptide_sets
 
         taxa = current_psea_table_row.name
-        last_psea_table_row = last_psea_table.loc[taxa]
+        used_peptide_sets = copy.deepcopy(updated_peptide_sets)
 
-        if set(current_psea_table_row['all_tested_peptides']) == \
-                set(last_psea_table_row['all_tested_peptides']):
+        if set(updated_peptide_sets[updated_peptide_sets['term'] == taxa]['gene']) == \
+                set(last_peptide_sets[last_peptide_sets['term'] == taxa]['gene']):
             # Need to copy the row because it only adds a pointer to the object
             # to the list. If I don't copy it we will end up with a bunch of
             # pointers to the same object which will all be the last row we saw
             # here.
-            unchanged_taxa.append(copy.deepcopy(current_psea_table_row))
+            unchanged_taxa[taxa] = current_psea_table_row
             used_peptide_sets = \
                 used_peptide_sets[used_peptide_sets['term'] != taxa]
+        else:
+            unchanged_taxa.pop(taxa, None)
 
     while (sig_found):
-        # First two iterations pass everything
-        #
-        # After first two iterations, calc diff and only pass forward taxa that
-        # changed in last iteration drop taxa that did not change from gmt
-        # before next iteration.
-        if last_psea_table is not None:
-            # Compare last_psea_table to current_psea_table. If a taxa did not
-            # have changes to its peptide list, drop it from
-            # updated_peptide_sets
-            current_psea_table.apply(_filter_unchanged_taxa, axis=1)
-
-        last_psea_table = current_psea_table
+        last_peptide_sets = updated_peptide_sets
         # Called as a raw Python function not a QIIME 2 Method
-        current_psea_table = _create_fgsea_table_for_pair(
+        psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=used_peptide_sets,
             threshold=threshold,
@@ -420,13 +410,13 @@ def _run_iterative_process_single_pair(
         )
 
         # Our aggressive diff filtering caused us to wrap up early.
-        if current_psea_table.empty:
+        if psea_table.empty:
             break
 
         # Add back unchanged taxa here and recalc p.adj and q using same
         # methods as R GSEA.
         readded_psea_table = pd.concat(
-            [current_psea_table, pd.DataFrame(unchanged_taxa)],
+            [psea_table, pd.DataFrame(list(unchanged_taxa.values()))],
             ignore_index=True
         )
 
@@ -459,9 +449,16 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
-        # Also drop regularly filtered peptide sets from used_peptide_sets
-        used_peptide_sets = \
-            pd.merge(used_peptide_sets, updated_peptide_sets, how='inner')
+        # First two iterations pass everything
+        #
+        # After first two iterations, calc diff and only pass forward taxa that
+        # changed in last iteration drop taxa that did not change from gmt
+        # before next iteration.
+        if last_peptide_sets is not None:
+            # Compare last_psea_table to current_psea_table. If a taxa did not
+            # have changes to its peptide list, drop it from
+            # updated_peptide_sets
+            psea_table.apply(_filter_unchanged_taxa, axis=1)
 
         iteration += 1
 
