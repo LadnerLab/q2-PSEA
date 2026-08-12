@@ -1,6 +1,5 @@
 import numpy as np
 import os
-import copy
 import pandas as pd
 import qiime2
 import random
@@ -354,7 +353,9 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
-    used_peptide_sets = copy.deepcopy(updated_peptide_sets)
+    last_peptide_sets = updated_peptide_sets
+    used_peptide_sets = updated_peptide_sets
+    unchanged_taxa = {}
 
     tested_species = set()
     iteration = 1
@@ -366,31 +367,9 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
-    last_peptide_sets = None
-    unchanged_taxa = {}
-    def _filter_unchanged_taxa(current_psea_table_row):
-        # I hate using this, but Python is a dork about accessing external
-        # vars in closures sometimes. It's complaining because I overwrite this
-        # var in this closure
-        nonlocal used_peptide_sets
-
-        taxa = current_psea_table_row.name
-        used_peptide_sets = copy.deepcopy(updated_peptide_sets)
-
-        if set(updated_peptide_sets[updated_peptide_sets['term'] == taxa]['gene']) == \
-                set(last_peptide_sets[last_peptide_sets['term'] == taxa]['gene']):
-            # Need to copy the row because it only adds a pointer to the object
-            # to the list. If I don't copy it we will end up with a bunch of
-            # pointers to the same object which will all be the last row we saw
-            # here.
-            unchanged_taxa[taxa] = current_psea_table_row
-            used_peptide_sets = \
-                used_peptide_sets[used_peptide_sets['term'] != taxa]
-        else:
-            unchanged_taxa.pop(taxa, None)
-
     while (sig_found):
         last_peptide_sets = updated_peptide_sets
+
         # Called as a raw Python function not a QIIME 2 Method
         psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
@@ -406,15 +385,17 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
-        # Our aggressive diff filtering caused us to wrap up early.
-        if psea_table.empty:
-            break
+        # Figure out which taxa we need to add back cached values for
+        to_add = []
+        for taxa, row in unchanged_taxa.items():
+            if taxa in updated_peptide_sets['term'].values \
+                    and taxa not in psea_table['ID'].values:
+                to_add.append(row)
 
         # Add back unchanged taxa here and recalc p.adj and q using same
         # methods as R GSEA.
         readded_psea_table = pd.concat(
-            [psea_table, pd.DataFrame(list(unchanged_taxa.values()))],
-            ignore_index=True
+            [psea_table, *to_add], ignore_index=True
         )
 
         # Calc p.adjust using Python basic Benjamini-Hochberg FDR
@@ -446,16 +427,16 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
-        # First two iterations pass everything
-        #
-        # After first two iterations, calc diff and only pass forward taxa that
-        # changed in last iteration drop taxa that did not change from gmt
-        # before next iteration.
-        if last_peptide_sets is not None:
-            # Compare last_psea_table to current_psea_table. If a taxa did not
-            # have changes to its peptide list, drop it from
-            # updated_peptide_sets
-            psea_table.apply(_filter_unchanged_taxa, axis=1)
+        # Drop any taxa in our current set that did not change from the prior
+        # set for the next iteration, and cache this psea result for those taxa
+        used_peptide_sets = updated_peptide_sets
+        current_taxa = set(updated_peptide_sets['term'].values)
+        for taxon in current_taxa:
+            if taxon in psea_table['ID'].values and taxon in last_peptide_sets['term'].values and \
+                    (set(updated_peptide_sets[updated_peptide_sets['term'] == taxon]['gene']) == \
+                     set(last_peptide_sets[last_peptide_sets['term'] == taxon]['gene'])):
+                used_peptide_sets = used_peptide_sets[used_peptide_sets['term'] != taxon]
+                unchanged_taxa[taxon] = psea_table[psea_table['ID'] == taxon]
 
         iteration += 1
 
