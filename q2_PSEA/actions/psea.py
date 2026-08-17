@@ -28,7 +28,7 @@ stats = importr('stats')
 qvalue = importr('qvalue')
 
 
-def make_psea_table_wrapper(
+def _make_psea_table_raw(
     ctx: IContext,
     scores: str,
     pairs: str,

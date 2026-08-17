@@ -26,7 +26,7 @@ from q2_PSEA.actions.psea import (
     _split_scores,
     _map_residuals_and_zscores,
     make_psea_table,
-    make_psea_table_wrapper,
+    _make_psea_table_raw,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.actions.epitope import (
@@ -411,11 +411,11 @@ plugin.methods.register_function(
 )
 
 # ---------------------------------------------------------------------------
-# Register make_psea_table_wrapper as a pipeline
+# Register _make_psea_table_raw as a pipeline
 # ---------------------------------------------------------------------------
 
 plugin.pipelines.register_function(
-    function=make_psea_table_wrapper,
+    function=_make_psea_table_raw,
     inputs={
     },
     parameters={
@@ -583,10 +583,12 @@ plugin.pipelines.register_function(
             " enriched subspecies per epitope."
         )
     },
-    name="Make PSEA Table",
+    name="Make PSEA Table Raw",
     description=(
-        "Wrapper for make_psea_table that takes unzipped .tsv files and also"
-        " outputs them."
+        "NOTE: This pipeline exists to be an easy way to get raw .tsv files"
+        " into and out of make_psea_table. In general, pipeline should not "
+        " take paths to raw .tsv file in or write any files other than their" \
+        " registered outputs."
     ),
 )
 
