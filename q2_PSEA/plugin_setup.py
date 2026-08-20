@@ -586,8 +586,8 @@ plugin.pipelines.register_function(
     name="Make PSEA Table Raw",
     description=(
         "NOTE: This pipeline exists to be an easy way to get raw .tsv files"
-        " into and out of make_psea_table. In general, pipeline should not "
-        " take paths to raw .tsv file in or write any files other than their" \
+        " into and out of make_psea_table. In general, pipelines should not "
+        " take paths to raw .tsv file in or write any files other than their"
         " registered outputs."
     ),
 )
