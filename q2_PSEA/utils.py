@@ -109,9 +109,16 @@ def md5_file(fp):
     return hash_obj.hexdigest()
 
 
-def md5_directory(directory_path, md5_manifest_path):
-    with open(md5_manifest_path, 'w') as fh:
+# TODO: The uuids here are the uuids of the internal pipeline artifact, not the
+# one actually returned from the external raw pipeline. Something probably
+# needs to be done about this.
+def manifest_directory(directory_path, manifest_path, collection):
+    with open(manifest_path, 'w') as fh:
+        fh.write('Filename\tArtifact UUID\tMD5\n')
         for file in os.listdir(directory_path):
+            result_name = file.split('.', 1)[0]
+            uuid = collection[result_name].uuid
+
             full_path = os.path.join(directory_path, file)
             file_hash = md5_file(full_path)
-            fh.write(f"{file}    {file_hash}\n")
+            fh.write(f'{file}\t{uuid}\t{file_hash}\n')

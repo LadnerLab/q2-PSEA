@@ -137,34 +137,40 @@ def _make_psea_table_raw(
     utils.unzip_collection(
         scatter_plots_out, scatter_plots, 'index.html', '.html'
     )
-    scatter_plots_md5_manifest_path = \
-        os.path.join(unzipped_output_dir, 'scatter_plots_md5')
-    utils.md5_directory(scatter_plots_out, scatter_plots_md5_manifest_path)
+    scatter_plots_manifest_path = \
+        os.path.join(unzipped_output_dir, 'scatter_plots_manifest.tsv')
+    utils.manifest_directory(
+        scatter_plots_out, scatter_plots_manifest_path, scatter_plots
+    )
 
     # volcano_plots
     volcano_plots_out = os.path.join(unzipped_output_dir, 'volcano_plots')
     utils.unzip_collection(
         volcano_plots_out, volcano_plots, 'index.html', '.html'
     )
-    volcano_plots_md5_manifest_path = \
-        os.path.join(unzipped_output_dir, 'volcano_plots_md5')
-    utils.md5_directory(volcano_plots_out, volcano_plots_md5_manifest_path)
+    volcano_plots_manifest_path = \
+        os.path.join(unzipped_output_dir, 'volcano_plots_manifest.tsv')
+    utils.manifest_directory(
+        volcano_plots_out, volcano_plots_manifest_path, volcano_plots
+    )
 
     # ae_plot
     # little hack to make this match the rest of the outputs *wink*
     ae_plots = {'ae_plots': ae_plot}
     ae_plots_out = os.path.join(unzipped_output_dir, 'ae_plots')
     utils.unzip_collection(ae_plots_out, ae_plots, 'index.html', '.html')
-    ae_plots_md5_manifest_path = \
-        os.path.join(unzipped_output_dir, 'ae_plots_md5')
-    utils.md5_directory(ae_plots_out, ae_plots_md5_manifest_path)
+    ae_plots_manifest_path = \
+        os.path.join(unzipped_output_dir, 'ae_plots_manifest.tsv')
+    utils.manifest_directory(ae_plots_out, ae_plots_manifest_path, ae_plots)
 
     # psea_tables
     psea_tables_out = os.path.join(unzipped_output_dir, 'psea_tables')
     utils.unzip_collection(psea_tables_out, psea_tables, 'scores.tsv', '.tsv')
-    psea_tables_md5_manifest_path = \
-        os.path.join(unzipped_output_dir, 'psea_tables_md5')
-    utils.md5_directory(psea_tables_out, psea_tables_md5_manifest_path)
+    psea_tables_manifest_path = \
+        os.path.join(unzipped_output_dir, 'psea_tables_manifest.tsv')
+    utils.manifest_directory(
+        psea_tables_out, psea_tables_manifest_path, psea_tables
+    )
 
     # enrichment_tables
     enrichment_tables_out = os.path.join(
@@ -173,10 +179,12 @@ def _make_psea_table_raw(
     utils.unzip_collection(
         enrichment_tables_out, enrichment_tables, 'enriched.tsv', '.tsv'
     )
-    enrichment_tables_md5_manifest_path = \
-        os.path.join(unzipped_output_dir, 'enrichment_tables_md5')
-    utils.md5_directory(
-        enrichment_tables_out, enrichment_tables_md5_manifest_path
+    enrichment_tables_manifest_path = \
+        os.path.join(unzipped_output_dir, 'enrichment_tables_manifest.tsv')
+    utils.manifest_directory(
+        enrichment_tables_out,
+        enrichment_tables_manifest_path,
+        enrichment_tables
     )
 
     return (scatter_plots, volcano_plots, ae_plot, psea_tables,
