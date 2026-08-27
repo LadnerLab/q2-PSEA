@@ -33,6 +33,10 @@ qvalue = importr('qvalue')
 # keep track of where and why I am breaking some of our rules in this hidden
 # action, so we know what needs to be addressed for a more generalized solution
 # later
+#
+# Rule Break 1: _ actions are theoretically supposed to be the opposite of this
+# they're supposed to be internal actions called by pipelines that CAN be
+# called on their own but usually won't be. This is the exact opposite of that.
 def _make_psea_table_raw(
     ctx: IContext,
     scores: str,
@@ -83,6 +87,13 @@ def _make_psea_table_raw(
             " choose a different directory."
         )
 
+    # Rule Break 2: While passing in a filepath and importing it as an Artifact
+    # inside a pipeline is technically natively supported without any added
+    # fiddling, it is generally frowned upon.
+    #
+    # Better support for this might look like adding a Filepath input type as
+    # --f on the cli similar to --m for Metadata. This type would be explicitly
+    # for passing raw data to be imported into an Artifact
     scores = qiime2.Artifact.import_data('FeatureTable[Zscore]', scores)
     pairs = qiime2.Artifact.import_data('PSEAPairs', pairs)
     peptide_sets = qiime2.Artifact.import_data('GMT', peptide_sets)
@@ -133,6 +144,16 @@ def _make_psea_table_raw(
             residual_min_peptides=residual_min_peptides,
             debug_per_iteration_table_path=debug_per_iteration_table_path
         )
+
+    # Rule Break 3: Definitely the biggest rule broken. We are doing some
+    # serious shenanigans here unzipping these Results and .saving the
+    # Results that came from the inner pipeline. This all breaks a cardinal
+    # rule which is that we do not create directories or files as a side effect
+    # of running a pipeline.
+    #
+    # A potential solution to this may be some kind of flag indicating you want
+    # to receive an output in both Result and unzipped raw form (presumably
+    # still with the added record keeping we do for the raw data here).
 
     # Unzip all outputs
     os.makedirs(unzipped_output_dir)
@@ -192,6 +213,16 @@ def _make_psea_table_raw(
         enrichment_tables
     )
 
+    # NOTE: Not really a rule broken, actually a consequence of following the
+    # rules in this specific instance. We cannot register an Action that
+    # returns nothing (the framework will error) because Actions are supposed
+    # to produce some kind of Result and those Results are supposed to be
+    # returned, not side effected.
+    #
+    # Right now, I have to side effect the unzipped data into existence AND
+    # return these zipped Results, and I do want both; HOWEVER, the Results
+    # returned from this Pipeline will not have UUIDs matching the Results I
+    # unzip above
     return (scatter_plots, volcano_plots, ae_plot, psea_tables,
             enrichment_tables)
 
