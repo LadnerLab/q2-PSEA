@@ -28,6 +28,11 @@ stats = importr('stats')
 qvalue = importr('qvalue')
 
 
+# NOTE: This hidden action is going to be used as a prototype for a generalized
+# raw data in -> raw data + Results out mechanism in the future. I am going to
+# keep track of where and why I am breaking some of our rules in this hidden
+# action, so we know what needs to be addressed for a more generalized solution
+# later
 def _make_psea_table_raw(
     ctx: IContext,
     scores: str,
