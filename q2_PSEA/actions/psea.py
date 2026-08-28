@@ -161,41 +161,77 @@ def _make_psea_table_raw(
     # scatter_plots
     scatter_plots_out = os.path.join(unzipped_output_dir, 'scatter_plots')
     utils.unzip_collection(
-        scatter_plots_out, scatter_plots, 'index.html', '.html'
+        os.path.join(scatter_plots_out, 'scatter_plots_unzipped'),
+        scatter_plots, 'index.html', '.html'
     )
     scatter_plots_manifest_path = \
-        os.path.join(unzipped_output_dir, 'scatter_plots_manifest.tsv')
+        os.path.join(
+            scatter_plots_out, 'scatter_plots_manifest.tsv'
+        )
     utils.manifest_directory(
-        scatter_plots_out, scatter_plots_manifest_path, scatter_plots
+        os.path.join(scatter_plots_out, 'scatter_plots_unzipped'),
+        scatter_plots_manifest_path, scatter_plots
+    )
+    scatter_plots.save(
+        os.path.join(scatter_plots_out, 'scatter_plots_qzas')
     )
 
     # volcano_plots
     volcano_plots_out = os.path.join(unzipped_output_dir, 'volcano_plots')
     utils.unzip_collection(
-        volcano_plots_out, volcano_plots, 'index.html', '.html'
+        os.path.join(volcano_plots_out, 'volcano_plots_unzipped'),
+        volcano_plots, 'index.html', '.html'
     )
     volcano_plots_manifest_path = \
-        os.path.join(unzipped_output_dir, 'volcano_plots_manifest.tsv')
+        os.path.join(
+            volcano_plots_out, 'volcano_plots_manifest.tsv'
+        )
     utils.manifest_directory(
-        volcano_plots_out, volcano_plots_manifest_path, volcano_plots
+        os.path.join(volcano_plots_out, 'volcano_plots_unzipped'),
+        volcano_plots_manifest_path, volcano_plots
     )
+    volcano_plots.save(
+        os.path.join(volcano_plots_out, 'volcano_plots_qzas')
+    )
+
 
     # ae_plot
     # little hack to make this match the rest of the outputs *wink*
-    ae_plots = {'ae_plots': ae_plot}
+    ae_plots = {'ae_plot': ae_plot}
     ae_plots_out = os.path.join(unzipped_output_dir, 'ae_plots')
-    utils.unzip_collection(ae_plots_out, ae_plots, 'index.html', '.html')
+    utils.unzip_collection(
+        os.path.join(ae_plots_out, 'ae_plots_unzipped'),
+        ae_plots, 'index.html', '.html'
+    )
     ae_plots_manifest_path = \
-        os.path.join(unzipped_output_dir, 'ae_plots_manifest.tsv')
-    utils.manifest_directory(ae_plots_out, ae_plots_manifest_path, ae_plots)
+        os.path.join(
+            ae_plots_out, 'ae_plots_manifest.tsv'
+        )
+    utils.manifest_directory(
+        os.path.join(ae_plots_out, 'ae_plots_unzipped'),
+        ae_plots_manifest_path, ae_plots
+    )
+    ae_plot.save(
+        os.path.join(ae_plots_out, 'ae_plots_qzas')
+    )
+
 
     # psea_tables
     psea_tables_out = os.path.join(unzipped_output_dir, 'psea_tables')
-    utils.unzip_collection(psea_tables_out, psea_tables, 'scores.tsv', '.tsv')
+    utils.unzip_collection(
+        os.path.join(psea_tables_out, 'psea_tables_unzipped'),
+        psea_tables, 'scores.tsv', '.tsv'
+    )
     psea_tables_manifest_path = \
-        os.path.join(unzipped_output_dir, 'psea_tables_manifest.tsv')
+        os.path.join(
+            psea_tables_out, 'psea_tables_manifest.tsv'
+        )
     utils.manifest_directory(
-        psea_tables_out, psea_tables_manifest_path, psea_tables
+        os.path.join(psea_tables_out, 'psea_tables_unzipped'),
+        psea_tables_manifest_path, psea_tables
+    )
+    psea_tables.save(
+        os.path.join(psea_tables_out, 'psea_tables_qzas')
     )
 
     # enrichment_tables
@@ -203,14 +239,19 @@ def _make_psea_table_raw(
         unzipped_output_dir, 'enrichment_tables'
     )
     utils.unzip_collection(
-        enrichment_tables_out, enrichment_tables, 'enriched.tsv', '.tsv'
+        os.path.join(enrichment_tables_out, 'enrichment_tables_unzipped'),
+        enrichment_tables, 'enriched.tsv', '.tsv'
     )
     enrichment_tables_manifest_path = \
-        os.path.join(unzipped_output_dir, 'enrichment_tables_manifest.tsv')
+        os.path.join(
+            enrichment_tables_out, 'enrichment_tables_manifest.tsv'
+        )
     utils.manifest_directory(
-        enrichment_tables_out,
-        enrichment_tables_manifest_path,
-        enrichment_tables
+        os.path.join(enrichment_tables_out, 'enrichment_tables_unzipped'),
+        enrichment_tables_manifest_path, enrichment_tables
+    )
+    enrichment_tables.save(
+        os.path.join(enrichment_tables_out, 'enrichment_tables_qzas')
     )
 
     # NOTE: Not really a rule broken, actually a consequence of following the
