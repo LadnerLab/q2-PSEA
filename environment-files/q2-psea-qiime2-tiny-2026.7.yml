@@ -22,5 +22,5 @@ dependencies:
     # This one is to get the record_provenance flag
     - rachis@git+https://github.com/Oddant1/qiime2.git@Paired-no-inner-prov
     # These two can be switched to main once this is all merged
-    - q2-psea@git+https://github.com/LadnerLab/q2-PSEA.git@psea-epitope-modified-Claude
+    - q2-psea@git+https://github.com/LadnerLab/q2-PSEA.git@psea-epitope-modified-Claude-add-wrapper
     - q2-pepsirf@git+https://github.com/Oddant1/q2-pepsirf.git@epitope

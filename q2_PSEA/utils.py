@@ -1,3 +1,6 @@
+import os
+import io
+import hashlib
 import pandas as pd
 import numpy as np
 
@@ -86,3 +89,36 @@ def collate_ae_counts(ae_counts: list[pd.DataFrame]):
         ae_counts, ignore_index=True
     ).groupby('Species', as_index=False)['Events'].sum() \
         .sort_values('Events', ascending=False)
+
+
+def unzip_collection(outpath, collection, filename, ext):
+    os.makedirs(outpath)
+    for name, result in collection.items():
+        result.export_data(outpath)
+        os.rename(
+            os.path.join(outpath , filename),
+            os.path.join(outpath, f'{name}{ext}')
+        )
+
+
+def md5_file(fp):
+    hash_obj = hashlib.md5()
+    with open(fp, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(io.DEFAULT_BUFFER_SIZE), b''):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()
+
+
+# TODO: The uuids here are the uuids of the internal pipeline artifact, not the
+# one actually returned from the external raw pipeline. Something probably
+# needs to be done about this.
+def manifest_directory(directory_path, manifest_path, collection):
+    with open(manifest_path, 'w') as fh:
+        fh.write('Filename\tArtifact UUID\tMD5\n')
+        for file in os.listdir(directory_path):
+            result_name = file.split('.', 1)[0]
+            uuid = collection[result_name].uuid
+
+            full_path = os.path.join(directory_path, file)
+            file_hash = md5_file(full_path)
+            fh.write(f'{file}\t{uuid}\t{file_hash}\n')
