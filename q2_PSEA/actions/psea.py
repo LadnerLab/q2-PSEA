@@ -113,8 +113,12 @@ def make_psea_table(
             "Must provide peptide metadata if doing a mapped analysis."
         )
 
-    _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
-    _process_scores = ctx.get_action("psea", "_process_scores")
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
+    )
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
     _split_scores = ctx.get_action(
         "psea", "_split_scores", record_provenance=False
     )
@@ -158,8 +162,12 @@ def make_psea_table(
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
     if use_epitope_mapping and not map_provided:
-        create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        create_epitope_gmt = ctx.get_action(
+            "psea", "taxa_to_epitope", record_provenance=False
+        )
 
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
         peptide_sets_map, = create_epitope_gmt(
