@@ -398,18 +398,36 @@ def _run_iterative_process_single_pair(
         readded_psea_table = pd.concat(
             [psea_table, *to_add], ignore_index=True
         )
+        if readded_psea_table.empty:
+            break
 
         # Calc p.adjust using Python basic Benjamini-Hochberg FDR
-        readded_psea_table['p.adjust'] = \
-            multipletests(
-                readded_psea_table['pvalue'], method='fdr_bh'
-            )[1]
+        pvalues = pd.to_numeric(
+            readded_psea_table['pvalue'], errors='coerce'
+        )
+        valid_pvalues = pvalues.notna() & np.isfinite(pvalues)
+        readded_psea_table['p.adjust'] = np.nan
+        if not valid_pvalues.any():
+            break
+        readded_psea_table.loc[valid_pvalues, 'p.adjust'] = multipletests(
+            pvalues[valid_pvalues], method='fdr_bh'
+        )[1]
 
         # The q value uses the Storey method which is more involved, but we
         # already have access to it from the R packages we installed
-        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
-        r_qvalues = qvalue.qvalue(p=r_pvalues)
-        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
+        try:
+            r_pvalues = ro.FloatVector(pvalues[valid_pvalues])
+            r_qvalues = qvalue.qvalue(p=r_pvalues)
+            readded_psea_table.loc[valid_pvalues, 'qvalue'] = \
+                r_qvalues.rx2('qvalues')
+        except Exception as e:
+            warnings.warn(
+                "Could not recompute qvalue with qvalue::qvalue(); using BH "
+                f"p.adjust values as qvalue fallback. Original error: {e}",
+                RachisWarning,
+            )
+            readded_psea_table.loc[valid_pvalues, 'qvalue'] = \
+                readded_psea_table.loc[valid_pvalues, 'p.adjust']
 
         if debug_per_iteration_table_path:
             readded_psea_table.to_csv(
