@@ -247,6 +247,7 @@ plugin.methods.register_function(
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
+        "background_peptide_sets": GMT,
     },
     parameters={
         "threshold": Float,
@@ -293,6 +294,11 @@ plugin.methods.register_function(
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
         ),
         "peptide_sets": "GMT peptide-set file mapping species to peptides.",
+        "background_peptide_sets": (
+            "Optional GMT peptide-set file used to define the full ranked"
+            " peptide universe while peptide_sets controls which species are"
+            " evaluated by GSEA."
+        ),
         "precomputed_fit": (
             "Optional precomputed spline fit from a prior call"
             " (FeatureData[Spline] with x, yfit, maxZ, deltaZ columns)."

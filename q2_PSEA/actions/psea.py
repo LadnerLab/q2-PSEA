@@ -374,6 +374,7 @@ def _run_iterative_process_single_pair(
         psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=used_peptide_sets,
+            background_peptide_sets=updated_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -451,6 +452,7 @@ def _create_fgsea_table_for_pair(
     permutation_num: int,
     min_size: int,
     max_size: int,
+    background_peptide_sets: pd.DataFrame = None,
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
     residual_abs_thresh: float = None,
@@ -463,7 +465,10 @@ def _create_fgsea_table_for_pair(
     processed_zscores : pd.DataFrame
         Log-scaled Z-score matrix (from FeatureTable[Zscore]).
     peptide_sets : pd.DataFrame
-        GMT peptide-set table with columns 'term' and 'gene' (from GMT).
+        GMT peptide-set table with columns 'term' and 'gene' to evaluate.
+    background_peptide_sets : pd.DataFrame, optional
+        GMT peptide-set table used to choose which peptides belong in the
+        ranked GSEA gene list. Defaults to peptide_sets.
     species_taxa : PSEASpeciesTaxaDirFmt, optional
         Directory format containing species-taxa.tsv; passed as a file path
         to the underlying R function.
@@ -479,15 +484,20 @@ def _create_fgsea_table_for_pair(
     processed_zscores = processed_zscores.transpose()
     maxZ_all = precomputed_fit["maxZ"].dropna()
     deltaZ_all = precomputed_fit["deltaZ"].dropna()
+    background_peptide_sets = (
+        background_peptide_sets if background_peptide_sets is not None
+        else peptide_sets
+    )
 
-    filtered_zscores, peptide_sets_for_analysis = \
-        utils.remove_peptides(processed_zscores, peptide_sets)
+    filtered_zscores, _ = utils.remove_peptides(
+        processed_zscores, background_peptide_sets
+    )
 
     idx = filtered_zscores.index
     maxZ = maxZ_all.reindex(idx)
     deltaZ = deltaZ_all.reindex(idx)
     peptide_sets_for_analysis = utils.filter_peptide_sets_by_residual(
-        peptide_sets_for_analysis,
+        peptide_sets,
         deltaZ,
         residual_abs_thresh=residual_abs_thresh,
         residual_min_peptides=residual_min_peptides,
