@@ -52,8 +52,6 @@ def make_psea_table(
     debug_per_iteration_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
-    qiime2.Visualization,
-    qiime2.Visualization,
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
 ]:
@@ -142,8 +140,6 @@ def make_psea_table(
         "psea", "count_antibody_events", record_provenance=False
     )
 
-    volcano = ctx.get_action("psea", "volcano", record_provenance=False)
-    zscatter = ctx.get_action("psea", "zscatter", record_provenance=False)
     aeplots = ctx.get_action("psea", "aeplots", record_provenance=False)
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
@@ -194,8 +190,6 @@ def make_psea_table(
     pair_pep_sets_dict = {}
     psea_tables = {}
     enrichment_tables = {}
-    scatter_plots = {}
-    volcano_plots = {}
     pos_ae_counts = {}
     neg_ae_counts = {}
 
@@ -276,28 +270,6 @@ def make_psea_table(
             include_negative_enrichment=include_negative_enrichment
         )
 
-        scatter_plots[pair], = zscatter(
-            zscores=split_processed_zscores[pair],
-            pair=pair,
-            spline=pair_splines[pair],
-            p_val_access="p.adjust",
-            le_peps_access="core_enrichment",
-            taxa_access=taxa_access,
-            psea_table=psea_tables[pair],
-            highlight_threshold=p_value,
-            colors_file=species_colors,
-        )
-
-        volcano_plots[pair], = volcano(
-            psea_table=psea_tables[pair],
-            xy_access=["NES", "p.adjust"],
-            taxa_access=taxa_access,
-            x_threshold=enrichment_score,
-            y_threshold=p_value,
-            xy_labels=["Enrichment score", "Adjusted p-values"],
-            colors_file=species_colors,
-        )
-
         pos_ae_counts[pair], neg_ae_counts[pair] = count_antibody_events(
             psea_table=psea_tables[pair],
             p_value=p_value,
@@ -319,8 +291,128 @@ def make_psea_table(
     # 1. import
     # 2. run
     # 3. export
-    return (scatter_plots, volcano_plots, ae_plot, psea_tables,
-            enrichment_tables)
+    return ae_plot, psea_tables, enrichment_tables
+
+
+def make_psea_plots(
+    ctx: IContext,
+    scores: qiime2.Artifact,
+    pairs: qiime2.Artifact,
+    psea_tables: dict[str, qiime2.Artifact],
+    peptide_metadata: qiime2.Artifact = None,
+    epitope_map: qiime2.Artifact = None,
+    collapse: str = "Viral",
+    use_epitope_mapping: bool = False,
+    spline_type: str = "r-smooth",
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
+    degree: int = 3,
+    dof: int = None,
+    p_value: float = 0.05,
+    enrichment_score: float = 1,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
+) -> tuple[
+    dict[str, qiime2.Visualization],
+    dict[str, qiime2.Visualization],
+]:
+    """QIIME 2 pipeline: build per-pair scatter and volcano plots for an
+    already-computed collection of PSEA tables.
+
+    Only recomputes the cheap steps (score filtering/processing/splitting
+    and spline fitting) needed to feed the zscatter and volcano visualizers;
+    reuses the given psea_tables rather than re-running GSEA.
+    """
+    if (
+        use_epitope_mapping
+        and epitope_map is None
+        and peptide_metadata is None
+    ):
+        raise ValueError(
+            "Must provide 'epitope_map' or 'peptide_metadata' when"
+            " use_epitope_mapping is True."
+        )
+
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
+    )
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
+    _split_scores = ctx.get_action(
+        "psea", "_split_scores", record_provenance=False
+    )
+    _compute_pair_fit_and_residuals = ctx.get_action(
+        "psea", "_compute_pair_fit_and_residuals", record_provenance=False
+    )
+    _map_residuals_and_zscores = ctx.get_action(
+        "psea", "_map_residuals_and_zscores", record_provenance=False
+    )
+    volcano = ctx.get_action("psea", "volcano", record_provenance=False)
+    zscatter = ctx.get_action("psea", "zscatter", record_provenance=False)
+
+    taxa_access = "species_name" if species_taxa is not None else "ID"
+
+    if use_epitope_mapping and epitope_map is None:
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        epitope_map, = create_epitope_map(peptide_metadata, collapse)
+
+    # ------------------------------------------------------------------
+    # Rebuild per-pair processed Z-scores
+    # ------------------------------------------------------------------
+    filtered_zscores, = _filter_scores_to_pairs(scores, pairs)
+    processed_zscores, = _process_scores(filtered_zscores)
+    split_processed_zscores, = _split_scores(processed_zscores, pairs)
+
+    scatter_plots = {}
+    volcano_plots = {}
+
+    for pair in psea_tables.keys():
+        # Compute spline fit once per pair; reuse it for the scatter plot
+        # data.
+        spline, = _compute_pair_fit_and_residuals(
+            processed_zscores=split_processed_zscores[pair],
+            pair=pair,
+            spline_type=spline_type,
+            fit_threshold=fit_threshold,
+            linear_through_origin=linear_through_origin,
+            degree=degree,
+            dof=dof,
+        )
+
+        pair_zscores = split_processed_zscores[pair]
+
+        # Collapse residuals and zscores if using mapping
+        if use_epitope_mapping:
+            spline, pair_zscores = _map_residuals_and_zscores(
+                spline, pair_zscores, epitope_map
+            )
+
+        scatter_plots[pair], = zscatter(
+            zscores=pair_zscores,
+            pair=pair,
+            spline=spline,
+            p_val_access="p.adjust",
+            le_peps_access="core_enrichment",
+            taxa_access=taxa_access,
+            psea_table=psea_tables[pair],
+            highlight_threshold=p_value,
+            colors_file=species_colors,
+        )
+
+        volcano_plots[pair], = volcano(
+            psea_table=psea_tables[pair],
+            xy_access=["NES", "p.adjust"],
+            taxa_access=taxa_access,
+            x_threshold=enrichment_score,
+            y_threshold=p_value,
+            xy_labels=["Enrichment score", "Adjusted p-values"],
+            colors_file=species_colors,
+        )
+
+    return scatter_plots, volcano_plots
 
 
 def _run_iterative_process_single_pair(

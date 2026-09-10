@@ -26,6 +26,7 @@ from q2_PSEA.actions.psea import (
     _split_scores,
     _map_residuals_and_zscores,
     make_psea_table,
+    make_psea_plots,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.actions.epitope import (
@@ -456,8 +457,8 @@ plugin.pipelines.register_function(
             " epitope input is provided."
         ),
         "p_value": (
-            "Adjusted p-value threshold for significance in volcano and"
-            " scatter plots."
+            "Adjusted p-value threshold for significance in antibody-event"
+            " counting."
         ),
         "enrichment_score": "NES threshold for significance.",
         "include_negative_enrichment": (
@@ -553,21 +554,11 @@ plugin.pipelines.register_function(
         )
     },
     outputs=[
-        ("scatter_plots", Collection[Visualization]),
-        ("volcano_plots", Collection[Visualization]),
         ("ae_plots", Visualization),
         ("psea_tables", Collection[FeatureData[PSEAScores]]),
         ("enrichment_tables", Collection[FeatureData[Enriched]])
     ],
     output_descriptions={
-        "scatter_plots": (
-            "per-pair z-score scatter plots with spline fit and highlighted"
-            " leading-edge peptides for significant taxa."
-        ),
-        "volcano_plots": (
-            "per-pair volcano plots of normalized enrichment scores vs."
-            " adjusted p-values."
-        ),
         "ae_plots": "Antibody-event summary bar plots.",
         "psea_tables": (
             "Per-pair PSEA result tables containing enrichment scores,"
@@ -740,6 +731,117 @@ plugin.visualizers.register_function(
     description=(
         "Generates bar plots of species antibody-event counts for positive"
         " and negative NES results."
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Register make_psea_plots as a pipeline
+# ---------------------------------------------------------------------------
+
+plugin.pipelines.register_function(
+    function=make_psea_plots,
+    inputs={
+        "scores": FeatureTable[Zscore],
+        "pairs": PSEAPairs,
+        "psea_tables": Collection[FeatureData[PSEAScores]],
+        "peptide_metadata": FeatureData[Epitope],
+        "epitope_map": FeatureData[MappedEpitope],
+    },
+    parameters={
+        "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
+        "use_epitope_mapping": Bool,
+        "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "fit_threshold": Float,
+        "linear_through_origin": Bool,
+        "degree": Int,
+        "dof": Int,
+        "p_value": Float,
+        "enrichment_score": Float,
+        "species_taxa": Metadata,
+        "species_colors": Metadata,
+    },
+    parameter_descriptions={
+        "collapse": (
+            "Category to collapse to epitope level. Only used when the"
+            " epitope input is provided."
+        ),
+        "use_epitope_mapping": (
+            "If true, the Z-scores and spline fits used for the scatter"
+            " plots are collapsed to epitope level. This requires either"
+            " 'peptide_metadata' or 'epitope_map' to be provided. Should"
+            " match the value used to produce 'psea_tables'."
+        ),
+        "spline_type": "Spline method used to fit the Z-score scatter.",
+        "fit_threshold": (
+            "Optional threshold used only for linear spline fitting; only"
+            " points where x and y are both greater than this threshold are"
+            " used to fit the line."
+        ),
+        "linear_through_origin": (
+            "If True and spline_type is linear, force the regression line"
+            " through (0, 0)."
+        ),
+        "degree": (
+            "Polynomial degree for spline fitting (affects 'cubic' only)."
+        ),
+        "dof": (
+            "Degrees of freedom for spline fitting (affects 'cubic' only)."
+        ),
+        "p_value": (
+            "Adjusted p-value threshold for significance in volcano and"
+            " scatter plots."
+        ),
+        "enrichment_score": "NES threshold for significance.",
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+            " When provided, must match the value used to produce"
+            " 'psea_tables'."
+        ),
+        "species_colors": (
+            "Optional Metadata mapping species names (IDs) to HEX color"
+            " codes used in output visualizations."
+        ),
+    },
+    input_descriptions={
+        "scores": "Z-score matrix used to produce 'psea_tables'.",
+        "pairs": (
+            "Tab-delimited file listing pairs of sample names (one pair per"
+            " row, header required). Must be the same pairs used to produce"
+            " 'psea_tables'."
+        ),
+        "psea_tables": (
+            "Per-pair PSEA result tables, as produced by make_psea_table."
+        ),
+        "peptide_metadata": (
+            "Peptide level metadata. Used to build 'epitope_map' when"
+            " 'use_epitope_mapping' is True and 'epitope_map' is not"
+            " provided."
+        ),
+        "epitope_map": (
+            "Optional already collapsed epitope table used to collapse"
+            " Z-scores and spline fits to epitope level."
+        ),
+    },
+    outputs=[
+        ("scatter_plots", Collection[Visualization]),
+        ("volcano_plots", Collection[Visualization]),
+    ],
+    output_descriptions={
+        "scatter_plots": (
+            "per-pair z-score scatter plots with spline fit and highlighted"
+            " leading-edge peptides for significant taxa."
+        ),
+        "volcano_plots": (
+            "per-pair volcano plots of normalized enrichment scores vs."
+            " adjusted p-values."
+        ),
+    },
+    name="Make PSEA Plots",
+    description=(
+        "QIIME 2 pipeline for generating scatter and volcano plots from"
+        " PSEA result tables produced by make_psea_table. Only recomputes"
+        " the Z-score processing and spline fitting needed to render the"
+        " plots; does not re-run GSEA."
     ),
 )
 

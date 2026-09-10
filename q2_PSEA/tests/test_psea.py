@@ -793,7 +793,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
             )
 
     def test_psea_tables_keyed_by_pair_name(self):
-        _, _, _, psea_tables, _ = self.pipeline(
+        _, psea_tables, _ = self.pipeline(
             scores=self.scores_art,
             pairs=self.pairs_art,
             peptide_sets=self.gmt_art,
@@ -809,6 +809,88 @@ class TestMakePseaTableIntegration(TestPluginBase):
             seed=42,
         )
         self.assertIn("sA~sB", psea_tables)
+
+
+# ---------------------------------------------------------------------------
+# make_psea_plots — pipeline integration
+# ---------------------------------------------------------------------------
+
+class TestMakePseaPlotsIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        self.scores_art = qiime2.Artifact.import_data(
+            "FeatureTable[Zscore]", raw
+        )
+        self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
+        self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
+        pep_ids = [f"pep_{i:02d}" for i in range(9)]
+        species = (
+            ["sp001"] * 2 + ["sp002"] + ["sp003"]
+            + ["sp004"] * 3 + ["sp005"] * 2
+        )
+        subtypes = (
+            ["H1N1", "H3N2", "Yamagata", "K12"]
+            + ["HSV1"] * 3 + ["HIV1"] * 2
+        )
+        categories = (
+            ["Viral", "Viral", "Viral", "Bacterial"]
+            + ["Viral"] * 3 + ["Viral"] * 2
+        )
+        epi_extended = pd.DataFrame(
+            {
+                "SpeciesID": species,
+                "ClusterID": [f"C{i+1}" for i in range(9)],
+                "EpitopeWindow": [f"W{i+1}" for i in range(9)],
+                "Species": [
+                    "InfluenzaA", "InfluenzaA", "InfluenzaB", "EColi",
+                    "HerpesV", "HerpesV", "HerpesV", "HIV", "HIV",
+                ],
+                "Subtype": subtypes,
+                "Category": categories,
+            },
+            index=pd.Index(pep_ids, name="CodeName"),
+        )
+        self.epi_art = qiime2.Artifact.import_data(
+            "FeatureData[Epitope]", epi_extended
+        )
+        self.make_psea_table = self.plugin.pipelines["make_psea_table"]
+        self.pipeline = self.plugin.pipelines["make_psea_plots"]
+
+    def test_scatter_and_volcano_plots_keyed_by_pair_name(self):
+        _, psea_tables, _ = self.make_psea_table(
+            scores=self.scores_art,
+            pairs=self.pairs_art,
+            peptide_sets=self.gmt_art,
+            peptide_metadata=self.epi_art,
+            threshold=0.0,
+            permutation_num=100,
+            min_size=3,
+            max_size=500,
+            p_value=1.0,
+            enrichment_score=0.0,
+            iterative_analysis=False,
+            use_epitope_mapping=False,
+            seed=42,
+        )
+
+        scatter_plots, volcano_plots = self.pipeline(
+            scores=self.scores_art,
+            pairs=self.pairs_art,
+            psea_tables=psea_tables,
+            p_value=1.0,
+            enrichment_score=0.0,
+            use_epitope_mapping=False,
+        )
+
+        self.assertIn("sA~sB", scatter_plots)
+        self.assertIn("sA~sB", volcano_plots)
+        self.assertIsInstance(scatter_plots["sA~sB"], qiime2.Visualization)
+        self.assertIsInstance(volcano_plots["sA~sB"], qiime2.Visualization)
 
 
 if __name__ == "__main__":
