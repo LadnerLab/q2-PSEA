@@ -8,6 +8,8 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
+from rpy2.robjects.packages import importr
+from statsmodels.stats.multitest import multipletests
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
@@ -18,6 +20,11 @@ from q2_PSEA.actions.r_functions import INTERNAL
 # Need a random signed 32 bit int for R
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
+
+# Used to calculate p.adjust
+stats = importr('stats')
+# Used to recalculate qvalue using Storey method
+qvalue = importr('qvalue')
 
 
 def make_psea_table(
@@ -453,6 +460,9 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
+    last_peptide_sets = updated_peptide_sets
+    used_peptide_sets = updated_peptide_sets
+    unchanged_taxa = {}
 
     tested_species = set()
     iteration = 1
@@ -465,10 +475,12 @@ def _run_iterative_process_single_pair(
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
     while (sig_found):
+        last_peptide_sets = updated_peptide_sets
+
         # Called as a raw Python function not a QIIME 2 Method
-        current_psea_table = _create_fgsea_table_for_pair(
+        psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
-            peptide_sets=updated_peptide_sets,
+            peptide_sets=used_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -480,8 +492,33 @@ def _run_iterative_process_single_pair(
             residual_min_peptides=residual_min_peptides,
         )
 
+        # Figure out which taxa we need to add back cached values for
+        to_add = []
+        for taxa, row in unchanged_taxa.items():
+            if taxa in updated_peptide_sets['term'].values \
+                    and taxa not in psea_table['ID'].values:
+                to_add.append(row)
+
+        # Add back unchanged taxa here and recalc p.adj and q using same
+        # methods as R GSEA.
+        readded_psea_table = pd.concat(
+            [psea_table, *to_add], ignore_index=True
+        )
+
+        # Calc p.adjust using Python basic Benjamini-Hochberg FDR
+        readded_psea_table['p.adjust'] = \
+            multipletests(
+                readded_psea_table['pvalue'], method='fdr_bh'
+            )[1]
+
+        # The q value uses the Storey method which is more involved, but we
+        # already have access to it from the R packages we installed
+        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
+        r_qvalues = qvalue.qvalue(p=r_pvalues)
+        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
+
         if debug_per_iteration_table_path:
-            current_psea_table.to_csv(
+            readded_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -489,13 +526,24 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                current_psea_table,
+                readded_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
                 enrichment_score,
                 include_negative_enrichment,
             )
+
+        # Drop any taxa in our current set that did not change from the prior
+        # set for the next iteration, and cache this psea result for those taxa
+        used_peptide_sets = updated_peptide_sets
+        current_taxa = set(updated_peptide_sets['term'].values)
+        for taxon in current_taxa:
+            if taxon in psea_table['ID'].values and taxon in last_peptide_sets['term'].values and \
+                    (set(updated_peptide_sets[updated_peptide_sets['term'] == taxon]['gene']) == \
+                     set(last_peptide_sets[last_peptide_sets['term'] == taxon]['gene'])):
+                used_peptide_sets = used_peptide_sets[used_peptide_sets['term'] != taxon]
+                unchanged_taxa[taxon] = psea_table[psea_table['ID'] == taxon]
 
         iteration += 1
 
