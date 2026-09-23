@@ -362,27 +362,44 @@ def make_psea_table(
             " providing mapped artifacts."
         )
 
-    _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
-    _process_scores = ctx.get_action("psea", "_process_scores")
-    _split_scores = ctx.get_action("psea", "_split_scores")
-    _compute_pair_fit_and_residuals = ctx.get_action(
-        "psea", "_compute_pair_fit_and_residuals"
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
     )
-    _map_residuals_and_zscores = \
-            ctx.get_action("psea", "_map_residuals_and_zscores")
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
+    _split_scores = ctx.get_action(
+        "psea", "_split_scores", record_provenance=False
+    )
+    _compute_pair_fit_and_residuals = ctx.get_action(
+        "psea", "_compute_pair_fit_and_residuals", record_provenance=False
+    )
+    _map_residuals_and_zscores = ctx.get_action(
+        "psea", "_map_residuals_and_zscores", record_provenance=False
+    )
     _run_iterative_process_single_pair = ctx.get_action(
-        "psea", "_run_iterative_process_single_pair"
+        "psea", "_run_iterative_process_single_pair", record_provenance=False
     )
     _create_fgsea_table_for_pair = ctx.get_action(
-        "psea", "_create_fgsea_table_for_pair"
+        "psea", "_create_fgsea_table_for_pair", record_provenance=False
     )
-    count_enriched = ctx.get_action("psea", "count_enriched")
+    count_enriched = ctx.get_action(
+        "psea", "count_enriched", record_provenance=False
+    )
 
-    count_antibody_events = ctx.get_action("psea", "count_antibody_events")
+    count_antibody_events = ctx.get_action(
+        "psea", "count_antibody_events", record_provenance=False
+    )
 
-    volcano = ctx.get_action("psea", "volcano")
-    zscatter = ctx.get_action("psea", "zscatter")
-    aeplots = ctx.get_action("psea", "aeplots")
+    volcano = ctx.get_action(
+        "psea", "volcano", record_provenance=False
+    )
+    zscatter = ctx.get_action(
+        "psea", "zscatter", record_provenance=False
+    )
+    aeplots = ctx.get_action(
+        "psea", "aeplots", record_provenance=False
+    )
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -400,8 +417,12 @@ def make_psea_table(
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
     if use_epitope_mapping and not map_provided:
-        create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        create_epitope_gmt = ctx.get_action(
+            "psea", "taxa_to_epitope", record_provenance=False
+        )
 
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
         peptide_sets_map, = create_epitope_gmt(
