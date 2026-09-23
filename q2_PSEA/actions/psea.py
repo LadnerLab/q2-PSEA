@@ -194,7 +194,6 @@ def _make_psea_table_raw(
         os.path.join(volcano_plots_out, 'volcano_plots_qzas')
     )
 
-
     # ae_plot
     # little hack to make this match the rest of the outputs *wink*
     ae_plots = {'ae_plot': ae_plot}
@@ -214,7 +213,6 @@ def _make_psea_table_raw(
     ae_plot.save(
         os.path.join(ae_plots_out, 'ae_plots_qzas')
     )
-
 
     # psea_tables
     psea_tables_out = os.path.join(unzipped_output_dir, 'psea_tables')
