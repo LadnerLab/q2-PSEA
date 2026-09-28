@@ -7,9 +7,6 @@
 # ----------------------------------------------------------------------------
 import numpy as np
 import pandas as pd
-from biom import Table
-
-from q2_types.feature_table import BIOMV210Format
 
 
 def create_epitope_map(
@@ -26,40 +23,6 @@ def create_epitope_map(
     return epitope_map
 
 
-def epitope_zscore(
-            zscores: pd.DataFrame,
-            epitope_map: pd.DataFrame
-        ) -> BIOMV210Format:
-    zscores.fillna(value=0, axis=1, inplace=True)
-    samples = list(zscores.index)
-    observations = list(epitope_map.index)
-
-    data = []
-
-    def get_max_z_scores_per_sample(row):
-        max_z_scores_per_sample = []
-        sample_zscores = zscores.columns[zscores.columns.isin(row['CodeName'])]
-
-        zscores[sample_zscores.values].apply(
-            lambda row: max_z_scores_per_sample.append(
-                max(row.values, key=abs)
-            ), axis=1
-        )
-
-        data.append(max_z_scores_per_sample)
-
-    epitope_map.apply(get_max_z_scores_per_sample, axis=1)
-
-    data = np.array(data)
-    table = Table(data, observations, samples)
-
-    result = BIOMV210Format()
-    with result.open() as fh:
-        table.to_hdf5(fh, generated_by="q2-pepsirf for pepsirf")
-
-    return result
-
-
 def taxa_to_epitope(
             peptide_metadata: pd.DataFrame,
             peptide_sets: pd.DataFrame,
@@ -69,13 +32,16 @@ def taxa_to_epitope(
         peptide = gmt_row['gene']
         metadata_row = peptide_metadata.loc[peptide]
         if collapse == 'Both' or metadata_row['Category'] == collapse:
-            return \
-                f"{metadata_row['SpeciesID']}_{metadata_row['ClusterID']}_" \
-                f"{metadata_row['EpitopeWindow']}"
+            species_id = metadata_row['SpeciesID'].split(';')[0]
+            cluster_id = metadata_row['ClusterID'].split(';')[0]
+            epitope_window = metadata_row['EpitopeWindow'].split(';')[0]
+
+            return f"{species_id}_{cluster_id}_{epitope_window}"
 
         return metadata_row.name
 
     peptide_sets['gene'] = peptide_sets.apply(_get_epitope_id, axis=1)
+    peptide_sets.drop_duplicates(inplace=True, ignore_index=True)
     return peptide_sets
 
 
@@ -127,7 +93,7 @@ def count_enriched(
             include_negative_enrichment: bool = True,
         ) -> pd.DataFrame:
     # Short circuit if we weren't collapsed
-    if epitope_map is None or peptide_metadata is None:
+    if peptide_metadata is None or epitope_map is None:
         return pd.DataFrame()
 
     filtered_psea_table = psea_table.loc[psea_table['p.adjust'] <= p_value]

@@ -5,7 +5,6 @@ from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.utils import (
     filter_peptide_sets,
-    collapse_residuals_to_epitope,
     remove_peptides,
 )
 
@@ -119,7 +118,10 @@ class TestFilterPeptideSets(TestPluginBase):
         self.assertIn("sp2", tested)
         self.assertNotIn("sp1", tested)
 
-    def test_with_epitope_map_removes_direct_match(self):
+    def test_with_epitope_gene_ids_removes_direct_match(self):
+        # gene values may be epitope IDs (e.g. "ep1") rather than peptide
+        # CodeNames when the GMT has already been collapsed; filtering works
+        # the same way regardless.
         psea = self._psea([
             {"ID": "sp1", "p.adjust": 0.01, "NES": 2.0,
              "all_tested_peptides": "ep1"},
@@ -127,10 +129,6 @@ class TestFilterPeptideSets(TestPluginBase):
         gmt = self._gmt([
             ("sp1", "ep1"), ("sp2", "ep1"), ("sp2", "ep2"),
         ])
-        epitope_map = pd.DataFrame(
-            {"CodeName": [["pep1"], ["pep1"]]},
-            index=pd.Index(["ep1", "ep2"], name="EpitopeID"),
-        )
         updated, _, _ = filter_peptide_sets(
             psea, gmt, set(), 0.05, 1.0, True,
         )
@@ -180,68 +178,6 @@ class TestRemovePeptides(TestPluginBase):
         gmt = self._gmt(["pep1", "pep2", "pep3_extra"])
         out, _ = remove_peptides(scores, gmt)
         self.assertEqual(set(out.index), {"pep1", "pep2"})
-
-
-# ---------------------------------------------------------------------------
-# collapse_residuals_to_epitope — unit tests
-# ---------------------------------------------------------------------------
-
-class TestCollapseResidualsToEpitope(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def _emap(self, mapping):
-        return pd.DataFrame(
-            {"CodeName": list(mapping.values())},
-            index=pd.Index(list(mapping.keys()), name="EpitopeID"),
-        )
-
-    def test_single_peptide_assigned_to_its_epitope(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        result = collapse_residuals_to_epitope({"pep1": 0.5}, emap)
-        self.assertAlmostEqual(result["ep1"], 0.5)
-
-    def test_largest_absolute_residual_wins_positive(self):
-        emap = self._emap({"ep1": ["pep1", "pep2"]})
-        result = collapse_residuals_to_epitope(
-            {"pep1": 0.5, "pep2": 0.8}, emap
-        )
-        self.assertAlmostEqual(result["ep1"], 0.8)
-
-    def test_negative_residual_wins_when_larger_absolute_value(self):
-        # abs(-0.9) > abs(0.5), so -0.9 should be kept
-        emap = self._emap({"ep1": ["pep1", "pep2"]})
-        result = collapse_residuals_to_epitope(
-            {"pep1": -0.9, "pep2": 0.5}, emap
-        )
-        self.assertAlmostEqual(result["ep1"], -0.9)
-
-    def test_unmapped_peptide_uses_itself_as_key(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        result = collapse_residuals_to_epitope(
-            {"pep1": 0.3, "unmapped_pep": 0.7}, emap
-        )
-        self.assertAlmostEqual(result["unmapped_pep"], 0.7)
-
-    def test_mapped_and_unmapped_both_present_in_result(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        result = collapse_residuals_to_epitope(
-            {"pep1": 0.3, "unmapped_pep": 0.7}, emap
-        )
-        self.assertAlmostEqual(result["ep1"], 0.3)
-        self.assertAlmostEqual(result["unmapped_pep"], 0.7)
-
-    def test_multiple_distinct_epitopes_each_get_their_residual(self):
-        emap = self._emap({"ep1": ["pep1"], "ep2": ["pep2"]})
-        result = collapse_residuals_to_epitope(
-            {"pep1": 0.5, "pep2": 0.3}, emap
-        )
-        self.assertAlmostEqual(result["ep1"], 0.5)
-        self.assertAlmostEqual(result["ep2"], 0.3)
-
-    def test_returns_pandas_series(self):
-        emap = self._emap({"ep1": ["pep1"]})
-        result = collapse_residuals_to_epitope({"pep1": 0.5}, emap)
-        self.assertIsInstance(result, pd.Series)
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@ from pandas.testing import assert_series_equal
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_PSEA.actions.psea import (
-    _build_gsea_input_table,
     _compute_pair_fit_and_residuals,
+    _map_residuals_and_zscores,
     _process_scores,
 )
 
@@ -268,49 +268,6 @@ class TestCreateFgseaTableForPairIntegration(TestPluginBase):
         )
 
 
-class TestGseaInputDebugTable(unittest.TestCase):
-
-    def test_debug_table_contains_term_gene_and_ranked_gene_list_fields(self):
-        maxZ = pd.Series(
-            {"pep_01": 2.0, "pep_02": 0.5, "pep_03": 3.0}
-        )
-        deltaZ = pd.Series(
-            {"pep_01": 1.2, "pep_02": 4.0, "pep_03": 0.0}
-        )
-        peptide_sets = pd.DataFrame({
-            "term": ["sp1", "sp1", "sp2"],
-            "gene": ["pep_01", "pep_02", "pep_03"],
-        })
-
-        table = _build_gsea_input_table(
-            maxZ=maxZ,
-            deltaZ=deltaZ,
-            peptide_sets_for_analysis=peptide_sets,
-            threshold=1.0,
-        )
-
-        self.assertEqual(
-            list(table.columns),
-            [
-                "term", "gene", "maxZ", "deltaZ", "in_gene_list",
-                "gene_list_rank", "gene_list_score",
-            ],
-        )
-        self.assertTrue(
-            table.loc[table["gene"] == "pep_01", "in_gene_list"].iloc[0]
-        )
-        self.assertFalse(
-            table.loc[table["gene"] == "pep_02", "in_gene_list"].iloc[0]
-        )
-        self.assertFalse(
-            table.loc[table["gene"] == "pep_03", "in_gene_list"].iloc[0]
-        )
-        self.assertEqual(
-            table.loc[table["gene"] == "pep_01", "gene_list_rank"].iloc[0],
-            1,
-        )
-
-
 # ---------------------------------------------------------------------------
 # count_antibody_events — integration via plugin method
 # ---------------------------------------------------------------------------
@@ -464,20 +421,161 @@ class TestComputePairFitDirect(TestPluginBase):
             maxZ.sort_index(), expected.sort_index(), check_names=False
         )
 
-    def test_epitope_map_contains_peptide_and_epitope_ids(self):
-        peps = list(self.view.columns)
-        mapping = {f"ep_{i}": [peps[i * 2], peps[i * 2 + 1]]
-                   for i in range(len(peps) // 2)}
-        emap = pd.DataFrame({"CodeName": mapping})
-        df = self._call(epitope_map=emap)
-        for ep in mapping:
-            self.assertIn(ep, df["maxZ"].dropna().index)
-            self.assertIn(ep, df["deltaZ"].dropna().index)
-        # Peptides that were mapped to epitopes also appear alongside epitopes
-        mapped_peps = [p for peps_list in mapping.values() for p in peps_list]
-        for pep in mapped_peps:
-            self.assertIn(pep, df["maxZ"].dropna().index)
-            self.assertIn(pep, df["deltaZ"].dropna().index)
+
+# ---------------------------------------------------------------------------
+# _map_residuals_and_zscores direct function tests
+# ---------------------------------------------------------------------------
+
+class TestMapResidualsAndZscoresDirect(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
+        # samples×features, matching the FeatureTable[Zscore] view convention
+        self.zscores = art.view(pd.DataFrame)
+        self.spline = _compute_pair_fit_and_residuals(
+            self.zscores, "sA~sB", "py-smooth", 3
+        )
+        # ep1 collapses pep_00+pep_01; the rest pass through unmapped, as
+        # create_epitope_map would emit for peptides that were not collapsed.
+        self.epitope_map = pd.DataFrame(
+            {
+                "CodeName": {
+                    "ep1": ["pep_00", "pep_01"],
+                    "pep_02": ["pep_02"],
+                    "pep_03": ["pep_03"],
+                    "pep_04": ["pep_04"],
+                    "pep_05": ["pep_05"],
+                    "pep_06": ["pep_06"],
+                }
+            }
+        )
+
+    def _call(self):
+        return _map_residuals_and_zscores(
+            self.spline.copy(), self.zscores.copy(), self.epitope_map.copy()
+        )
+
+    def test_collapsed_epitope_added_to_spline(self):
+        mapped_spline, _ = self._call()
+        self.assertIn("ep1", mapped_spline.index)
+
+    def test_uncollapsed_peptides_still_present_in_spline(self):
+        mapped_spline, _ = self._call()
+        self.assertIn("pep_00", mapped_spline.index)
+        self.assertIn("pep_01", mapped_spline.index)
+
+    def test_epitope_deltaz_matches_max_abs_residual_peptide(self):
+        mapped_spline, _ = self._call()
+        winner = self.spline.loc[["pep_00", "pep_01"], "deltaZ"] \
+            .abs().idxmax()
+        self.assertEqual(
+            mapped_spline.loc["ep1", "deltaZ"],
+            self.spline.loc[winner, "deltaZ"],
+        )
+
+    def test_mapped_zscores_excludes_collapsed_peptides(self):
+        _, mapped_zscores = self._call()
+        self.assertNotIn("pep_00", mapped_zscores.index)
+        self.assertNotIn("pep_01", mapped_zscores.index)
+        self.assertIn("ep1", mapped_zscores.index)
+
+    def test_mapped_zscores_keeps_unmapped_peptides(self):
+        _, mapped_zscores = self._call()
+        for pep in ("pep_02", "pep_03", "pep_04", "pep_05", "pep_06"):
+            self.assertIn(pep, mapped_zscores.index)
+
+    def test_mapped_zscores_columns_are_samples(self):
+        _, mapped_zscores = self._call()
+        self.assertEqual(set(mapped_zscores.columns), {"sA", "sB"})
+
+    def test_epitope_zscore_matches_max_abs_residual_peptide(self):
+        mapped_spline, mapped_zscores = self._call()
+        winner = self.spline.loc[["pep_00", "pep_01"], "deltaZ"] \
+            .abs().idxmax()
+        expected = self.zscores.loc[:, winner]
+        pd.testing.assert_series_equal(
+            mapped_zscores.loc["ep1"], expected, check_names=False
+        )
+
+
+# ---------------------------------------------------------------------------
+# _map_residuals_and_zscores — integration via plugin method
+# ---------------------------------------------------------------------------
+
+class TestMapResidualsAndZscoresIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        scores_art = qiime2.Artifact.import_data("FeatureTable[Zscore]", raw)
+
+        process = self.plugin.methods["_process_scores"]
+        self.processed_art, = process(scores=scores_art)
+
+        compute_fit = self.plugin.methods["_compute_pair_fit_and_residuals"]
+        self.spline_art, = compute_fit(
+            processed_zscores=self.processed_art,
+            pair="sA~sB",
+            spline_type="py-smooth",
+            degree=3,
+        )
+
+        # epitope.tsv only covers pep_00..pep_03, so build a small epitope
+        # table that covers every peptide in scores-vis.tsv (pep_00..pep_06)
+        # so no peptide gets dropped from the mapped Z-score output.
+        epi = pd.DataFrame(
+            {
+                "SpeciesID": ["sp001"] * 2 + [f"sp00{i}" for i in range(2, 7)],
+                "ClusterID": [f"C{i+1}" for i in range(7)],
+                "EpitopeWindow": [f"W{i+1}" for i in range(7)],
+                "Species": ["InfluenzaA"] * 2 + [f"Species{i}"
+                                                 for i in range(2, 7)],
+                "Subtype": ["H1N1", "H3N2", "S2", "S3", "S4", "S5", "S6"],
+                "Category": ["Viral"] * 7,
+            },
+            index=pd.Index(
+                [f"pep_0{i}" for i in range(7)], name="CodeName"
+            ),
+        )
+        epi_art = qiime2.Artifact.import_data("FeatureData[Epitope]", epi)
+        create_epitope_map = self.plugin.methods["create_epitope_map"]
+        self.epitope_map_art, = create_epitope_map(
+            epitope=epi_art, collapse="Viral"
+        )
+
+        self.method = self.plugin.methods["_map_residuals_and_zscores"]
+
+    def _run(self):
+        mapped_spline, mapped_zscores = self.method(
+            spline=self.spline_art,
+            zscores=self.processed_art,
+            epitope_map=self.epitope_map_art,
+        )
+        return mapped_spline.view(pd.DataFrame), mapped_zscores.view(
+            pd.DataFrame
+        )
+
+    def test_collapsed_epitope_present_in_mapped_spline(self):
+        mapped_spline, _ = self._run()
+        self.assertIn("sp001_C1_W1", mapped_spline.index)
+
+    def test_collapsed_epitope_present_in_mapped_zscores(self):
+        _, mapped_zscores = self._run()
+        # FeatureTable[Zscore] view: samples as index, features as columns
+        self.assertIn("sp001_C1_W1", mapped_zscores.columns)
+
+    def test_uncollapsed_peptides_absent_from_mapped_zscores(self):
+        _, mapped_zscores = self._run()
+        self.assertNotIn("pep_00", mapped_zscores.columns)
+        self.assertNotIn("pep_01", mapped_zscores.columns)
 
 
 # ---------------------------------------------------------------------------
@@ -618,19 +716,42 @@ class TestMakePseaTableIntegration(TestPluginBase):
         )
         self.pipeline = self.plugin.pipelines["make_psea_table"]
 
-    def test_raises_when_map_false_and_peptide_metadata_missing(self):
+    def test_raises_when_map_true_and_peptide_metadata_missing(self):
+        # peptide_metadata is required any time use_epitope_mapping=True,
+        # regardless of whether precomputed epitope_map/peptide_sets_map are
+        # supplied; with use_epitope_mapping=False the pipeline just runs
+        # unmapped and peptide_metadata is optional.
         with self.assertRaises(Exception):
             self.pipeline(
                 scores=self.scores_art,
                 pairs=self.pairs_art,
                 peptide_sets=self.gmt_art,
                 threshold=0.0,
-                use_epitope_mapping=False,
+                use_epitope_mapping=True,
+                # peptide_metadata intentionally omitted
+            )
+
+    def test_raises_when_map_with_mapped_artifacts_no_peptide_metadata(
+        self
+    ):
+        # Even when epitope_map/peptide_sets_map are both provided,
+        # peptide_metadata is still required downstream (count_enriched's
+        # collapsed analysis needs it), so this must still raise.
+        epi_map_art, peptide_sets_map_art = self._make_mapped_artifacts()
+        with self.assertRaises(Exception):
+            self.pipeline(
+                scores=self.scores_art,
+                pairs=self.pairs_art,
+                peptide_sets=self.gmt_art,
+                threshold=0.0,
+                use_epitope_mapping=True,
+                epitope_map=epi_map_art,
+                peptide_sets_map=peptide_sets_map_art,
                 # peptide_metadata intentionally omitted
             )
 
     def test_raises_when_partial_map_artifacts_provided(self):
-        # Providing epitope_map without scores_map/peptide_sets_map is invalid.
+        # Providing epitope_map without peptide_sets_map is invalid.
         # Note: create_epitope_map uses the input name "epitope", not
         # "peptide_metadata".
         epi_map_art, = self.plugin.methods["create_epitope_map"](
@@ -644,34 +765,22 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 threshold=0.0,
                 use_epitope_mapping=True,
                 epitope_map=epi_map_art,
-                # scores_map and peptide_sets_map omitted → partial → error
+                # peptide_sets_map omitted → partial → error
             )
 
     def _make_mapped_artifacts(self):
-        raw_9 = pd.DataFrame(
-            {s: [float(i) for i in range(9)] for s in ["sA", "sB"]},
-            index=pd.Index(
-                [f"pep_{i:02d}" for i in range(9)], name="peptide_id"
-            ),
-        )
-        scores_9_art = qiime2.Artifact.import_data(
-            "FeatureTable[Zscore]", raw_9
-        )
         epi_map_art, = self.plugin.methods["create_epitope_map"](
             epitope=self.epi_art, collapse="Viral"
         )
-        scores_map_art, = self.plugin.methods["epitope_zscore"](
-            zscores=scores_9_art, epitope_map=epi_map_art
-        )
         peptide_sets_map_art, = self.plugin.methods["taxa_to_epitope"](
-            epitope=epi_map_art
+            peptide_metadata=self.epi_art,
+            peptide_sets=self.gmt_art,
+            collapse="Viral",
         )
-        return epi_map_art, scores_map_art, peptide_sets_map_art
+        return epi_map_art, peptide_sets_map_art
 
     def test_raises_when_map_false_and_epitope_map_provided(self):
-        epi_map_art, scores_map_art, peptide_sets_map_art = (
-            self._make_mapped_artifacts()
-        )
+        epi_map_art, peptide_sets_map_art = self._make_mapped_artifacts()
         with self.assertRaises(Exception):
             self.pipeline(
                 scores=self.scores_art,
@@ -680,12 +789,11 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 threshold=0.0,
                 use_epitope_mapping=False,
                 epitope_map=epi_map_art,
-                scores_map=scores_map_art,
                 peptide_sets_map=peptide_sets_map_art,
             )
 
     def test_psea_tables_keyed_by_pair_name(self):
-        _, _, _, psea_tables, _ = self.pipeline(
+        _, psea_tables, _ = self.pipeline(
             scores=self.scores_art,
             pairs=self.pairs_art,
             peptide_sets=self.gmt_art,
@@ -701,6 +809,88 @@ class TestMakePseaTableIntegration(TestPluginBase):
             seed=42,
         )
         self.assertIn("sA~sB", psea_tables)
+
+
+# ---------------------------------------------------------------------------
+# make_psea_plots — pipeline integration
+# ---------------------------------------------------------------------------
+
+class TestMakePseaPlotsIntegration(TestPluginBase):
+    package = "q2_PSEA.tests"
+
+    def setUp(self):
+        super().setUp()
+        raw = pd.read_csv(
+            self.get_data_path("scores-vis.tsv"), sep="\t", index_col=0
+        )
+        self.scores_art = qiime2.Artifact.import_data(
+            "FeatureTable[Zscore]", raw
+        )
+        self.pairs_art = _load_pairs_art(self.get_data_path("pairs.tsv"))
+        self.gmt_art = _load_gmt_art(self.get_data_path("peptide-sets.tsv"))
+        pep_ids = [f"pep_{i:02d}" for i in range(9)]
+        species = (
+            ["sp001"] * 2 + ["sp002"] + ["sp003"]
+            + ["sp004"] * 3 + ["sp005"] * 2
+        )
+        subtypes = (
+            ["H1N1", "H3N2", "Yamagata", "K12"]
+            + ["HSV1"] * 3 + ["HIV1"] * 2
+        )
+        categories = (
+            ["Viral", "Viral", "Viral", "Bacterial"]
+            + ["Viral"] * 3 + ["Viral"] * 2
+        )
+        epi_extended = pd.DataFrame(
+            {
+                "SpeciesID": species,
+                "ClusterID": [f"C{i+1}" for i in range(9)],
+                "EpitopeWindow": [f"W{i+1}" for i in range(9)],
+                "Species": [
+                    "InfluenzaA", "InfluenzaA", "InfluenzaB", "EColi",
+                    "HerpesV", "HerpesV", "HerpesV", "HIV", "HIV",
+                ],
+                "Subtype": subtypes,
+                "Category": categories,
+            },
+            index=pd.Index(pep_ids, name="CodeName"),
+        )
+        self.epi_art = qiime2.Artifact.import_data(
+            "FeatureData[Epitope]", epi_extended
+        )
+        self.make_psea_table = self.plugin.pipelines["make_psea_table"]
+        self.pipeline = self.plugin.pipelines["make_psea_plots"]
+
+    def test_scatter_and_volcano_plots_keyed_by_pair_name(self):
+        _, psea_tables, _ = self.make_psea_table(
+            scores=self.scores_art,
+            pairs=self.pairs_art,
+            peptide_sets=self.gmt_art,
+            peptide_metadata=self.epi_art,
+            threshold=0.0,
+            permutation_num=100,
+            min_size=3,
+            max_size=500,
+            p_value=1.0,
+            enrichment_score=0.0,
+            iterative_analysis=False,
+            use_epitope_mapping=False,
+            seed=42,
+        )
+
+        scatter_plots, volcano_plots = self.pipeline(
+            scores=self.scores_art,
+            pairs=self.pairs_art,
+            psea_tables=psea_tables,
+            p_value=1.0,
+            enrichment_score=0.0,
+            use_epitope_mapping=False,
+        )
+
+        self.assertIn("sA~sB", scatter_plots)
+        self.assertIn("sA~sB", volcano_plots)
+        self.assertIsInstance(scatter_plots["sA~sB"], qiime2.Visualization)
+        self.assertIsInstance(volcano_plots["sA~sB"], qiime2.Visualization)
 
 
 if __name__ == "__main__":

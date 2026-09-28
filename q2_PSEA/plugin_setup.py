@@ -24,12 +24,13 @@ from q2_PSEA.actions.psea import (
     _process_scores,
     _run_iterative_process_single_pair,
     _split_scores,
+    _map_residuals_and_zscores,
     make_psea_table,
+    make_psea_plots,
 )
 from q2_PSEA.actions.visualizers import volcano, zscatter, aeplots
 from q2_PSEA.actions.epitope import (
     create_epitope_map,
-    epitope_zscore,
     taxa_to_epitope,
     count_enriched,
 )
@@ -132,7 +133,6 @@ plugin.methods.register_function(
     function=_compute_pair_fit_and_residuals,
     inputs={
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
-        "epitope_map": FeatureData[MappedEpitope],
     },
     parameters={
         "pair": Str,
@@ -146,10 +146,6 @@ plugin.methods.register_function(
     input_descriptions={
         "processed_zscores": (
             "Log-scaled Z-score matrix (FeatureTable[Zscore])."
-        ),
-        "epitope_map": (
-            "Optional mapped-epitope table. When provided, maxZ and deltaZ"
-            " are collapsed from peptide to epitope level."
         ),
     },
     parameter_descriptions={
@@ -254,6 +250,9 @@ plugin.methods.register_function(
         "precomputed_fit": FeatureData[Spline],
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
+        "debug_pair": Str,
+        "debug_iteration": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -262,11 +261,14 @@ plugin.methods.register_function(
         "species_taxa": Metadata,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
-        "debug_gsea_input_table_path": Str,
-        "debug_pair": Str,
-        "debug_iteration": Str,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "Directory for automatic GSEA input tables, diagnostics, raw fgsea"
+            " results and PDF plots for every iteration and final analysis."
+        ),
+        "debug_pair": "Pair label for debug output files.",
+        "debug_iteration": "Iteration label for debug output files.",
         "threshold": (
             "Minimum Z-score a peptide must have to be included in GSEA."
         ),
@@ -294,17 +296,6 @@ plugin.methods.register_function(
         "residual_min_peptides": (
             "Minimum number of peptides required per species with absolute"
             " residual greater than residual_abs_thresh to keep that species."
-        ),
-        "debug_gsea_input_table_path": (
-            "Optional path for writing the exact TSV input table passed to R"
-            " GSEA. Intended only for debugging."
-        ),
-        "debug_pair": (
-            "Optional sample-pair label used to organize GSEA input debug"
-            " tables."
-        ),
-        "debug_iteration": (
-            "Optional iteration label used to name GSEA input debug tables."
         ),
     },
     input_descriptions={
@@ -344,10 +335,10 @@ plugin.methods.register_function(
         "processed_zscores": FeatureTable[Zscore % Properties("processed")],
         "peptide_sets": GMT,
         "precomputed_fit": FeatureData[Spline],
-        "epitope_map": FeatureData[MappedEpitope],
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -358,12 +349,15 @@ plugin.methods.register_function(
         "include_negative_enrichment": Bool,
         "species_taxa": Metadata,
         "debug_per_iteration_table_path": Str,
-        "debug_gsea_input_table_path": Str,
         "pair": Str,
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "Directory for automatic GSEA input tables, diagnostics, raw fgsea"
+            " results and PDF plots for every iteration and final analysis."
+        ),
         "threshold": "Minimum Z-score for GSEA inclusion.",
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
@@ -386,10 +380,6 @@ plugin.methods.register_function(
             " Only to be used when debugging and meaningless if not doing"
             " iterative analysis."
         ),
-        "debug_gsea_input_table_path": (
-            "Optional path for writing the exact TSV input tables passed to R"
-            " GSEA at each iteration. Intended only for debugging."
-        ),
         "pair": (
             "The name of the pair we are running iterative analysis on. Only"
             " needed when writing debug tables."
@@ -409,10 +399,6 @@ plugin.methods.register_function(
         "precomputed_fit": (
             "Optional precomputed maxZ/deltaZ from a prior call. When"
             " provided, spline fitting is skipped."
-        ),
-        "epitope_map": (
-            "Optional epitope map passed in if data is collapsed to epitope"
-            " level."
         ),
         "mapped_peptide_sets": (
             "Optional mapped peptide sets passed in if data is collapsed to"
@@ -450,10 +436,10 @@ plugin.pipelines.register_function(
         "peptide_sets": GMT,
         "peptide_metadata": FeatureData[Epitope],
         "epitope_map": FeatureData[MappedEpitope],
-        "scores_map": FeatureTable[Zscore % Properties("mapped")],
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
         "p_value": Float,
@@ -476,9 +462,12 @@ plugin.pipelines.register_function(
         "residual_abs_thresh": Float,
         "residual_min_peptides": Int,
         "debug_per_iteration_table_path": Str,
-        "debug_gsea_input_table_path": Str,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "Directory for automatic GSEA input tables, diagnostics, raw fgsea"
+            " results and PDF plots for every iteration and final analysis."
+        ),
         "threshold": (
             "Minimum Z-score a peptide must have to be included in GSEA."
         ),
@@ -487,8 +476,8 @@ plugin.pipelines.register_function(
             " epitope input is provided."
         ),
         "p_value": (
-            "Adjusted p-value threshold for significance in volcano and"
-            " scatter plots."
+            "Adjusted p-value threshold for significance in antibody-event"
+            " counting."
         ),
         "enrichment_score": "NES threshold for significance.",
         "include_negative_enrichment": (
@@ -534,8 +523,8 @@ plugin.pipelines.register_function(
         "use_epitope_mapping": (
             "If true, the analysis will be run with data collapsed to epitope"
             " level. This requires you to either pass 'peptide_metadata' so"
-            " the pipeline can do the collapsing, or all of epitope_map,"
-            " scores_map, and peptide_sets_map"
+            " the pipeline can do the collapsing, or both of epitope_map,"
+            " and peptide_sets_map"
         ),
         "residual_threshold": (
             "The threshold above which a peptide residual must be in order to"
@@ -554,11 +543,6 @@ plugin.pipelines.register_function(
             " Only to be used when debugging and meaningless if not doing"
             " iterative analysis."
         ),
-        "debug_gsea_input_table_path": (
-            "Optional path to write the exact TSV input tables passed to R"
-            " GSEA. When used with iterative analysis, tables are organized"
-            " by pair and iteration; the final GSEA input is also written."
-        ),
     },
     input_descriptions={
         "scores": (
@@ -574,41 +558,26 @@ plugin.pipelines.register_function(
             " them. Collapsed to epitope level if epitope is provided."
         ),
         "peptide_metadata": (
-            "Optional epitope table. When provided, peptide-level residuals"
-            " are collapsed to the epitope level before GSEA."
+            "Peptide level metadata. Must be passed when doing epitope mapped"
+            " analysis"
         ),
         "epitope_map": (
             "Optional already collapsed epitope table. When provided, this"
             " table is used in GSEA. Maps epitopes to peptides and species."
-            "NOTE: Must be passed with scores_map and peptide_sets_map."
-        ),
-        "scores_map": (
-            "Optional already collapsed zscores. When provided, these"
-            " scores are used in GSEA but NOT for spline fitting."
-            "NOTE: Must be passed with eptiope_map and peptide_sets_map."
+            "NOTE: Must be passed with peptide_sets_map."
         ),
         "peptide_sets_map": (
             "Optional already collapsed epitope peptide sets. When provided,"
             " these peptides are used in GSEA."
-            "NOTE: Must be passed with epitope_map and scores_map."
+            "NOTE: Must be passed with epitope_map."
         )
     },
     outputs=[
-        ("scatter_plots", Collection[Visualization]),
-        ("volcano_plots", Collection[Visualization]),
         ("ae_plots", Visualization),
         ("psea_tables", Collection[FeatureData[PSEAScores]]),
         ("enrichment_tables", Collection[FeatureData[Enriched]])
     ],
     output_descriptions={
-        "scatter_plots": (
-            "per-pair z-score scatter plots with spline fit and highlighted"
-            " leading-edge peptides for significant taxa."
-        ),
-        "volcano_plots": (
-            "per-pair volcano plots of normalized enrichment scores vs."
-            " adjusted p-values."
-        ),
         "ae_plots": "Antibody-event summary bar plots.",
         "psea_tables": (
             "Per-pair PSEA result tables containing enrichment scores,"
@@ -785,6 +754,117 @@ plugin.visualizers.register_function(
 )
 
 # ---------------------------------------------------------------------------
+# Register make_psea_plots as a pipeline
+# ---------------------------------------------------------------------------
+
+plugin.pipelines.register_function(
+    function=make_psea_plots,
+    inputs={
+        "scores": FeatureTable[Zscore],
+        "pairs": PSEAPairs,
+        "psea_tables": Collection[FeatureData[PSEAScores]],
+        "peptide_metadata": FeatureData[Epitope],
+        "epitope_map": FeatureData[MappedEpitope],
+    },
+    parameters={
+        "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
+        "use_epitope_mapping": Bool,
+        "spline_type": Str % Choices(splines.SPLINE_TYPES),
+        "fit_threshold": Float,
+        "linear_through_origin": Bool,
+        "degree": Int,
+        "dof": Int,
+        "p_value": Float,
+        "enrichment_score": Float,
+        "species_taxa": Metadata,
+        "species_colors": Metadata,
+    },
+    parameter_descriptions={
+        "collapse": (
+            "Category to collapse to epitope level. Only used when the"
+            " epitope input is provided."
+        ),
+        "use_epitope_mapping": (
+            "If true, the Z-scores and spline fits used for the scatter"
+            " plots are collapsed to epitope level. This requires either"
+            " 'peptide_metadata' or 'epitope_map' to be provided. Should"
+            " match the value used to produce 'psea_tables'."
+        ),
+        "spline_type": "Spline method used to fit the Z-score scatter.",
+        "fit_threshold": (
+            "Optional threshold used only for linear spline fitting; only"
+            " points where x and y are both greater than this threshold are"
+            " used to fit the line."
+        ),
+        "linear_through_origin": (
+            "If True and spline_type is linear, force the regression line"
+            " through (0, 0)."
+        ),
+        "degree": (
+            "Polynomial degree for spline fitting (affects 'cubic' only)."
+        ),
+        "dof": (
+            "Degrees of freedom for spline fitting (affects 'cubic' only)."
+        ),
+        "p_value": (
+            "Adjusted p-value threshold for significance in volcano and"
+            " scatter plots."
+        ),
+        "enrichment_score": "NES threshold for significance.",
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+            " When provided, must match the value used to produce"
+            " 'psea_tables'."
+        ),
+        "species_colors": (
+            "Optional Metadata mapping species names (IDs) to HEX color"
+            " codes used in output visualizations."
+        ),
+    },
+    input_descriptions={
+        "scores": "Z-score matrix used to produce 'psea_tables'.",
+        "pairs": (
+            "Tab-delimited file listing pairs of sample names (one pair per"
+            " row, header required). Must be the same pairs used to produce"
+            " 'psea_tables'."
+        ),
+        "psea_tables": (
+            "Per-pair PSEA result tables, as produced by make_psea_table."
+        ),
+        "peptide_metadata": (
+            "Peptide level metadata. Used to build 'epitope_map' when"
+            " 'use_epitope_mapping' is True and 'epitope_map' is not"
+            " provided."
+        ),
+        "epitope_map": (
+            "Optional already collapsed epitope table used to collapse"
+            " Z-scores and spline fits to epitope level."
+        ),
+    },
+    outputs=[
+        ("scatter_plots", Collection[Visualization]),
+        ("volcano_plots", Collection[Visualization]),
+    ],
+    output_descriptions={
+        "scatter_plots": (
+            "per-pair z-score scatter plots with spline fit and highlighted"
+            " leading-edge peptides for significant taxa."
+        ),
+        "volcano_plots": (
+            "per-pair volcano plots of normalized enrichment scores vs."
+            " adjusted p-values."
+        ),
+    },
+    name="Make PSEA Plots",
+    description=(
+        "QIIME 2 pipeline for generating scatter and volcano plots from"
+        " PSEA result tables produced by make_psea_table. Only recomputes"
+        " the Z-score processing and spline fitting needed to render the"
+        " plots; does not re-run GSEA."
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # Register create_epitope_map as a method
 # ---------------------------------------------------------------------------
 
@@ -808,37 +888,6 @@ plugin.methods.register_function(
     description='Creates the fully defined epitope name '
                 'species_clusterID_EpitopeWindow mapped to peptide code names '
                 'and species/subtypes the epitope is associated with.',
-)
-
-# ---------------------------------------------------------------------------
-# Register epitope_zscore as a method
-# ---------------------------------------------------------------------------
-
-plugin.methods.register_function(
-    function=epitope_zscore,
-    inputs={
-        'zscores': FeatureTable[Zscore],
-        'epitope_map': FeatureData[MappedEpitope],
-    },
-    parameters={},
-    outputs=[
-        ('epitope_zscore', FeatureTable[Zscore % Properties("mapped")]),
-    ],
-    input_descriptions={
-        'zscores': 'FeatureTable containing the code names of peptides and '
-                   'their per sample z scores',
-        'epitope_map': 'FeatureTable containing epitopes and their associated '
-                       'peptides and subtypes',
-    },
-    parameter_descriptions={},
-    output_descriptions={
-        'epitope_zscore': 'FeatureTable containing the epitopes and their per '
-                          'sample z scores.',
-    },
-    name='zscore',
-    description='Creates a map of epitopes to their max z-score within each '
-                'sample. The maxes are taken by finding the per sample maxes '
-                'among z scores of peptides associated with a given epitope.',
 )
 
 # ---------------------------------------------------------------------------
@@ -925,4 +974,22 @@ plugin.methods.register_function(
     ],
     name='split scores',
     description='Splits scores into per-pair artifacts.'
+)
+
+
+plugin.methods.register_function(
+    function=_map_residuals_and_zscores,
+    inputs={
+        'spline': FeatureData[Spline],
+        'zscores': FeatureTable[Zscore % Properties('processed')],
+        'epitope_map': FeatureData[MappedEpitope]
+    },
+    parameters={},
+    outputs=[
+        ('mapped_spline', FeatureData[Spline % Properties('mapped')]),
+        ('mapped_zscores',
+         FeatureTable[Zscore % Properties('processed', 'mapped')])
+    ],
+    name="map residuals and zscores",
+    description="maps residuals and zscores"
 )

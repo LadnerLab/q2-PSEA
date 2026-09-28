@@ -81,27 +81,6 @@ def filter_peptide_sets_by_residual(
     )
 
 
-def collapse_residuals_to_epitope(peptide_residuals, epitope_map):
-    peptide_to_epitopes = {}
-    for epitope, peptides in epitope_map["CodeName"].items():
-        for peptide in peptides:
-            if peptide not in peptide_to_epitopes:
-                peptide_to_epitopes[peptide] = []
-            peptide_to_epitopes[peptide].append(epitope)
-
-    epitope_residuals = {}
-    for peptide, residual in peptide_residuals.items():
-        mapped_epitopes = peptide_to_epitopes.get(peptide, (peptide, ))
-        for epitope in mapped_epitopes:
-            if epitope not in epitope_residuals:
-                epitope_residuals[epitope] = residual
-            elif abs(residual) > abs(epitope_residuals[epitope]):
-                epitope_residuals[epitope] = residual
-
-    epitope_residuals.update(peptide_residuals)
-    return pd.Series(epitope_residuals)
-
-
 def collate_ae_counts(ae_counts: list[pd.DataFrame]):
     return pd.concat(
         ae_counts, ignore_index=True

@@ -1,6 +1,5 @@
 import numpy as np
 import os
-import copy
 import pandas as pd
 import qiime2
 import random
@@ -9,8 +8,6 @@ import q2_PSEA.actions.splines as splines
 import q2_PSEA.utils as utils
 import warnings
 import tempfile
-from rpy2.robjects.packages import importr
-from statsmodels.stats.multitest import multipletests
 
 from math import log, pow
 from qiime2.plugin import CaptureHolder, IContext
@@ -22,11 +19,6 @@ from q2_PSEA.actions.r_functions import INTERNAL
 MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
-# Used to calculate p.adjust
-stats = importr('stats')
-# Used to recalculate qvalue using Storey method
-qvalue = importr('qvalue')
-
 
 def make_psea_table(
     ctx: IContext,
@@ -36,7 +28,6 @@ def make_psea_table(
     threshold: float,
     peptide_metadata: qiime2.Artifact = None,
     epitope_map: qiime2.Artifact = None,
-    scores_map: qiime2.Artifact = None,
     peptide_sets_map: qiime2.Artifact = None,
     collapse: str = "Viral",
     p_value: float = 0.05,
@@ -61,8 +52,6 @@ def make_psea_table(
     debug_per_iteration_table_path: str = None,
     debug_gsea_input_table_path: str = None,
 ) -> tuple[
-    qiime2.Visualization,
-    qiime2.Visualization,
     qiime2.Visualization,
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
@@ -97,28 +86,14 @@ def make_psea_table(
         os.mkdir(debug_per_iteration_table_path)
 
     if debug_gsea_input_table_path is not None:
-        warnings.warn(
-            f"You have set a value of {debug_gsea_input_table_path} for"
-            " 'debug_gsea_input_table_path.' Please only set this value if"
-            " you intend to inspect the exact tables passed to R GSEA.",
-            RachisWarning
-        )
-
-        if os.path.exists(debug_gsea_input_table_path):
-            raise ValueError(
-                f"Path {debug_gsea_input_table_path} already exists. Please"
-                " provide a path for debug .tsvs that does not already exist."
-            )
-
-        os.mkdir(debug_gsea_input_table_path)
+        # A fresh directory prevents silently overwriting a previous run.
+        os.makedirs(debug_gsea_input_table_path, exist_ok=False)
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
     # ------------------------------------------------------------------
     map_provided = all(
-        param is not None for param in [
-            epitope_map, scores_map, peptide_sets_map
-        ]
+        param is not None for param in [epitope_map, peptide_sets_map]
     )
 
     if not use_epitope_mapping and map_provided:
@@ -127,41 +102,50 @@ def make_psea_table(
 
     if use_epitope_mapping and any(
                 param is not None for param in [
-                    epitope_map, scores_map, peptide_sets_map
+                    epitope_map, peptide_sets_map
                 ]
             ) and not map_provided:
         raise ValueError(
-            "Please pass either all of 'epitope_map', 'scores_map',"
-            " and 'peptide_sets_map' or none of them when running mapped"
-            " analysis. If you provide None, this pipeline will do the"
-            " mapping."
+            "Please pass either both of 'epitope_map', 'peptide_sets_map' or"
+            " neither of them when running mapped analysis. If you provide"
+            " neither, this pipeline will do the mapping."
         )
 
-    if use_epitope_mapping and not map_provided and peptide_metadata is None:
+    if use_epitope_mapping and peptide_metadata is None:
         raise ValueError(
-            "Must provide peptide metadata if doing a mapped analysis without"
-            " providing mapped artifacts."
+            "Must provide peptide metadata if doing a mapped analysis."
         )
 
-    _filter_scores_to_pairs = ctx.get_action("psea", "_filter_scores_to_pairs")
-    _process_scores = ctx.get_action("psea", "_process_scores")
-    _split_scores = ctx.get_action("psea", "_split_scores")
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
+    )
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
+    _split_scores = ctx.get_action(
+        "psea", "_split_scores", record_provenance=False
+    )
     _compute_pair_fit_and_residuals = ctx.get_action(
-        "psea", "_compute_pair_fit_and_residuals"
+        "psea", "_compute_pair_fit_and_residuals", record_provenance=False
+    )
+    _map_residuals_and_zscores = ctx.get_action(
+        "psea", "_map_residuals_and_zscores", record_provenance=False
     )
     _run_iterative_process_single_pair = ctx.get_action(
-        "psea", "_run_iterative_process_single_pair"
+        "psea", "_run_iterative_process_single_pair", record_provenance=False
     )
     _create_fgsea_table_for_pair = ctx.get_action(
-        "psea", "_create_fgsea_table_for_pair"
+        "psea", "_create_fgsea_table_for_pair", record_provenance=False
     )
-    count_enriched = ctx.get_action("psea", "count_enriched")
+    count_enriched = ctx.get_action(
+        "psea", "count_enriched", record_provenance=False
+    )
 
-    count_antibody_events = ctx.get_action("psea", "count_antibody_events")
+    count_antibody_events = ctx.get_action(
+        "psea", "count_antibody_events", record_provenance=False
+    )
 
-    volcano = ctx.get_action("psea", "volcano")
-    zscatter = ctx.get_action("psea", "zscatter")
-    aeplots = ctx.get_action("psea", "aeplots")
+    aeplots = ctx.get_action("psea", "aeplots", record_provenance=False)
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -179,12 +163,14 @@ def make_psea_table(
     # Handle epitope collapsing if needed
     # ------------------------------------------------------------------
     if use_epitope_mapping and not map_provided:
-        create_epitope_map = ctx.get_action("psea", "create_epitope_map")
-        create_epitope_zscore = ctx.get_action("psea", "epitope_zscore")
-        create_epitope_gmt = ctx.get_action("psea", "taxa_to_epitope")
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        create_epitope_gmt = ctx.get_action(
+            "psea", "taxa_to_epitope", record_provenance=False
+        )
 
         epitope_map, = create_epitope_map(peptide_metadata, collapse)
-        scores_map, = create_epitope_zscore(filtered_zscores, epitope_map)
         peptide_sets_map, = create_epitope_gmt(
             peptide_metadata, peptide_sets, collapse=collapse
         )
@@ -193,9 +179,6 @@ def make_psea_table(
     # Process (log-scale) scores
     # ------------------------------------------------------------------
     processed_zscores, = _process_scores(filtered_zscores)
-    mapped_processed_zscores = None
-    if use_epitope_mapping:
-        mapped_processed_zscores, = _process_scores(scores_map)
 
     # ------------------------------------------------------------------
     # Split scores out by pair
@@ -207,18 +190,11 @@ def make_psea_table(
     # here, and it takes some time... maybe too long for a large number
     # of pairs
     split_processed_zscores, = _split_scores(processed_zscores, pairs)
-    split_mapped_processed_zscores = None
-    if use_epitope_mapping:
-        split_mapped_processed_zscores, = _split_scores(
-            mapped_processed_zscores, pairs
-        )
 
     pair_splines = {}
     pair_pep_sets_dict = {}
     psea_tables = {}
     enrichment_tables = {}
-    scatter_plots = {}
-    volcano_plots = {}
     pos_ae_counts = {}
     neg_ae_counts = {}
 
@@ -233,26 +209,26 @@ def make_psea_table(
             fit_threshold=fit_threshold,
             linear_through_origin=linear_through_origin,
             degree=degree,
-            epitope_map=epitope_map,
             dof=dof,
         )
 
-        # We need to use unmapped scores when collapsing no matter what, but
-        # down below whether we use mapped or unmapped depends on the type of
-        # analysis requested
-        used_zscores = \
-            split_mapped_processed_zscores[pair] if use_epitope_mapping else \
-            split_processed_zscores[pair]
+        # Collapse residuals and zscores if using mapping
+        if use_epitope_mapping:
+            pair_splines[pair], split_processed_zscores[pair] = \
+                _map_residuals_and_zscores(
+                    pair_splines[pair],
+                    split_processed_zscores[pair],
+                    epitope_map
+                )
 
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
         if iterative_analysis:
             pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
-                processed_zscores=used_zscores,
+                processed_zscores=split_processed_zscores[pair],
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
-                epitope_map=epitope_map,
                 mapped_peptide_sets=peptide_sets_map,
                 threshold=threshold,
                 permutation_num=permutation_num,
@@ -277,7 +253,7 @@ def make_psea_table(
         # Final per-pair PSEA analysis
         # ------------------------------------------------------------------
         psea_tables[pair], = _create_fgsea_table_for_pair(
-            processed_zscores=used_zscores,
+            processed_zscores=split_processed_zscores[pair],
             peptide_sets=pair_pep_sets_dict[pair],
             threshold=threshold,
             permutation_num=permutation_num,
@@ -296,33 +272,11 @@ def make_psea_table(
         enrichment_tables[pair], = count_enriched(
             psea_table=psea_tables[pair],
             residuals=pair_splines[pair],
-            epitope_map=epitope_map,
             peptide_metadata=peptide_metadata,
+            epitope_map=epitope_map,
             p_value=p_value,
             residual_threshold=residual_threshold,
             include_negative_enrichment=include_negative_enrichment
-        )
-
-        scatter_plots[pair], = zscatter(
-            zscores=used_zscores,
-            pair=pair,
-            spline=pair_splines[pair],
-            p_val_access="p.adjust",
-            le_peps_access="core_enrichment",
-            taxa_access=taxa_access,
-            psea_table=psea_tables[pair],
-            highlight_threshold=p_value,
-            colors_file=species_colors,
-        )
-
-        volcano_plots[pair], = volcano(
-            psea_table=psea_tables[pair],
-            xy_access=["NES", "p.adjust"],
-            taxa_access=taxa_access,
-            x_threshold=enrichment_score,
-            y_threshold=p_value,
-            xy_labels=["Enrichment score", "Adjusted p-values"],
-            colors_file=species_colors,
         )
 
         pos_ae_counts[pair], neg_ae_counts[pair] = count_antibody_events(
@@ -346,8 +300,128 @@ def make_psea_table(
     # 1. import
     # 2. run
     # 3. export
-    return (scatter_plots, volcano_plots, ae_plot, psea_tables,
-            enrichment_tables)
+    return ae_plot, psea_tables, enrichment_tables
+
+
+def make_psea_plots(
+    ctx: IContext,
+    scores: qiime2.Artifact,
+    pairs: qiime2.Artifact,
+    psea_tables: dict[str, qiime2.Artifact],
+    peptide_metadata: qiime2.Artifact = None,
+    epitope_map: qiime2.Artifact = None,
+    collapse: str = "Viral",
+    use_epitope_mapping: bool = False,
+    spline_type: str = "r-smooth",
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
+    degree: int = 3,
+    dof: int = None,
+    p_value: float = 0.05,
+    enrichment_score: float = 1,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
+) -> tuple[
+    dict[str, qiime2.Visualization],
+    dict[str, qiime2.Visualization],
+]:
+    """QIIME 2 pipeline: build per-pair scatter and volcano plots for an
+    already-computed collection of PSEA tables.
+
+    Only recomputes the cheap steps (score filtering/processing/splitting
+    and spline fitting) needed to feed the zscatter and volcano visualizers;
+    reuses the given psea_tables rather than re-running GSEA.
+    """
+    if (
+        use_epitope_mapping
+        and epitope_map is None
+        and peptide_metadata is None
+    ):
+        raise ValueError(
+            "Must provide 'epitope_map' or 'peptide_metadata' when"
+            " use_epitope_mapping is True."
+        )
+
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
+    )
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
+    _split_scores = ctx.get_action(
+        "psea", "_split_scores", record_provenance=False
+    )
+    _compute_pair_fit_and_residuals = ctx.get_action(
+        "psea", "_compute_pair_fit_and_residuals", record_provenance=False
+    )
+    _map_residuals_and_zscores = ctx.get_action(
+        "psea", "_map_residuals_and_zscores", record_provenance=False
+    )
+    volcano = ctx.get_action("psea", "volcano", record_provenance=False)
+    zscatter = ctx.get_action("psea", "zscatter", record_provenance=False)
+
+    taxa_access = "species_name" if species_taxa is not None else "ID"
+
+    if use_epitope_mapping and epitope_map is None:
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        epitope_map, = create_epitope_map(peptide_metadata, collapse)
+
+    # ------------------------------------------------------------------
+    # Rebuild per-pair processed Z-scores
+    # ------------------------------------------------------------------
+    filtered_zscores, = _filter_scores_to_pairs(scores, pairs)
+    processed_zscores, = _process_scores(filtered_zscores)
+    split_processed_zscores, = _split_scores(processed_zscores, pairs)
+
+    scatter_plots = {}
+    volcano_plots = {}
+
+    for pair in psea_tables.keys():
+        # Compute spline fit once per pair; reuse it for the scatter plot
+        # data.
+        spline, = _compute_pair_fit_and_residuals(
+            processed_zscores=split_processed_zscores[pair],
+            pair=pair,
+            spline_type=spline_type,
+            fit_threshold=fit_threshold,
+            linear_through_origin=linear_through_origin,
+            degree=degree,
+            dof=dof,
+        )
+
+        pair_zscores = split_processed_zscores[pair]
+
+        # Collapse residuals and zscores if using mapping
+        if use_epitope_mapping:
+            spline, pair_zscores = _map_residuals_and_zscores(
+                spline, pair_zscores, epitope_map
+            )
+
+        scatter_plots[pair], = zscatter(
+            zscores=pair_zscores,
+            pair=pair,
+            spline=spline,
+            p_val_access="p.adjust",
+            le_peps_access="core_enrichment",
+            taxa_access=taxa_access,
+            psea_table=psea_tables[pair],
+            highlight_threshold=p_value,
+            colors_file=species_colors,
+        )
+
+        volcano_plots[pair], = volcano(
+            psea_table=psea_tables[pair],
+            xy_access=["NES", "p.adjust"],
+            taxa_access=taxa_access,
+            x_threshold=enrichment_score,
+            y_threshold=p_value,
+            xy_labels=["Enrichment score", "Adjusted p-values"],
+            colors_file=species_colors,
+        )
+
+    return scatter_plots, volcano_plots
 
 
 def _run_iterative_process_single_pair(
@@ -360,7 +434,6 @@ def _run_iterative_process_single_pair(
     p_value: float,
     enrichment_score: float,
     precomputed_fit: pd.DataFrame = None,
-    epitope_map: pd.DataFrame = None,
     mapped_peptide_sets: pd.DataFrame = None,
     seed: CaptureHolder[int] = None,
     include_negative_enrichment: bool = True,
@@ -390,7 +463,6 @@ def _run_iterative_process_single_pair(
         mapped_peptide_sets if mapped_peptide_sets is not None
         else peptide_sets
     )
-    used_peptide_sets = copy.deepcopy(updated_peptide_sets)
 
     tested_species = set()
     iteration = 1
@@ -402,46 +474,11 @@ def _run_iterative_process_single_pair(
 
         os.mkdir(os.path.join(debug_per_iteration_table_path, pair))
 
-    last_psea_table = None
-    current_psea_table = None
-    unchanged_taxa = []
-
-    def _filter_unchanged_taxa(current_psea_table_row):
-        # I hate using this, but Python is a dork about accessing external
-        # vars in closures sometimes. It's complaining because I overwrite this
-        # var in this closure
-        nonlocal used_peptide_sets
-
-        taxa = current_psea_table_row.name
-        last_psea_table_row = last_psea_table.loc[taxa]
-
-        if set(current_psea_table_row['all_tested_peptides']) == \
-                set(last_psea_table_row['all_tested_peptides']):
-            # Need to copy the row because it only adds a pointer to the object
-            # to the list. If I don't copy it we will end up with a bunch of
-            # pointers to the same object which will all be the last row we saw
-            # here.
-            unchanged_taxa.append(copy.deepcopy(current_psea_table_row))
-            used_peptide_sets = \
-                used_peptide_sets[used_peptide_sets['term'] != taxa]
-
-    while sig_found:
-        # First two iterations pass everything
-        #
-        # After first two iterations, calc diff and only pass forward taxa that
-        # changed in last iteration drop taxa that did not change from gmt
-        # before next iteration.
-        if last_psea_table is not None:
-            # Compare last_psea_table to current_psea_table. If a taxa did not
-            # have changes to its peptide list, drop it from
-            # updated_peptide_sets
-            current_psea_table.apply(_filter_unchanged_taxa, axis=1)
-
-        last_psea_table = current_psea_table
+    while (sig_found):
         # Called as a raw Python function not a QIIME 2 Method
         current_psea_table = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
-            peptide_sets=used_peptide_sets,
+            peptide_sets=updated_peptide_sets,
             threshold=threshold,
             permutation_num=permutation_num,
             min_size=min_size,
@@ -456,31 +493,8 @@ def _run_iterative_process_single_pair(
             debug_iteration=f"{iteration:03d}",
         )
 
-        # Our aggressive diff filtering caused us to wrap up early.
-        if current_psea_table.empty:
-            break
-
-        # Add back unchanged taxa here and recalc p.adj and q using same
-        # methods as R GSEA.
-        readded_psea_table = pd.concat(
-            [current_psea_table, pd.DataFrame(unchanged_taxa)],
-            ignore_index=True
-        )
-
-        # Calc p.adjust using Python basic Benjamini-Hochberg FDR
-        readded_psea_table['p.adjust'] = \
-            multipletests(
-                readded_psea_table['pvalue'], method='fdr_bh'
-            )[1]
-
-        # The q value uses the Storey method which is more involved, but we
-        # already have access to it from the R packages we installed
-        r_pvalues = ro.FloatVector(readded_psea_table['pvalue'])
-        r_qvalues = qvalue.qvalue(p=r_pvalues)
-        readded_psea_table['qvalue'] = r_qvalues.rx2('qvalues')
-
         if debug_per_iteration_table_path:
-            readded_psea_table.to_csv(
+            current_psea_table.to_csv(
                 os.path.join(
                     debug_per_iteration_table_path, pair, f'{iteration}.tsv'
                 ), sep='\t', index=False
@@ -488,7 +502,7 @@ def _run_iterative_process_single_pair(
 
         updated_peptide_sets, tested_species, sig_found = \
             utils.filter_peptide_sets(
-                readded_psea_table,
+                current_psea_table,
                 updated_peptide_sets,
                 tested_species,
                 p_value,
@@ -496,75 +510,9 @@ def _run_iterative_process_single_pair(
                 include_negative_enrichment,
             )
 
-        # Also drop regularly filtered peptide sets from used_peptide_sets
-        used_peptide_sets = \
-            pd.merge(used_peptide_sets, updated_peptide_sets, how='inner')
-
         iteration += 1
 
     return updated_peptide_sets
-
-
-def _build_gsea_input_table(
-    maxZ: pd.Series,
-    deltaZ: pd.Series,
-    peptide_sets_for_analysis: pd.DataFrame,
-    threshold: float,
-) -> pd.DataFrame:
-    """Build a single TSV-friendly table containing R GSEA inputs."""
-    gsea_input = peptide_sets_for_analysis.loc[:, ["term", "gene"]].copy()
-    gsea_input["maxZ"] = gsea_input["gene"].map(maxZ)
-    gsea_input["deltaZ"] = gsea_input["gene"].map(deltaZ)
-    gsea_input["in_gene_list"] = (
-        (gsea_input["maxZ"] > threshold)
-        & (gsea_input["deltaZ"] != 0)
-        & gsea_input["deltaZ"].notna()
-    )
-
-    ranked = (
-        gsea_input.loc[gsea_input["in_gene_list"], ["gene", "deltaZ"]]
-        .drop_duplicates(subset=["gene"])
-        .sort_values("deltaZ", ascending=False)
-        .reset_index(drop=True)
-    )
-    ranks = pd.Series(ranked.index + 1, index=ranked["gene"])
-    gsea_input["gene_list_rank"] = gsea_input["gene"].map(ranks)
-    gsea_input["gene_list_score"] = gsea_input["deltaZ"].where(
-        gsea_input["in_gene_list"]
-    )
-
-    return gsea_input.sort_values(["gene", "term"]).reset_index(drop=True)
-
-
-def _write_gsea_input_table(
-    debug_gsea_input_table_path: str,
-    gsea_input_table: pd.DataFrame,
-    pair: str = None,
-    iteration=None,
-) -> None:
-    """Write a GSEA input table to either a file path or debug directory."""
-    if debug_gsea_input_table_path is None:
-        return
-
-    path_root, path_ext = os.path.splitext(debug_gsea_input_table_path)
-    if path_ext.lower() == ".tsv" and pair is None and iteration is None:
-        out_path = debug_gsea_input_table_path
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    else:
-        out_dir = debug_gsea_input_table_path
-        if pair is not None:
-            out_dir = os.path.join(out_dir, pair)
-        os.makedirs(out_dir, exist_ok=True)
-
-        if iteration is None:
-            filename = "gsea_input.tsv"
-        elif isinstance(iteration, int):
-            filename = f"{iteration:03d}_gsea_input.tsv"
-        else:
-            filename = f"{iteration}_gsea_input.tsv"
-        out_path = os.path.join(out_dir, filename)
-
-    gsea_input_table.to_csv(out_path, sep="\t", index=False)
 
 
 def _create_fgsea_table_for_pair(
@@ -620,15 +568,15 @@ def _create_fgsea_table_for_pair(
         residual_min_peptides=residual_min_peptides,
     )
 
-    gsea_input_table = _build_gsea_input_table(
-        maxZ, deltaZ, peptide_sets_for_analysis, threshold
-    )
-    _write_gsea_input_table(
-        debug_gsea_input_table_path,
-        gsea_input_table,
-        pair=debug_pair,
-        iteration=debug_iteration,
-    )
+    debug_prefix = ""
+    if debug_gsea_input_table_path is not None:
+        from urllib.parse import quote
+        out_dir = debug_gsea_input_table_path
+        if debug_pair is not None:
+            out_dir = os.path.join(out_dir, quote(debug_pair, safe=""))
+        os.makedirs(out_dir, exist_ok=True)
+        label = quote(debug_iteration or "gsea", safe="")
+        debug_prefix = os.path.abspath(os.path.join(out_dir, label))
 
     # This ought to ensure this file is accessible where this code is actually
     # being run if run cross node on HPC for instance
@@ -653,6 +601,7 @@ def _create_fgsea_table_for_pair(
                 min_size,
                 max_size,
                 seed,
+                debug_prefix,
             )
             table = ro.conversion.get_conversion().rpy2py(table)
 
@@ -718,7 +667,6 @@ def _compute_pair_fit_and_residuals(
     degree: int,
     fit_threshold: float = None,
     linear_through_origin: bool = False,
-    epitope_map: pd.DataFrame = None,
     dof: int = None,
 ) -> pd.DataFrame:
     """Fit a spline to the Z-score scatter for a single sample pair and
@@ -782,23 +730,65 @@ def _compute_pair_fit_and_residuals(
     )
     deltaZ = pd.Series(y - yfit, index=data_sorted.index)
 
-    if epitope_map is not None:
-        maxZ_out = utils.collapse_residuals_to_epitope(maxZ, epitope_map)
-        deltaZ_out = utils.collapse_residuals_to_epitope(deltaZ, epitope_map)
-    else:
-        maxZ_out = maxZ
-        deltaZ_out = deltaZ
-
     spline_df = pd.concat([
         pd.DataFrame(
             {"x": x, "yfit": yfit},
             index=data_sorted.index,
         ),
-        pd.DataFrame({"maxZ": maxZ_out, "deltaZ": deltaZ_out}),
+        pd.DataFrame({"maxZ": maxZ, "deltaZ": deltaZ}),
     ], axis=1)
     spline_df.index.name = "feature-id"
 
     return spline_df
+
+
+def _map_residuals_and_zscores(
+    spline: pd.DataFrame,
+    zscores: pd.DataFrame,
+    epitope_map: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    zscores = zscores.transpose()
+
+    spline_name = spline.index.name
+    mapped_spline_rows = []
+
+    mapped_zscores_rows = []
+
+    def map_helper(row):
+        # Skip this if this row is a peptide not an epitope. This check shows
+        # that because row['CodeName'] is all peptides, so if row.name matches
+        # the first (and if it's a peptide only) entry in row['CodeName'] the
+        # row must be an uncollapsed peptide
+        if row.name != row['CodeName'][0]:
+            # Get row with peptide with largest residual
+            max_peptide_row = spline.loc[
+                spline.loc[row['CodeName']]['deltaZ'].abs().idxmax()
+            ]
+            max_peptide_zscores = zscores.loc[max_peptide_row.name]
+
+            max_peptide_row.name = row.name
+            max_peptide_zscores.name = row.name
+
+            mapped_spline_rows.append(max_peptide_row)
+            mapped_zscores_rows.append(max_peptide_zscores)
+        else:
+            mapped_zscores_rows.append(zscores.loc[row.name])
+
+    epitope_map.apply(map_helper, axis=1)
+
+    # Add our mapped spline info onto the old ones because we need the
+    # per-peptide spline info to stay around
+    spline = pd.concat(
+        [spline, pd.DataFrame(mapped_spline_rows)],
+        ignore_index=False
+    )
+    spline.index.name = spline_name
+
+    # We do not need the per peptide z scores anymore, so we overwrite them
+    mapped_zscores = pd.DataFrame(mapped_zscores_rows, columns=zscores.columns)
+    mapped_zscores.index.name = zscores.index.name
+
+    return spline, mapped_zscores
 
 
 def _filter_scores_to_pairs(

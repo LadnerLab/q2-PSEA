@@ -2,16 +2,12 @@ import unittest
 
 import numpy as np
 import pandas as pd
-from biom import load_table
-from q2_types.feature_table import BIOMV210Format
 from qiime2.plugin.testing import TestPluginBase
 
-from qiime2 import Artifact
 from q2_PSEA.actions.epitope import (
     _create_EpitopeID_row,
     count_enriched,
     create_epitope_map,
-    epitope_zscore,
     taxa_to_epitope,
 )
 
@@ -60,78 +56,47 @@ class TestCreateEpitopeMap(TestPluginBase):
         self.assertIn("sp002_C2_W2", result.index)
 
 
-class TestEpitopeZscore(TestPluginBase):
-    package = "q2_PSEA.tests"
-
-    def setUp(self):
-        super().setUp()
-        # scores.tsv has features as rows; the view of FeatureTable[Zscore]
-        # has samples as rows. epitope_zscore expects samples as rows.
-        raw = pd.read_csv(
-            self.get_data_path("scores.tsv"), sep="\t", index_col=0
-        )
-        art = Artifact.import_data("FeatureTable[Zscore]", raw)
-        self.zscores = art.view(pd.DataFrame)
-        self.epitope_map = pd.DataFrame(
-            {
-                "CodeName": {
-                    "ep1": ["pep_00", "pep_01"],
-                    "ep2": ["pep_02", "pep_03"],
-                    "ep3": ["pep_04"],
-                }
-            }
-        )
-
-    def test_observations_match_epitope_ids(self):
-        result = epitope_zscore(self.zscores.copy(), self.epitope_map)
-        table = load_table(str(result))
-        self.assertEqual(
-            set(table.ids(axis="observation")), {"ep1", "ep2", "ep3"}
-        )
-
-    def test_samples_match_input_index(self):
-        result = epitope_zscore(self.zscores.copy(), self.epitope_map)
-        table = load_table(str(result))
-        self.assertEqual(
-            set(table.ids(axis="sample")), set(self.zscores.index)
-        )
-
-    def test_nan_values_filled_without_error(self):
-        zscores_nan = self.zscores.copy().astype(float)
-        zscores_nan.iloc[0, 0] = np.nan
-        result = epitope_zscore(zscores_nan, self.epitope_map)
-        self.assertIsInstance(result, BIOMV210Format)
-
-
 class TestTaxaToEpitope(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def setUp(self):
         super().setUp()
-        raw = pd.read_csv(
+        self.peptide_metadata = pd.read_csv(
             self.get_data_path("epitope.tsv"), sep="\t", index_col=0
         )
-        self.epitope_map_viral = create_epitope_map(
-            raw.copy(), collapse="Viral"
-        )
-        self.epitope_map_both = create_epitope_map(
-            raw.copy(), collapse="Both"
+
+    def _peptide_sets(self):
+        # GMT-shaped: term/gene, gene values are peptide CodeNames present
+        # in peptide_metadata's index (epitope.tsv covers pep_00..pep_03).
+        return pd.DataFrame(
+            {
+                "term": ["sp001", "sp001", "sp002", "sp003"],
+                "gene": ["pep_00", "pep_01", "pep_02", "pep_03"],
+            }
         )
 
     def test_term_contains_species_ids(self):
-        result = taxa_to_epitope(self.epitope_map_viral.copy())
+        result = taxa_to_epitope(
+            self.peptide_metadata, self._peptide_sets(), collapse="Viral"
+        )
         self.assertIn("sp001", result["term"].values)
 
     def test_gene_contains_viral_epitope_ids(self):
-        result = taxa_to_epitope(self.epitope_map_viral.copy())
+        result = taxa_to_epitope(
+            self.peptide_metadata, self._peptide_sets(), collapse="Viral"
+        )
         self.assertIn("sp001_C1_W1", result["gene"].values)
 
     def test_bacterial_gene_is_original_index_when_collapse_viral(self):
-        result = taxa_to_epitope(self.epitope_map_viral.copy())
+        result = taxa_to_epitope(
+            self.peptide_metadata, self._peptide_sets(), collapse="Viral"
+        )
         self.assertIn("pep_03", result["gene"].values)
 
     def test_both_collapse_gives_bacterial_epitope_id(self):
-        result = taxa_to_epitope(self.epitope_map_both.copy())
+        result = taxa_to_epitope(
+            self.peptide_metadata, self._peptide_sets(), collapse="Both"
+        )
         self.assertIn("sp003_C3_W3", result["gene"].values)
 
 
