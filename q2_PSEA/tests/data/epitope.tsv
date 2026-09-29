@@ -1,0 +1,5 @@
+CodeName	SpeciesID	ClusterID	EpitopeWindow	Species	Subtype	Category
+pep_00	sp001	C1	W1	InfluenzaA	H1N1	Viral
+pep_01	sp001	C1	W1	InfluenzaA	H3N2	Viral
+pep_02	sp002	C2	W2	InfluenzaB	Yamagata	Viral
+pep_03	sp003	C3	W3	EColi	K12	Bacterial
