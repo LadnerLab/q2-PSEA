@@ -33,8 +33,14 @@ class TestPipelinesRegistered(TestPluginBase):
             "_run_iterative_process_single_pair", self.plugin.methods
         )
 
-    def test_make_psea_table_registered(self):
-        self.assertIn("make_psea_table", self.plugin.pipelines)
+    def test_make_psea_registered(self):
+        self.assertIn("make_psea", self.plugin.pipelines)
+
+    def test_make_psea_tables_registered(self):
+        self.assertIn("make_psea_tables", self.plugin.pipelines)
+
+    def test_make_psea_plots_registered(self):
+        self.assertIn("make_psea_plots", self.plugin.pipelines)
 
 
 class TestCreateFgseaSignature(TestPluginBase):

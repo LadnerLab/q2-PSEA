@@ -661,10 +661,10 @@ class TestRunIterativeProcessSinglePairIntegration(TestPluginBase):
 
 
 # ---------------------------------------------------------------------------
-# make_psea_table — pipeline integration
+# make_psea_tables — pipeline integration
 # ---------------------------------------------------------------------------
 
-class TestMakePseaTableIntegration(TestPluginBase):
+class TestMakePseaTablesIntegration(TestPluginBase):
     package = "q2_PSEA.tests"
 
     def setUp(self):
@@ -714,7 +714,7 @@ class TestMakePseaTableIntegration(TestPluginBase):
         self.epi_art = qiime2.Artifact.import_data(
             "FeatureData[Epitope]", epi_extended
         )
-        self.pipeline = self.plugin.pipelines["make_psea_table"]
+        self.pipeline = self.plugin.pipelines["make_psea_tables"]
 
     def test_raises_when_map_true_and_peptide_metadata_missing(self):
         # peptide_metadata is required any time use_epitope_mapping=True,
@@ -792,8 +792,8 @@ class TestMakePseaTableIntegration(TestPluginBase):
                 peptide_sets_map=peptide_sets_map_art,
             )
 
-    def test_psea_tables_keyed_by_pair_name(self):
-        _, psea_tables, _ = self.pipeline(
+    def _run_unmapped(self):
+        return self.pipeline(
             scores=self.scores_art,
             pairs=self.pairs_art,
             peptide_sets=self.gmt_art,
@@ -808,7 +808,38 @@ class TestMakePseaTableIntegration(TestPluginBase):
             use_epitope_mapping=False,
             seed=42,
         )
-        self.assertIn("sA~sB", psea_tables)
+
+    def test_psea_tables_keyed_by_pair_name(self):
+        # Access by name since make_psea (which inherits this test) returns
+        # its outputs in a different order.
+        results = self._run_unmapped()
+        self.assertIn("sA~sB", results.psea_tables)
+
+
+# ---------------------------------------------------------------------------
+# make_psea — pipeline integration
+# ---------------------------------------------------------------------------
+
+class TestMakePseaIntegration(TestMakePseaTablesIntegration):
+    # make_psea shares its validation and GSEA steps with make_psea_tables,
+    # so it inherits those tests and adds checks on the plot outputs.
+
+    def setUp(self):
+        super().setUp()
+        self.pipeline = self.plugin.pipelines["make_psea"]
+
+    def test_plots_keyed_by_pair_name(self):
+        results = self._run_unmapped()
+
+        self.assertIn("sA~sB", results.scatter_plots)
+        self.assertIn("sA~sB", results.volcano_plots)
+        self.assertIsInstance(
+            results.scatter_plots["sA~sB"], qiime2.Visualization
+        )
+        self.assertIsInstance(
+            results.volcano_plots["sA~sB"], qiime2.Visualization
+        )
+        self.assertIsInstance(results.ae_plots, qiime2.Visualization)
 
 
 # ---------------------------------------------------------------------------
@@ -858,11 +889,11 @@ class TestMakePseaPlotsIntegration(TestPluginBase):
         self.epi_art = qiime2.Artifact.import_data(
             "FeatureData[Epitope]", epi_extended
         )
-        self.make_psea_table = self.plugin.pipelines["make_psea_table"]
+        self.make_psea_tables = self.plugin.pipelines["make_psea_tables"]
         self.pipeline = self.plugin.pipelines["make_psea_plots"]
 
     def test_scatter_and_volcano_plots_keyed_by_pair_name(self):
-        _, psea_tables, _ = self.make_psea_table(
+        _, psea_tables, _ = self.make_psea_tables(
             scores=self.scores_art,
             pairs=self.pairs_art,
             peptide_sets=self.gmt_art,
@@ -878,7 +909,7 @@ class TestMakePseaPlotsIntegration(TestPluginBase):
             seed=42,
         )
 
-        scatter_plots, volcano_plots = self.pipeline(
+        scatter_plots, volcano_plots, ae_plots = self.pipeline(
             scores=self.scores_art,
             pairs=self.pairs_art,
             psea_tables=psea_tables,
@@ -891,6 +922,7 @@ class TestMakePseaPlotsIntegration(TestPluginBase):
         self.assertIn("sA~sB", volcano_plots)
         self.assertIsInstance(scatter_plots["sA~sB"], qiime2.Visualization)
         self.assertIsInstance(volcano_plots["sA~sB"], qiime2.Visualization)
+        self.assertIsInstance(ae_plots, qiime2.Visualization)
 
 
 if __name__ == "__main__":

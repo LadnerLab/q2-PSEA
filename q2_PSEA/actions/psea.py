@@ -20,7 +20,310 @@ MIN_32_BIT_INT = -2 ** 31
 MAX_32_BIT_INT = 2**31 - 1
 
 
-def make_psea_table(
+def make_psea(
+    ctx: IContext,
+    scores: qiime2.Artifact,
+    pairs: qiime2.Artifact,
+    peptide_sets: qiime2.Artifact,
+    threshold: float,
+    peptide_metadata: qiime2.Artifact = None,
+    epitope_map: qiime2.Artifact = None,
+    peptide_sets_map: qiime2.Artifact = None,
+    collapse: str = "Viral",
+    p_value: float = 0.05,
+    enrichment_score: float = 1,
+    include_negative_enrichment: bool = True,
+    min_size: int = 15,
+    max_size: int = 2000,
+    permutation_num: int = 10000,
+    spline_type: str = "r-smooth",
+    fit_threshold: float = None,
+    linear_through_origin: bool = False,
+    degree: int = 3,
+    dof: int = None,
+    iterative_analysis: bool = True,
+    seed: CaptureHolder[int] = None,
+    species_taxa: qiime2.Metadata = None,
+    species_colors: qiime2.Metadata = None,
+    use_epitope_mapping: bool = False,
+    residual_threshold: float = .5,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
+    debug_per_iteration_table_path: str = None,
+) -> tuple[
+    qiime2.Visualization,
+    qiime2.Visualization,
+    qiime2.Visualization,
+    dict[str, qiime2.Artifact],
+    dict[str, qiime2.Artifact],
+]:
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
+
+    # ------------------------------------------------------------------
+    # Validate debug value
+    # ------------------------------------------------------------------
+    if debug_per_iteration_table_path is not None:
+        warnings.warn(
+            f"You have set a value of {debug_per_iteration_table_path} for"
+            " 'debug_iteration_table_path.' Please only set this value if you"
+            " intend to use the per iteration .TSVs for debugging. Do not set"
+            " for regular analysis.", RachisWarning
+        )
+
+        if not iterative_analysis:
+            raise ValueError(
+                "Please only provide a path for debug_per_iteration_table_path"
+                " if doing iterative analysis."
+            )
+
+        if os.path.exists(debug_per_iteration_table_path):
+            raise ValueError(
+                f"Path {debug_per_iteration_table_path} already exists. Please"
+                " provide a path for debug .tsvs that does not already exist."
+            )
+
+        os.mkdir(debug_per_iteration_table_path)
+
+    # ------------------------------------------------------------------
+    # Determine what kind of analysis was asked for
+    # ------------------------------------------------------------------
+    map_provided = all(
+        param is not None for param in [epitope_map, peptide_sets_map]
+    )
+
+    if not use_epitope_mapping and map_provided:
+        raise ValueError("You provided mapped artifacts but indicated you do"
+                         " not want mapping.")
+
+    if use_epitope_mapping and any(
+                param is not None for param in [
+                    epitope_map, peptide_sets_map
+                ]
+            ) and not map_provided:
+        raise ValueError(
+            "Please pass either both of 'epitope_map', 'peptide_sets_map' or"
+            " neither of them when running mapped analysis. If you provide"
+            " neither, this pipeline will do the mapping."
+        )
+
+    if use_epitope_mapping and peptide_metadata is None:
+        raise ValueError(
+            "Must provide peptide metadata if doing a mapped analysis."
+        )
+
+    _filter_scores_to_pairs = ctx.get_action(
+        "psea", "_filter_scores_to_pairs", record_provenance=False
+    )
+    _process_scores = ctx.get_action(
+        "psea", "_process_scores", record_provenance=False
+    )
+    _split_scores = ctx.get_action(
+        "psea", "_split_scores", record_provenance=False
+    )
+    _compute_pair_fit_and_residuals = ctx.get_action(
+        "psea", "_compute_pair_fit_and_residuals", record_provenance=False
+    )
+    _map_residuals_and_zscores = ctx.get_action(
+        "psea", "_map_residuals_and_zscores", record_provenance=False
+    )
+    _run_iterative_process_single_pair = ctx.get_action(
+        "psea", "_run_iterative_process_single_pair", record_provenance=False
+    )
+    _create_fgsea_table_for_pair = ctx.get_action(
+        "psea", "_create_fgsea_table_for_pair", record_provenance=False
+    )
+    count_enriched = ctx.get_action(
+        "psea", "count_enriched", record_provenance=False
+    )
+
+    count_antibody_events = ctx.get_action(
+        "psea", "count_antibody_events", record_provenance=False
+    )
+
+    volcano = ctx.get_action("psea", "volcano", record_provenance=False)
+    zscatter = ctx.get_action("psea", "zscatter", record_provenance=False)
+    aeplots = ctx.get_action("psea", "aeplots", record_provenance=False)
+
+    taxa_access = "species_name" if species_taxa is not None else "ID"
+
+    # ------------------------------------------------------------------
+    # Filter scores
+    # ------------------------------------------------------------------
+    filtered_zscores, = _filter_scores_to_pairs(scores, pairs)
+
+    # ------------------------------------------------------------------
+    # Parse pairs list
+    # ------------------------------------------------------------------
+    pairs_list = pairs.view(list)
+
+    # ------------------------------------------------------------------
+    # Handle epitope collapsing if needed
+    # ------------------------------------------------------------------
+    if use_epitope_mapping and not map_provided:
+        create_epitope_map = ctx.get_action(
+            "psea", "create_epitope_map", record_provenance=False
+        )
+        create_epitope_gmt = ctx.get_action(
+            "psea", "taxa_to_epitope", record_provenance=False
+        )
+
+        epitope_map, = create_epitope_map(peptide_metadata, collapse)
+        peptide_sets_map, = create_epitope_gmt(
+            peptide_metadata, peptide_sets, collapse=collapse
+        )
+
+    # ------------------------------------------------------------------
+    # Process (log-scale) scores
+    # ------------------------------------------------------------------
+    processed_zscores, = _process_scores(filtered_zscores)
+
+    # ------------------------------------------------------------------
+    # Split scores out by pair
+    # ------------------------------------------------------------------
+    # TODO: may be need for optimization here. This becomes a blocking
+    # operation down below when we need to index into this inside of the loop.
+    #
+    # It does reduce memory usage in later processes, but it also spikes it
+    # here, and it takes some time... maybe too long for a large number
+    # of pairs
+    split_processed_zscores, = _split_scores(processed_zscores, pairs)
+
+    pair_splines = {}
+    pair_pep_sets_dict = {}
+    psea_tables = {}
+    enrichment_tables = {}
+    scatter_plots = {}
+    volcano_plots = {}
+    pos_ae_counts = {}
+    neg_ae_counts = {}
+
+    # NOTE: We can parallelize pairs. We cannot parallelize iterations
+    for pair in pairs_list:
+        # Compute spline fit once per pair; reuse it for both the scatter
+        # plot data and as the precomputed_fit input to create_fgsea_table.
+        pair_splines[pair], = _compute_pair_fit_and_residuals(
+            processed_zscores=split_processed_zscores[pair],
+            pair=pair,
+            spline_type=spline_type,
+            fit_threshold=fit_threshold,
+            linear_through_origin=linear_through_origin,
+            degree=degree,
+            dof=dof,
+        )
+
+        # Collapse residuals and zscores if using mapping
+        if use_epitope_mapping:
+            pair_splines[pair], split_processed_zscores[pair] = \
+                _map_residuals_and_zscores(
+                    pair_splines[pair],
+                    split_processed_zscores[pair],
+                    epitope_map
+                )
+
+        # ------------------------------------------------------------------
+        # Determine per-pair peptide sets (iterative or flat)
+        # ------------------------------------------------------------------
+        if iterative_analysis:
+            pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
+                processed_zscores=split_processed_zscores[pair],
+                peptide_sets=peptide_sets,
+                precomputed_fit=pair_splines[pair],
+                mapped_peptide_sets=peptide_sets_map,
+                threshold=threshold,
+                permutation_num=permutation_num,
+                min_size=min_size,
+                max_size=max_size,
+                p_value=p_value,
+                seed=seed,
+                enrichment_score=enrichment_score,
+                include_negative_enrichment=include_negative_enrichment,
+                species_taxa=species_taxa,
+                debug_per_iteration_table_path=debug_per_iteration_table_path,
+                pair=pair,
+                residual_abs_thresh=residual_abs_thresh,
+                residual_min_peptides=residual_min_peptides,
+            )
+        else:
+            pair_pep_sets_dict[pair] = \
+                peptide_sets_map if use_epitope_mapping else peptide_sets
+
+        # ------------------------------------------------------------------
+        # Final per-pair PSEA analysis
+        # ------------------------------------------------------------------
+        psea_tables[pair], = _create_fgsea_table_for_pair(
+            processed_zscores=split_processed_zscores[pair],
+            peptide_sets=pair_pep_sets_dict[pair],
+            threshold=threshold,
+            permutation_num=permutation_num,
+            min_size=min_size,
+            max_size=max_size,
+            seed=seed,
+            species_taxa=species_taxa,
+            precomputed_fit=pair_splines[pair],
+            residual_abs_thresh=residual_abs_thresh,
+            residual_min_peptides=residual_min_peptides,
+        )
+
+        enrichment_tables[pair], = count_enriched(
+            psea_table=psea_tables[pair],
+            residuals=pair_splines[pair],
+            peptide_metadata=peptide_metadata,
+            epitope_map=epitope_map,
+            p_value=p_value,
+            residual_threshold=residual_threshold,
+            include_negative_enrichment=include_negative_enrichment
+        )
+
+        scatter_plots[pair], = zscatter(
+            zscores=split_processed_zscores[pair],
+            pair=pair,
+            spline=pair_splines[pair],
+            p_val_access="p.adjust",
+            le_peps_access="core_enrichment",
+            taxa_access=taxa_access,
+            psea_table=psea_tables[pair],
+            highlight_threshold=p_value,
+            colors_file=species_colors,
+        )
+
+        volcano_plots[pair], = volcano(
+            psea_table=psea_tables[pair],
+            xy_access=["NES", "p.adjust"],
+            taxa_access=taxa_access,
+            x_threshold=enrichment_score,
+            y_threshold=p_value,
+            xy_labels=["Enrichment score", "Adjusted p-values"],
+            colors_file=species_colors,
+        )
+
+        pos_ae_counts[pair], neg_ae_counts[pair] = count_antibody_events(
+            psea_table=psea_tables[pair],
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            taxa_access=taxa_access,
+        )
+
+    ae_plot, = aeplots(
+        pos_ae_counts=pos_ae_counts,
+        neg_ae_counts=neg_ae_counts,
+        xy_access=["Events", "Species"],
+        xy_labels=["Number of AEs in cohort", "Species"],
+        colors_file=species_colors,
+    )
+
+    # TODO: Create a wrapper that unzips these in manner discussed previously
+    # i.e. output unzipped raw files along with manifests keeping track of them
+    # Also, include imports in the wrapper so
+    # 1. import
+    # 2. run
+    # 3. export
+    return (scatter_plots, volcano_plots, ae_plot, psea_tables,
+            enrichment_tables)
+
+
+def make_psea_tables(
     ctx: IContext,
     scores: qiime2.Artifact,
     pairs: qiime2.Artifact,
@@ -285,12 +588,6 @@ def make_psea_table(
         colors_file=species_colors,
     )
 
-    # TODO: Create a wrapper that unzips these in manner discussed previously
-    # i.e. output unzipped raw files along with manifests keeping track of them
-    # Also, include imports in the wrapper so
-    # 1. import
-    # 2. run
-    # 3. export
     return ae_plot, psea_tables, enrichment_tables
 
 
@@ -315,9 +612,11 @@ def make_psea_plots(
 ) -> tuple[
     dict[str, qiime2.Visualization],
     dict[str, qiime2.Visualization],
+    qiime2.Visualization,
 ]:
-    """QIIME 2 pipeline: build per-pair scatter and volcano plots for an
-    already-computed collection of PSEA tables.
+    """QIIME 2 pipeline: build per-pair scatter and volcano plots, and a
+    cohort-wide antibody-event plot, for an already-computed collection of
+    PSEA tables.
 
     Only recomputes the cheap steps (score filtering/processing/splitting
     and spline fitting) needed to feed the zscatter and volcano visualizers;
@@ -348,8 +647,12 @@ def make_psea_plots(
     _map_residuals_and_zscores = ctx.get_action(
         "psea", "_map_residuals_and_zscores", record_provenance=False
     )
+    count_antibody_events = ctx.get_action(
+        "psea", "count_antibody_events", record_provenance=False
+    )
     volcano = ctx.get_action("psea", "volcano", record_provenance=False)
     zscatter = ctx.get_action("psea", "zscatter", record_provenance=False)
+    aeplots = ctx.get_action("psea", "aeplots", record_provenance=False)
 
     taxa_access = "species_name" if species_taxa is not None else "ID"
 
@@ -368,6 +671,8 @@ def make_psea_plots(
 
     scatter_plots = {}
     volcano_plots = {}
+    pos_ae_counts = {}
+    neg_ae_counts = {}
 
     for pair in psea_tables.keys():
         # Compute spline fit once per pair; reuse it for the scatter plot
@@ -412,7 +717,22 @@ def make_psea_plots(
             colors_file=species_colors,
         )
 
-    return scatter_plots, volcano_plots
+        pos_ae_counts[pair], neg_ae_counts[pair] = count_antibody_events(
+            psea_table=psea_tables[pair],
+            p_value=p_value,
+            enrichment_score=enrichment_score,
+            taxa_access=taxa_access,
+        )
+
+    ae_plot, = aeplots(
+        pos_ae_counts=pos_ae_counts,
+        neg_ae_counts=neg_ae_counts,
+        xy_access=["Events", "Species"],
+        xy_labels=["Number of AEs in cohort", "Species"],
+        colors_file=species_colors,
+    )
+
+    return scatter_plots, volcano_plots, ae_plot
 
 
 def _run_iterative_process_single_pair(

@@ -1,11 +1,11 @@
 #! /usr/bin/env python
 from q2_PSEA.actions.psea import (
-    make_psea_table,
+    make_psea_tables,
     _create_fgsea_table_for_pair,
 )
 
 __all__ = [
-    "make_psea_table",
+    "make_psea_tables",
     "_create_fgsea_table_for_pair",
 ]
 
