@@ -88,6 +88,13 @@ build_diagnostics <- function(gsea_input, outtable, min_size, max_size, gene_lis
     diagnostics
 }
 
+select_top_diagnostic_terms <- function(outtable, n = 15L) {
+    eligible <- outtable[is.finite(outtable$p.adjust), , drop = FALSE]
+    eligible <- eligible[order(eligible$p.adjust, eligible$pvalue,
+                               as.character(eligible$ID), na.last = TRUE), , drop = FALSE]
+    head(unique(as.character(eligible$ID)), n)
+}
+
 plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, plot_terms) {
     pdf(output_path, width = 11, height = 8.5)
     on.exit(dev.off(), add = TRUE)
@@ -126,12 +133,11 @@ plot_diagnostics <- function(gsea_input, diagnostics, gene_list, output_path, pl
         ,
         drop = FALSE
     ]
+    comparison_ids <- plot_terms[plot_terms %in% diagnostics$ID]
     comparison <- diagnostics[
-        diagnostics$ID %in% plot_terms,
-        ,
-        drop = FALSE
+        match(comparison_ids, diagnostics$ID), , drop = FALSE
     ]
-    highlighted <- unique(rbind(suspicious, comparison))
+    highlighted <- unique(rbind(comparison, suspicious))
 
     par(mfrow = c(2, 2), mar = c(4.5, 4.5, 3, 1))
     plot(
@@ -354,7 +360,8 @@ psea <- function(
         diagnostics <- build_diagnostics(gsea_input, outtable, min_size, max_size, gene_list)
         write_debug(diagnostics, "_diagnostics.tsv")
         plot_diagnostics(gsea_input, diagnostics, gene_list,
-                         paste0(debug_prefix, "_diagnostics.pdf"), c("138951"))
+                         paste0(debug_prefix, "_diagnostics.pdf"),
+                         select_top_diagnostic_terms(outtable))
         # Preserve the analysis RNG state around the additional diagnostic run.
         rng_state <- .Random.seed
         on.exit(assign(".Random.seed", rng_state, envir=.GlobalEnv), add=TRUE)

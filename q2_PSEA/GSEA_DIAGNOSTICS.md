@@ -29,8 +29,10 @@ Each prefix produces:
   size-limit checks, output presence and likely exclusion reasons.
 - `_diagnostics.pdf`: ranked-list coverage versus sign balance/skewness,
   returned/missing boxplots, and rank-position and score-distribution panels.
-  As in the original diagnostic script, highlighted terms are missing terms
-  that pass size limits plus comparison term `138951` when present.
+  Individual plots include the top 15 returned species by adjusted p-value
+  (ties resolved by raw p-value, then ID), followed by missing terms that pass
+  size limits. This applies to every iteration and the final PDF. If fewer
+  than 15 species have finite adjusted p-values, all available ones are plotted.
 - `_raw_fgsea.tsv`: a separate fgseaMultilevel diagnostic result using the same
   ranked vector, parameters and seed. This adds another enrichment calculation
   per iteration; its results do not replace the pipeline result.
