@@ -24,6 +24,39 @@ r = next(ast.literal_eval(n.value) for n in tree.body
          if isinstance(n, ast.Assign)
          and any(isinstance(t, ast.Name) and t.id == 'r_functions' for t in n.targets))
 checks = r'''
+results <- data.frame(ID=paste0("s", 20:1), p.adjust=(20:1)/100,
+                      pvalue=(20:1)/200)
+stopifnot(identical(select_top_diagnostic_terms(results), paste0("s", 1:15)))
+results$p.adjust[results$ID == "s1"] <- NA_real_
+stopifnot(identical(select_top_diagnostic_terms(results), paste0("s", 2:16)),
+          length(select_top_diagnostic_terms(results[FALSE, ])) == 0,
+          length(select_top_diagnostic_terms(results[1:3, ])) == 3)
+ties <- data.frame(ID=c("b", "a", "c"), p.adjust=c(.1,.1,.1),
+                   pvalue=c(.02,.02,.01))
+stopifnot(identical(select_top_diagnostic_terms(ties), c("c", "a", "b")))
+# Verify that each selected species actually reaches the individual plot loop.
+many <- data.frame(term=paste0("s", 1:20), gene=paste0("g", 1:20),
+                   maxZ=2, deltaZ=20:1, in_gene_list=TRUE)
+ranked <- setNames(many$deltaZ, many$gene)
+results$p.adjust <- results$pvalue * 2
+diag_many <- build_diagnostics(many, results, 1, 100, ranked)
+selected <- select_top_diagnostic_terms(results)
+plotted <- 0L
+original_hist <- graphics::hist
+hist_recorder <- function(x, ...) {
+    plotted <<- plotted + 1L
+    original_hist(x, ...)
+}
+# Capture panel titles using a local title-independent histogram wrapper.
+plot_env <- new.env(parent=environment(plot_diagnostics))
+plot_env$hist_recorder <- hist_recorder
+plot_source <- paste(deparse(plot_diagnostics), collapse="\n")
+plot_source <- sub("graphics::hist(x, ...)", "hist_recorder(x, ...)",
+                   plot_source, fixed=TRUE)
+plot_test <- eval(parse(text=plot_source), envir=plot_env)
+plot_test(many, diag_many, ranked, "top15.pdf", selected)
+stopifnot(plotted == 15L)
+
 d <- data.frame(term=c("a","b"), gene=c("x","y"), maxZ=c(2,2),
                 deltaZ=c(1,-1), in_gene_list=c(TRUE,TRUE))
 o <- data.frame(ID="a", pvalue=0.1, p.adjust=0.2)

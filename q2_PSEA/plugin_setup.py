@@ -23,6 +23,7 @@ from q2_PSEA.actions.psea import (
     _filter_scores_to_pairs,
     _process_scores,
     _run_iterative_process_single_pair,
+    _run_depleting_process_single_pair,
     _split_scores,
     _map_residuals_and_zscores,
     make_psea_table,
@@ -424,6 +425,95 @@ plugin.methods.register_function(
     ),
 )
 
+plugin.methods.register_function(
+    function=_run_depleting_process_single_pair,
+    inputs={
+        "processed_zscores": FeatureTable[Zscore % Properties("processed")],
+        "peptide_sets": GMT,
+        "precomputed_fit": FeatureData[Spline],
+        "mapped_peptide_sets": GMT % Properties("mapped"),
+    },
+    parameters={
+        "debug_gsea_input_table_path": Str,
+        "threshold": Float,
+        "permutation_num": Int,
+        "min_size": Int,
+        "max_size": Int,
+        "seed": Int,
+        "p_value": Float,
+        "enrichment_score": Float,
+        "include_negative_enrichment": Bool,
+        "species_taxa": Metadata,
+        "debug_per_iteration_table_path": Str,
+        "pair": Str,
+        "residual_abs_thresh": Float,
+        "residual_min_peptides": Int,
+    },
+    parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "Directory for automatic GSEA input tables, diagnostics, raw fgsea"
+            " results and PDF plots for every iteration and final analysis."
+        ),
+        "threshold": "Minimum Z-score for GSEA inclusion.",
+        "permutation_num": "Number of GSEA permutations.",
+        "min_size": "Minimum peptide-set size.",
+        "max_size": "Maximum peptide-set size.",
+        "seed": "Random seed for GSEA permutations.",
+        "p_value": (
+            "Adjusted p-value threshold for calling a species significant."
+        ),
+        "enrichment_score": (
+            "Absolute NES threshold for calling a species significant."
+        ),
+        "include_negative_enrichment": (
+            "Whether or not to include negative enrichment."
+        ),
+        "species_taxa": (
+            "Optional Metadata mapping species names (IDs) to taxonomy IDs."
+        ),
+        "debug_per_iteration_table_path": (
+            "Path to write per pair and per iteration psea tables to as .tsvs."
+            " Only to be used when debugging and meaningless if not doing"
+            " iterative analysis."
+        ),
+        "pair": (
+            "The name of the pair we are running iterative analysis on. Only"
+            " needed when writing debug tables."
+        ),
+        "residual_abs_thresh": (
+            "Optional absolute residual threshold for peptide-set filtering"
+            " before each GSEA run."
+        ),
+        "residual_min_peptides": (
+            "Minimum number of peptides required per species with absolute"
+            " residual greater than residual_abs_thresh to keep that species."
+        ),
+    },
+    input_descriptions={
+        "processed_zscores": "Log-scaled Z-score matrix.",
+        "peptide_sets": "Current (possibly filtered) GMT for this pair.",
+        "precomputed_fit": (
+            "Optional precomputed maxZ/deltaZ from a prior call. When"
+            " provided, spline fitting is skipped."
+        ),
+        "mapped_peptide_sets": (
+            "Optional mapped peptide sets passed in if data is collapsed to"
+            " epitope level."
+        )
+    },
+    outputs=[
+        ("psea_table", FeatureData[PSEAScores]),
+    ],
+    output_descriptions={
+        "psea_table": "Called rows from their selection iterations plus final uncalled rows.",
+    },
+    name="Run Iterative Process with Background Depletion",
+    description=(
+        "Remove called species' tested peptides from subsequent ranked backgrounds."
+        " Preserve called results at their selection iteration."
+    ),
+)
+
 # ---------------------------------------------------------------------------
 # Register make_psea_table as a pipeline
 # ---------------------------------------------------------------------------
@@ -439,6 +529,7 @@ plugin.pipelines.register_function(
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "remove_claimed_peptides_from_background": Bool,
         "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
@@ -464,6 +555,11 @@ plugin.pipelines.register_function(
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
+        "remove_claimed_peptides_from_background": (
+            "Remove called species' all_tested_peptides from the ranked background"
+            " for subsequent iterations. Requires iterative analysis. Called rows"
+            " retain statistics from their selection iteration. Default: False."
+        ),
         "debug_gsea_input_table_path": (
             "Directory for automatic GSEA input tables, diagnostics, raw fgsea"
             " results and PDF plots for every iteration and final analysis."

@@ -51,3 +51,29 @@ python3 scripts/check_gsea_diagnostics.py
 These check Python syntax, parameter forwarding, and R diagnostic tables/PDFs
 for sparse, unranked and empty data. A complete pipeline test still requires
 the q2-psea QIIME 2 environment with rpy2, clusterProfiler and fgsea.
+
+## Optional depletion of the ranked background
+
+Add `--p-remove-claimed-peptides-from-background` to `make-psea-table` to remove
+claimed `all_tested_peptides` globally before the next iteration. The default
+is false. This option requires iterative analysis. It applies to peptide IDs
+or mapped epitope IDs, depending on the analysis mode.
+
+The selected species is determined by the existing adjusted-p-value/NES rules.
+Its tested IDs are removed from every GMT membership, including its own;
+therefore those IDs are excluded by the score filtering step from the next
+ranked list. Exclusions accumulate independently for each pair. Residuals and
+the spline are not refitted. This continues to use all_tested_peptides, not
+leading-edge-only removal.
+
+Called species retain their result rows from the iteration when selected.
+The output artifact combines those rows with the terminal results for uncalled
+species. Their p-values and adjusted p-values correspond to their individual
+iteration backgrounds and test families, not a single combined final test.
+
+Numbered debug files describe each iteration. The `final_*` files describe
+only the terminal, depleted analysis; they do not reintroduce previously
+claimed peptides. `combined_psea_output.tsv` mirrors the combined result, and
+`called_species_iterations.tsv` identifies the source iteration of each called
+species. Consult its numbered PDF for each retained call. An exhausted
+background produces empty result tables and an explanatory diagnostic PDF.

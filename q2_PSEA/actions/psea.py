@@ -42,6 +42,7 @@ def make_psea_table(
     degree: int = 3,
     dof: int = None,
     iterative_analysis: bool = True,
+    remove_claimed_peptides_from_background: bool = False,
     seed: CaptureHolder[int] = None,
     species_taxa: qiime2.Metadata = None,
     species_colors: qiime2.Metadata = None,
@@ -63,6 +64,11 @@ def make_psea_table(
     # ------------------------------------------------------------------
     # Validate debug value
     # ------------------------------------------------------------------
+    if remove_claimed_peptides_from_background and not iterative_analysis:
+        raise ValueError(
+            "remove_claimed_peptides_from_background requires iterative_analysis."
+        )
+
     if debug_per_iteration_table_path is not None:
         warnings.warn(
             f"You have set a value of {debug_per_iteration_table_path} for"
@@ -130,6 +136,9 @@ def make_psea_table(
     )
     _map_residuals_and_zscores = ctx.get_action(
         "psea", "_map_residuals_and_zscores", record_provenance=False
+    )
+    _run_depleting_process_single_pair = ctx.get_action(
+        "psea", "_run_depleting_process_single_pair", record_provenance=False
     )
     _run_iterative_process_single_pair = ctx.get_action(
         "psea", "_run_iterative_process_single_pair", record_provenance=False
@@ -224,8 +233,8 @@ def make_psea_table(
         # ------------------------------------------------------------------
         # Determine per-pair peptide sets (iterative or flat)
         # ------------------------------------------------------------------
-        if iterative_analysis:
-            pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
+        if remove_claimed_peptides_from_background:
+            psea_tables[pair], = _run_depleting_process_single_pair(
                 processed_zscores=split_processed_zscores[pair],
                 peptide_sets=peptide_sets,
                 precomputed_fit=pair_splines[pair],
@@ -246,28 +255,50 @@ def make_psea_table(
                 residual_min_peptides=residual_min_peptides,
             )
         else:
-            pair_pep_sets_dict[pair] = \
-                peptide_sets_map if use_epitope_mapping else peptide_sets
+            if iterative_analysis:
+                pair_pep_sets_dict[pair], = _run_iterative_process_single_pair(
+                    processed_zscores=split_processed_zscores[pair],
+                    peptide_sets=peptide_sets,
+                    precomputed_fit=pair_splines[pair],
+                    mapped_peptide_sets=peptide_sets_map,
+                    threshold=threshold,
+                    permutation_num=permutation_num,
+                    min_size=min_size,
+                    max_size=max_size,
+                    p_value=p_value,
+                    seed=seed,
+                    enrichment_score=enrichment_score,
+                    include_negative_enrichment=include_negative_enrichment,
+                    species_taxa=species_taxa,
+                    debug_per_iteration_table_path=debug_per_iteration_table_path,
+                    debug_gsea_input_table_path=debug_gsea_input_table_path,
+                    pair=pair,
+                    residual_abs_thresh=residual_abs_thresh,
+                    residual_min_peptides=residual_min_peptides,
+                )
+            else:
+                pair_pep_sets_dict[pair] = \
+                    peptide_sets_map if use_epitope_mapping else peptide_sets
 
-        # ------------------------------------------------------------------
-        # Final per-pair PSEA analysis
-        # ------------------------------------------------------------------
-        psea_tables[pair], = _create_fgsea_table_for_pair(
-            processed_zscores=split_processed_zscores[pair],
-            peptide_sets=pair_pep_sets_dict[pair],
-            threshold=threshold,
-            permutation_num=permutation_num,
-            min_size=min_size,
-            max_size=max_size,
-            seed=seed,
-            species_taxa=species_taxa,
-            precomputed_fit=pair_splines[pair],
-            residual_abs_thresh=residual_abs_thresh,
-            residual_min_peptides=residual_min_peptides,
-            debug_gsea_input_table_path=debug_gsea_input_table_path,
-            debug_pair=pair,
-            debug_iteration="final",
-        )
+            # ------------------------------------------------------------------
+            # Final per-pair PSEA analysis
+            # ------------------------------------------------------------------
+            psea_tables[pair], = _create_fgsea_table_for_pair(
+                processed_zscores=split_processed_zscores[pair],
+                peptide_sets=pair_pep_sets_dict[pair],
+                threshold=threshold,
+                permutation_num=permutation_num,
+                min_size=min_size,
+                max_size=max_size,
+                seed=seed,
+                species_taxa=species_taxa,
+                precomputed_fit=pair_splines[pair],
+                residual_abs_thresh=residual_abs_thresh,
+                residual_min_peptides=residual_min_peptides,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
+                debug_pair=pair,
+                debug_iteration="final",
+            )
 
         enrichment_tables[pair], = count_enriched(
             psea_table=psea_tables[pair],
@@ -424,6 +455,108 @@ def make_psea_plots(
     return scatter_plots, volcano_plots
 
 
+def _run_depleting_process_single_pair(
+    processed_zscores: pd.DataFrame,
+    peptide_sets: pd.DataFrame,
+    threshold: float,
+    permutation_num: int,
+    min_size: int,
+    max_size: int,
+    p_value: float,
+    enrichment_score: float,
+    precomputed_fit: pd.DataFrame = None,
+    mapped_peptide_sets: pd.DataFrame = None,
+    seed: CaptureHolder[int] = None,
+    include_negative_enrichment: bool = True,
+    species_taxa: qiime2.Metadata = None,
+    debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
+    pair: str = None,
+    residual_abs_thresh: float = None,
+    residual_min_peptides: int = 1,
+) -> pd.DataFrame:
+    """Iterate with a shrinking ranked background, retaining called rows.
+
+    Calls use the current GMT and scores. Claimed all_tested_peptides are
+    removed globally after a call, including from the called species. Called
+    rows retain the statistics and memberships from their selection iteration.
+    """
+    seed = CaptureHolder.get_or_set(
+        seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
+    )
+    remaining = (mapped_peptide_sets if mapped_peptide_sets is not None
+                 else peptide_sets).copy()
+    tested = set()
+    called_rows = []
+    call_iterations = []
+    iteration = 1
+    if debug_per_iteration_table_path:
+        if not pair:
+            raise ValueError("Pair name must be provided when debugging.")
+        os.makedirs(os.path.join(debug_per_iteration_table_path, pair))
+
+    while True:
+        current = _create_fgsea_table_for_pair(
+            processed_zscores=processed_zscores,
+            peptide_sets=remaining,
+            precomputed_fit=precomputed_fit,
+            threshold=threshold, permutation_num=permutation_num,
+            min_size=min_size, max_size=max_size, seed=seed,
+            species_taxa=species_taxa,
+            residual_abs_thresh=residual_abs_thresh,
+            residual_min_peptides=residual_min_peptides,
+            debug_gsea_input_table_path=debug_gsea_input_table_path,
+            debug_pair=pair, debug_iteration=f"{iteration:03d}",
+        )
+        if debug_per_iteration_table_path:
+            current.to_csv(os.path.join(debug_per_iteration_table_path, pair,
+                                       f"{iteration}.tsv"), sep="\t", index=False)
+        before = tested.copy()
+        updated, tested, found = utils.filter_peptide_sets(
+            current, remaining, tested, p_value, enrichment_score,
+            include_negative_enrichment,
+        )
+        if not found:
+            # Repeat the terminal run with the same seed for final diagnostic
+            # files, showing the actual remaining background.
+            if debug_gsea_input_table_path is not None:
+                current = _create_fgsea_table_for_pair(
+                    processed_zscores=processed_zscores, peptide_sets=remaining,
+                    precomputed_fit=precomputed_fit, threshold=threshold,
+                    permutation_num=permutation_num, min_size=min_size,
+                    max_size=max_size, seed=seed, species_taxa=species_taxa,
+                    residual_abs_thresh=residual_abs_thresh,
+                    residual_min_peptides=residual_min_peptides,
+                    debug_gsea_input_table_path=debug_gsea_input_table_path,
+                    debug_pair=pair, debug_iteration="final",
+                )
+            uncalled = current[~current["ID"].astype(str).isin(tested)]
+            parts = called_rows + ([uncalled] if not uncalled.empty else [])
+            result = pd.concat(parts, ignore_index=True) if parts else current.copy()
+            if debug_gsea_input_table_path is not None:
+                from urllib.parse import quote
+                folder = debug_gsea_input_table_path
+                if pair is not None:
+                    folder = os.path.join(folder, quote(pair, safe=""))
+                os.makedirs(folder, exist_ok=True)
+                result.to_csv(os.path.join(folder, "combined_psea_output.tsv"),
+                              sep="\t", index=False)
+                pd.DataFrame(call_iterations, columns=["ID", "iteration"]).to_csv(
+                    os.path.join(folder, "called_species_iterations.tsv"),
+                    sep="\t", index=False,
+                )
+            return result
+        selected_id = next(iter(tested - before))
+        selected = current[current["ID"].astype(str) == selected_id].copy()
+        called_rows.append(selected)
+        call_iterations.append((selected_id, iteration))
+        claimed = set(selected.iloc[0]["all_tested_peptides"].split("/"))
+        # Dropping these IDs from every membership causes remove_peptides()
+        # to exclude them from maxZ/deltaZ and hence the next R ranked list.
+        remaining = updated[~updated["gene"].isin(claimed)].copy()
+        iteration += 1
+
+
 def _run_iterative_process_single_pair(
     processed_zscores: pd.DataFrame,
     peptide_sets: pd.DataFrame,
@@ -448,8 +581,8 @@ def _run_iterative_process_single_pair(
     single sample pair.
 
     Calls the registered ``_create_fgsea_table_for_pair`` method, finds the
-    most significant species not yet in *tested_species*, removes its leading-
-    edge peptides from all other species in the GMT, and returns the updated
+    most significant species not yet in *tested_species*, removes its tested
+    peptides from all other species in the GMT, and returns the updated
     peptide sets alongside the PSEA table for this iteration.
 
     Returns
