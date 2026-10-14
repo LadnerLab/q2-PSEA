@@ -252,6 +252,9 @@ plugin.methods.register_function(
         "precomputed_fit": FeatureData[Spline],
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
+        "debug_pair": Str,
+        "debug_iteration": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -262,6 +265,12 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "New directory for automatic GSEA inputs, ranked lists, results,"
+            " diagnostics and PDF plots per pair and iteration."
+        ),
+        "debug_pair": "Pair label for debug files.",
+        "debug_iteration": "Iteration label for debug files.",
         "threshold": (
             "Minimum Z-score a peptide must have to be included in GSEA."
         ),
@@ -331,6 +340,7 @@ plugin.methods.register_function(
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -346,6 +356,10 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "New directory for automatic GSEA inputs, ranked lists, results,"
+            " diagnostics and PDF plots per pair and iteration."
+        ),
         "threshold": "Minimum Z-score for GSEA inclusion.",
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
@@ -421,6 +435,7 @@ plugin.methods.register_function(
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "permutation_num": Int,
         "min_size": Int,
@@ -436,6 +451,10 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "New directory for automatic GSEA inputs, ranked lists, results,"
+            " diagnostics and PDF plots per pair and iteration."
+        ),
         "threshold": "Minimum Z-score for GSEA inclusion.",
         "permutation_num": "Number of GSEA permutations.",
         "min_size": "Minimum peptide-set size.",
@@ -508,6 +527,7 @@ plugin.pipelines.register_function(
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "remove_claimed_peptides_from_background": Bool,
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
@@ -533,6 +553,10 @@ plugin.pipelines.register_function(
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "New directory for automatic GSEA inputs, ranked lists, results,"
+            " diagnostics and PDF plots per pair and iteration."
+        ),
         "remove_claimed_peptides_from_background": (
             "Remove called species' all_tested_peptides from subsequent ranked"
             " backgrounds. Requires iterative analysis. Called results retain"
@@ -692,6 +716,7 @@ plugin.pipelines.register_function(
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "debug_gsea_input_table_path": Str,
         "remove_claimed_peptides_from_background": Bool,
         "threshold": Float,
         "collapse": Str % Choices(["Bacterial", "Viral", "Both"]),
@@ -717,6 +742,10 @@ plugin.pipelines.register_function(
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
+        "debug_gsea_input_table_path": (
+            "New directory for automatic GSEA inputs, ranked lists, results,"
+            " diagnostics and PDF plots per pair and iteration."
+        ),
         "remove_claimed_peptides_from_background": (
             "Remove called species' all_tested_peptides from subsequent ranked"
             " backgrounds. Requires iterative analysis. Called results retain"

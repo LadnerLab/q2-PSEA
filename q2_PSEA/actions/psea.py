@@ -51,6 +51,7 @@ def make_psea(
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
     qiime2.Visualization,
@@ -91,6 +92,9 @@ def make_psea(
             )
 
         os.mkdir(debug_per_iteration_table_path)
+
+    if debug_gsea_input_table_path is not None:
+        os.makedirs(debug_gsea_input_table_path, exist_ok=False)
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
@@ -250,6 +254,7 @@ def make_psea(
                 include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
                 debug_per_iteration_table_path=debug_per_iteration_table_path,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
                 pair=pair,
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
@@ -271,6 +276,7 @@ def make_psea(
                     include_negative_enrichment=include_negative_enrichment,
                     species_taxa=species_taxa,
                     debug_per_iteration_table_path=debug_per_iteration_table_path,
+                    debug_gsea_input_table_path=debug_gsea_input_table_path,
                     pair=pair,
                     residual_abs_thresh=residual_abs_thresh,
                     residual_min_peptides=residual_min_peptides,
@@ -294,6 +300,9 @@ def make_psea(
                 precomputed_fit=pair_splines[pair],
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
+                debug_pair=pair,
+                debug_iteration="final",
             )
 
         enrichment_tables[pair], = count_enriched(
@@ -384,6 +393,7 @@ def make_psea_tables(
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
 ) -> tuple[
     qiime2.Visualization,
     dict[str, qiime2.Artifact],
@@ -422,6 +432,9 @@ def make_psea_tables(
             )
 
         os.mkdir(debug_per_iteration_table_path)
+
+    if debug_gsea_input_table_path is not None:
+        os.makedirs(debug_gsea_input_table_path, exist_ok=False)
 
     # ------------------------------------------------------------------
     # Determine what kind of analysis was asked for
@@ -577,6 +590,7 @@ def make_psea_tables(
                 include_negative_enrichment=include_negative_enrichment,
                 species_taxa=species_taxa,
                 debug_per_iteration_table_path=debug_per_iteration_table_path,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
                 pair=pair,
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
@@ -598,6 +612,7 @@ def make_psea_tables(
                     include_negative_enrichment=include_negative_enrichment,
                     species_taxa=species_taxa,
                     debug_per_iteration_table_path=debug_per_iteration_table_path,
+                    debug_gsea_input_table_path=debug_gsea_input_table_path,
                     pair=pair,
                     residual_abs_thresh=residual_abs_thresh,
                     residual_min_peptides=residual_min_peptides,
@@ -621,6 +636,9 @@ def make_psea_tables(
                 precomputed_fit=pair_splines[pair],
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
+                debug_gsea_input_table_path=debug_gsea_input_table_path,
+                debug_pair=pair,
+                debug_iteration="final",
             )
 
         enrichment_tables[pair], = count_enriched(
@@ -810,6 +828,7 @@ def _run_depleting_process_single_pair(
     include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
     pair: str = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
@@ -823,53 +842,74 @@ def _run_depleting_process_single_pair(
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
-    remaining = (
-        mapped_peptide_sets if mapped_peptide_sets is not None else peptide_sets
-    ).copy()
+    remaining = (mapped_peptide_sets if mapped_peptide_sets is not None
+                 else peptide_sets).copy()
     tested = set()
     called_rows = []
+    call_iterations = []
     iteration = 1
     if debug_per_iteration_table_path:
         if not pair:
-            raise ValueError('Pair name must be provided when debugging.')
+            raise ValueError("Pair name must be provided when debugging.")
         os.makedirs(os.path.join(debug_per_iteration_table_path, pair))
+
     while True:
         current = _create_fgsea_table_for_pair(
             processed_zscores=processed_zscores,
             peptide_sets=remaining,
             precomputed_fit=precomputed_fit,
-            threshold=threshold,
-            permutation_num=permutation_num,
-            min_size=min_size,
-            max_size=max_size,
-            seed=seed,
+            threshold=threshold, permutation_num=permutation_num,
+            min_size=min_size, max_size=max_size, seed=seed,
             species_taxa=species_taxa,
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
+            debug_gsea_input_table_path=debug_gsea_input_table_path,
+            debug_pair=pair, debug_iteration=f"{iteration:03d}",
         )
         if debug_per_iteration_table_path:
-            current.to_csv(
-                os.path.join(debug_per_iteration_table_path, pair, f'{iteration}.tsv'),
-                sep='\t', index=False,
-            )
+            current.to_csv(os.path.join(debug_per_iteration_table_path, pair,
+                                       f"{iteration}.tsv"), sep="\t", index=False)
         before = tested.copy()
         updated, tested, found = utils.filter_peptide_sets(
             current, remaining, tested, p_value, enrichment_score,
             include_negative_enrichment,
         )
         if not found:
-            uncalled = current[~current['ID'].astype(str).isin(tested)]
+            # Reuse terminal diagnostics without repeating the stochastic run.
+            if debug_gsea_input_table_path is not None:
+                import shutil
+                from pathlib import Path
+                from urllib.parse import quote
+                folder = Path(debug_gsea_input_table_path)
+                if pair is not None:
+                    folder = folder / quote(pair, safe="")
+                prefix = f"{iteration:03d}_"
+                for artifact in folder.glob(prefix + "*"):
+                    shutil.copyfile(artifact, folder / ("final_" + artifact.name[len(prefix):]))
+            uncalled = current[~current["ID"].astype(str).isin(tested)]
             parts = called_rows + ([uncalled] if not uncalled.empty else [])
-            result = (pd.concat(parts, ignore_index=True)
-                      if parts else current.copy())
+            result = pd.concat(parts, ignore_index=True) if parts else current.copy()
+            if debug_gsea_input_table_path is not None:
+                from urllib.parse import quote
+                folder = debug_gsea_input_table_path
+                if pair is not None:
+                    folder = os.path.join(folder, quote(pair, safe=""))
+                os.makedirs(folder, exist_ok=True)
+                result.to_csv(os.path.join(folder, "combined_psea_output.tsv"),
+                              sep="\t", index=False)
+                pd.DataFrame(call_iterations, columns=["ID", "iteration"]).to_csv(
+                    os.path.join(folder, "called_species_iterations.tsv"),
+                    sep="\t", index=False,
+                )
             return result
         selected_id = next(iter(tested - before))
-        selected = current[current['ID'].astype(str) == selected_id].copy()
+        selected = current[current["ID"].astype(str) == selected_id].copy()
         called_rows.append(selected)
-        claimed = set(selected.iloc[0]['all_tested_peptides'].split('/'))
-        # Remove every membership so score filtering also removes these IDs
-        # from the next ranked background, including in mapped analyses.
-        remaining = updated[~updated['gene'].isin(claimed)].copy()
+        call_iterations.append((selected_id, iteration))
+        claimed = set(selected.iloc[0]["all_tested_peptides"].split("/"))
+        # Dropping these IDs from every membership causes remove_peptides()
+        # to exclude them from maxZ/deltaZ and hence the next R ranked list.
+        remaining = updated[~updated["gene"].isin(claimed)].copy()
         iteration += 1
 
 
@@ -888,6 +928,7 @@ def _run_iterative_process_single_pair(
     include_negative_enrichment: bool = True,
     species_taxa: qiime2.Metadata = None,
     debug_per_iteration_table_path: str = None,
+    debug_gsea_input_table_path: str = None,
     pair: str = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
@@ -896,8 +937,8 @@ def _run_iterative_process_single_pair(
     single sample pair.
 
     Calls the registered ``_create_fgsea_table_for_pair`` method, finds the
-    most significant species not yet in *tested_species*, removes its leading-
-    edge peptides from all other species in the GMT, and returns the updated
+    most significant species not yet in *tested_species*, removes its tested
+    peptides from all other species in the GMT, and returns the updated
     peptide sets alongside the PSEA table for this iteration.
 
     Returns
@@ -936,6 +977,9 @@ def _run_iterative_process_single_pair(
             precomputed_fit=precomputed_fit,
             residual_abs_thresh=residual_abs_thresh,
             residual_min_peptides=residual_min_peptides,
+            debug_gsea_input_table_path=debug_gsea_input_table_path,
+            debug_pair=pair,
+            debug_iteration=f"{iteration:03d}",
         )
 
         if debug_per_iteration_table_path:
@@ -972,6 +1016,9 @@ def _create_fgsea_table_for_pair(
     species_taxa: qiime2.Metadata = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
+    debug_gsea_input_table_path: str = None,
+    debug_pair: str = None,
+    debug_iteration: str = None,
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -1010,6 +1057,16 @@ def _create_fgsea_table_for_pair(
         residual_min_peptides=residual_min_peptides,
     )
 
+    debug_prefix = ""
+    if debug_gsea_input_table_path is not None:
+        from urllib.parse import quote
+        out_dir = debug_gsea_input_table_path
+        if debug_pair is not None:
+            out_dir = os.path.join(out_dir, quote(debug_pair, safe=""))
+        os.makedirs(out_dir, exist_ok=True)
+        label = quote(debug_iteration or "gsea", safe="")
+        debug_prefix = os.path.abspath(os.path.join(out_dir, label))
+
     # This ought to ensure this file is accessible where this code is actually
     # being run if run cross node on HPC for instance
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1033,6 +1090,7 @@ def _create_fgsea_table_for_pair(
                 min_size,
                 max_size,
                 seed,
+                debug_prefix,
             )
             table = ro.conversion.get_conversion().rpy2py(table)
 

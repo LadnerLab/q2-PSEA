@@ -6,8 +6,9 @@ Add `--p-remove-claimed-peptides-from-background` to either:
 - `qiime psea make-psea-tables`
 
 The option defaults to false and requires iterative analysis. Omitting it uses
-the existing iterative workflow. No extra debug tables or PDF diagnostics were
-added; the existing per-iteration table export remains available.
+the existing iterative workflow. Optional GSEA debug outputs are enabled with
+`--p-debug-gsea-input-table-path`; see GSEA_DIAGNOSTICS.md.
+The existing per-iteration table export remains available.
 
 With the option enabled, the same significance rules select one species per
 iteration. Its `all_tested_peptides` are removed from all GMT memberships,
