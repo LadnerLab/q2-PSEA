@@ -23,7 +23,8 @@ psea <- function(
 
     term_to_gene <- peptide_sets[, c("term", "gene")]
     set.seed(seed)
-    out=GSEA(
+    out <- NULL
+    if (length(gene_list) > 0 && nrow(term_to_gene) > 0) out=GSEA(
         geneList=gene_list,
         TERM2GENE=term_to_gene,
         pvalueCutoff=1,
@@ -35,10 +36,18 @@ psea <- function(
         exponent=1
     )
 
-    outtable_pre <- attributes(out)[[1]][,c(
-        "ID", "enrichmentScore", "NES", "p.adjust",
-        "core_enrichment", "pvalue", "qvalue"
-    )]
+    if (is.null(out) || nrow(as.data.frame(out)) == 0) {
+        outtable_pre <- data.frame(
+            ID=character(), enrichmentScore=numeric(), NES=numeric(),
+            p.adjust=numeric(), core_enrichment=character(),
+            pvalue=numeric(), qvalue=numeric()
+        )
+    } else {
+        outtable_pre <- attributes(out)[[1]][,c(
+            "ID", "enrichmentScore", "NES", "p.adjust",
+            "core_enrichment", "pvalue", "qvalue"
+        )]
+    }
 
     all_peptides = unlist(lapply(
         lapply(
@@ -47,9 +56,9 @@ psea <- function(
         ),
         function(X) paste(X,collapse="/")
     ))
-    all_tested_peptides <- all_peptides [match(
+    all_tested_peptides <- as.character(all_peptides[match(
         row.names(outtable_pre), names(all_peptides)
-    )]
+    )])
 
     outtable <- cbind(outtable_pre, all_tested_peptides)
 
