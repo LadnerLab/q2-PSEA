@@ -252,6 +252,7 @@ plugin.methods.register_function(
         "precomputed_fit": FeatureData[Spline],
     },
     parameters={
+        "score_type": Str % Choices(["std", "pos", "neg"]),
         "debug_gsea_input_table_path": Str,
         "debug_pair": Str,
         "debug_iteration": Str,
@@ -265,6 +266,11 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "score_type": (
+            "GSEA scoring: std (default), pos (upper-tail), or neg (lower-tail)."
+            " Keeps the complete eligible signed ranking. neg requires negative"
+            " enrichment to be enabled."
+        ),
         "debug_gsea_input_table_path": (
             "New directory for automatic GSEA inputs, ranked lists, results,"
             " diagnostics and PDF plots per pair and iteration."
@@ -340,6 +346,7 @@ plugin.methods.register_function(
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
+        "score_type": Str % Choices(["std", "pos", "neg"]),
         "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "permutation_num": Int,
@@ -356,6 +363,11 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "score_type": (
+            "GSEA scoring: std (default), pos (upper-tail), or neg (lower-tail)."
+            " Keeps the complete eligible signed ranking. neg requires negative"
+            " enrichment to be enabled."
+        ),
         "debug_gsea_input_table_path": (
             "New directory for automatic GSEA inputs, ranked lists, results,"
             " diagnostics and PDF plots per pair and iteration."
@@ -435,6 +447,7 @@ plugin.methods.register_function(
         "mapped_peptide_sets": GMT % Properties("mapped"),
     },
     parameters={
+        "score_type": Str % Choices(["std", "pos", "neg"]),
         "debug_gsea_input_table_path": Str,
         "threshold": Float,
         "permutation_num": Int,
@@ -451,6 +464,11 @@ plugin.methods.register_function(
         "residual_min_peptides": Int,
     },
     parameter_descriptions={
+        "score_type": (
+            "GSEA scoring: std (default), pos (upper-tail), or neg (lower-tail)."
+            " Keeps the complete eligible signed ranking. neg requires negative"
+            " enrichment to be enabled."
+        ),
         "debug_gsea_input_table_path": (
             "New directory for automatic GSEA inputs, ranked lists, results,"
             " diagnostics and PDF plots per pair and iteration."
@@ -527,6 +545,7 @@ plugin.pipelines.register_function(
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "score_type": Str % Choices(["std", "pos", "neg"]),
         "debug_gsea_input_table_path": Str,
         "remove_claimed_peptides_from_background": Bool,
         "threshold": Float,
@@ -553,6 +572,11 @@ plugin.pipelines.register_function(
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
+        "score_type": (
+            "GSEA scoring: std (default), pos (upper-tail), or neg (lower-tail)."
+            " Keeps the complete eligible signed ranking. neg requires negative"
+            " enrichment to be enabled."
+        ),
         "debug_gsea_input_table_path": (
             "New directory for automatic GSEA inputs, ranked lists, results,"
             " diagnostics and PDF plots per pair and iteration."
@@ -716,6 +740,7 @@ plugin.pipelines.register_function(
         "peptide_sets_map": GMT % Properties("mapped")
     },
     parameters={
+        "score_type": Str % Choices(["std", "pos", "neg"]),
         "debug_gsea_input_table_path": Str,
         "remove_claimed_peptides_from_background": Bool,
         "threshold": Float,
@@ -742,6 +767,11 @@ plugin.pipelines.register_function(
         "debug_per_iteration_table_path": Str,
     },
     parameter_descriptions={
+        "score_type": (
+            "GSEA scoring: std (default), pos (upper-tail), or neg (lower-tail)."
+            " Keeps the complete eligible signed ranking. neg requires negative"
+            " enrichment to be enabled."
+        ),
         "debug_gsea_input_table_path": (
             "New directory for automatic GSEA inputs, ranked lists, results,"
             " diagnostics and PDF plots per pair and iteration."

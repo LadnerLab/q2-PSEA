@@ -105,3 +105,17 @@ class TestBackgroundDepletion(unittest.TestCase):
             calls = pd.read_csv(folder / 'called_species_iterations.tsv', sep='\t')
             self.assertEqual(list(calls.ID), ['A', 'B'])
             self.assertEqual(list(calls.iteration), [1, 2])
+
+    def test_score_type_forwarded_in_both_iteration_modes(self):
+        for runner in (psea._run_iterative_process_single_pair,
+                       psea._run_depleting_process_single_pair):
+            with patch.object(psea, '_create_fgsea_table_for_pair',
+                              return_value=self.rows.iloc[:0].copy()) as run:
+                runner(**self.kwargs, score_type='neg')
+                self.assertEqual(run.call_args.kwargs['score_type'], 'neg')
+
+    def test_negative_scoring_requires_negative_selection(self):
+        for runner in (psea._run_iterative_process_single_pair,
+                       psea._run_depleting_process_single_pair):
+            with self.assertRaisesRegex(ValueError, 'requires include_negative'):
+                runner(**self.kwargs, score_type='neg', include_negative_enrichment=False)

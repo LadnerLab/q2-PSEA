@@ -282,8 +282,10 @@ psea <- function(
         min_size,
         max_size,
         seed,
-        debug_prefix = ""
+        debug_prefix = "",
+        score_type = "std"
 ) {
+    score_type <- match.arg(score_type, c("std", "pos", "neg"))
     library(clusterProfiler)
     peptide_sets <- peptide_sets[order(peptide_sets$gene), , drop=FALSE]
     gene_list <- sort(
@@ -308,7 +310,8 @@ psea <- function(
                                rank=seq_along(gene_list)), "_ranked_gene_list.tsv")
         write_debug(term_to_gene, "_term_to_gene.tsv")
         write_debug(data.frame(threshold=threshold, permutation_num=permutation_num,
-                               min_size=min_size, max_size=max_size, seed=seed),
+                               min_size=min_size, max_size=max_size, seed=seed,
+                               score_type=score_type),
                     "_parameters.tsv")
     }
     set.seed(seed)
@@ -322,7 +325,8 @@ psea <- function(
         eps=1e-30,
         verbose=FALSE,
         nPermSimple=permutation_num,
-        exponent=1
+        exponent=1,
+        scoreType=score_type
     )
 
     if (is.null(out) || nrow(as.data.frame(out)) == 0) {
@@ -336,6 +340,22 @@ psea <- function(
             "ID", "enrichmentScore", "NES", "p.adjust",
             "core_enrichment", "pvalue", "qvalue"
         )]
+    }
+
+    # DOSE derives its leading edge using standard scoring even when fgsea
+    # receives a directional scoreType. Keep the reported core consistent.
+    if (score_type != "std" && nrow(outtable_pre) > 0) {
+        outtable_pre$core_enrichment <- vapply(
+            as.character(outtable_pre$ID), function(id) {
+                members <- unique(attributes(out)$geneSets[[id]])
+                selected <- sort(unique(na.omit(match(members, names(gene_list)))))
+                edge <- fgsea::calcGseaStat(
+                    stats=gene_list, selectedStats=selected, gseaParam=1,
+                    scoreType=score_type, returnLeadingEdge=TRUE
+                )$leadingEdge
+                paste(names(gene_list)[edge], collapse="/")
+            }, character(1)
+        )
     }
 
     all_peptides = unlist(lapply(
@@ -380,7 +400,7 @@ psea <- function(
         if (length(gene_list) > 0 && nrow(term_to_gene) > 0) raw <- fgsea::fgseaMultilevel(
             pathways=split(as.character(term_to_gene$gene), as.character(term_to_gene$term)),
             stats=gene_list, minSize=min_size, maxSize=max_size, eps=1e-30,
-            nPermSimple=permutation_num, gseaParam=1, scoreType="std")
+            nPermSimple=permutation_num, gseaParam=1, scoreType=score_type)
         if ("leadingEdge" %in% colnames(raw)) {
             raw$leadingEdge <- vapply(raw$leadingEdge, paste, collapse="/", FUN.VALUE=character(1))
         }

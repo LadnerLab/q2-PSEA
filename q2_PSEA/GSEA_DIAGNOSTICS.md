@@ -22,7 +22,7 @@ Each prefix produces:
 - `_ranked_gene_list.tsv`: the complete ranked vector actually passed to GSEA.
   This may include genes outside the remaining sets after residual filtering.
 - `_term_to_gene.tsv`: the exact TERM2GENE table.
-- `_parameters.tsv`: threshold, permutation count, size limits and seed.
+- `_parameters.tsv`: threshold, permutation count, size limits, seed and score type.
 - `_gsea_output.tsv`: the actual pipeline R result, including tested peptides.
 - `_missing.tsv`: input terms absent from the GSEA result.
 - `_diagnostics.tsv`: effective set sizes, sign balance, score statistics,
@@ -41,6 +41,22 @@ The existing `--p-debug-per-iteration-table-path` option remains available for
 Python-side iteration result exports. Existing mapping behavior and separate
 `make-psea-plots` workflow are preserved. Diagnostic PDFs handle empty sets and
 panels without finite data.
+
+## GSEA scoring direction
+
+Both `make-psea` and `make-psea-tables` accept `--p-score-type`:
+
+- `std`: standard scoring (default, preserves the previous behavior).
+- `pos`: test enrichment at the top of the ranked list.
+- `neg`: test enrichment at the bottom of the ranked list.
+
+For example, add `--p-score-type pos` to your existing command. This passes
+`scoreType="pos"` to R GSEA and the raw fgsea diagnostic calculation. It does
+not split the ranked list or discard negative residuals. Existing input filters
+still apply. The selected mode applies to every iteration and final analysis,
+with or without background depletion. Directional modes also report matching
+`core_enrichment` peptides. Negative scoring requires
+`include_negative_enrichment=True` (the default).
 
 ## Optional depletion of the ranked background
 

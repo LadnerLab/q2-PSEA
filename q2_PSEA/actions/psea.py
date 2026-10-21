@@ -52,6 +52,7 @@ def make_psea(
     residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
     debug_gsea_input_table_path: str = None,
+    score_type: str = "std",
 ) -> tuple[
     qiime2.Visualization,
     qiime2.Visualization,
@@ -59,6 +60,11 @@ def make_psea(
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
 ]:
+    if score_type not in ("std", "pos", "neg"):
+        raise ValueError("score_type must be std, pos, or neg.")
+    if score_type == "neg" and not include_negative_enrichment:
+        raise ValueError("score_type='neg' requires include_negative_enrichment=True.")
+
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
@@ -258,6 +264,7 @@ def make_psea(
                 pair=pair,
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
+                score_type=score_type,
             )
         else:
             if iterative_analysis:
@@ -280,6 +287,7 @@ def make_psea(
                     pair=pair,
                     residual_abs_thresh=residual_abs_thresh,
                     residual_min_peptides=residual_min_peptides,
+                    score_type=score_type,
                 )
             else:
                 pair_pep_sets_dict[pair] = \
@@ -303,6 +311,7 @@ def make_psea(
                 debug_gsea_input_table_path=debug_gsea_input_table_path,
                 debug_pair=pair,
                 debug_iteration="final",
+                score_type=score_type,
             )
 
         enrichment_tables[pair], = count_enriched(
@@ -394,11 +403,17 @@ def make_psea_tables(
     residual_min_peptides: int = 1,
     debug_per_iteration_table_path: str = None,
     debug_gsea_input_table_path: str = None,
+    score_type: str = "std",
 ) -> tuple[
     qiime2.Visualization,
     dict[str, qiime2.Artifact],
     dict[str, qiime2.Artifact],
 ]:
+    if score_type not in ("std", "pos", "neg"):
+        raise ValueError("score_type must be std, pos, or neg.")
+    if score_type == "neg" and not include_negative_enrichment:
+        raise ValueError("score_type='neg' requires include_negative_enrichment=True.")
+
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
@@ -594,6 +609,7 @@ def make_psea_tables(
                 pair=pair,
                 residual_abs_thresh=residual_abs_thresh,
                 residual_min_peptides=residual_min_peptides,
+                score_type=score_type,
             )
         else:
             if iterative_analysis:
@@ -616,6 +632,7 @@ def make_psea_tables(
                     pair=pair,
                     residual_abs_thresh=residual_abs_thresh,
                     residual_min_peptides=residual_min_peptides,
+                    score_type=score_type,
                 )
             else:
                 pair_pep_sets_dict[pair] = \
@@ -639,6 +656,7 @@ def make_psea_tables(
                 debug_gsea_input_table_path=debug_gsea_input_table_path,
                 debug_pair=pair,
                 debug_iteration="final",
+                score_type=score_type,
             )
 
         enrichment_tables[pair], = count_enriched(
@@ -832,6 +850,7 @@ def _run_depleting_process_single_pair(
     pair: str = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
+    score_type: str = "std",
 ) -> pd.DataFrame:
     """Iterate with a shrinking ranked background, retaining called rows.
 
@@ -839,6 +858,11 @@ def _run_depleting_process_single_pair(
     removed globally after a call, including from the called species. Called
     rows retain the statistics and memberships from their selection iteration.
     """
+    if score_type not in ("std", "pos", "neg"):
+        raise ValueError("score_type must be std, pos, or neg.")
+    if score_type == "neg" and not include_negative_enrichment:
+        raise ValueError("score_type='neg' requires include_negative_enrichment=True.")
+
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
@@ -865,6 +889,7 @@ def _run_depleting_process_single_pair(
             residual_min_peptides=residual_min_peptides,
             debug_gsea_input_table_path=debug_gsea_input_table_path,
             debug_pair=pair, debug_iteration=f"{iteration:03d}",
+            score_type=score_type,
         )
         if debug_per_iteration_table_path:
             current.to_csv(os.path.join(debug_per_iteration_table_path, pair,
@@ -932,6 +957,7 @@ def _run_iterative_process_single_pair(
     pair: str = None,
     residual_abs_thresh: float = None,
     residual_min_peptides: int = 1,
+    score_type: str = "std",
 ) -> pd.DataFrame:
     """QIIME 2 pipeline: run one iteration of iterative peptide analysis for a
     single sample pair.
@@ -945,6 +971,11 @@ def _run_iterative_process_single_pair(
     -------
     updated_peptide_sets : GMT
     """
+    if score_type not in ("std", "pos", "neg"):
+        raise ValueError("score_type must be std, pos, or neg.")
+    if score_type == "neg" and not include_negative_enrichment:
+        raise ValueError("score_type='neg' requires include_negative_enrichment=True.")
+
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
@@ -980,6 +1011,7 @@ def _run_iterative_process_single_pair(
             debug_gsea_input_table_path=debug_gsea_input_table_path,
             debug_pair=pair,
             debug_iteration=f"{iteration:03d}",
+            score_type=score_type,
         )
 
         if debug_per_iteration_table_path:
@@ -1019,6 +1051,7 @@ def _create_fgsea_table_for_pair(
     debug_gsea_input_table_path: str = None,
     debug_pair: str = None,
     debug_iteration: str = None,
+    score_type: str = "std",
 ) -> pd.DataFrame:
     """QIIME 2 method: compute the fgsea PSEA table for a single sample pair.
 
@@ -1037,6 +1070,9 @@ def _create_fgsea_table_for_pair(
     pd.DataFrame
         PSEA result table for this pair (stored as FeatureData[PSEAScores]).
     """
+    if score_type not in ("std", "pos", "neg"):
+        raise ValueError("score_type must be std, pos, or neg.")
+
     seed = CaptureHolder.get_or_set(
         seed, lambda: random.randint(MIN_32_BIT_INT, MAX_32_BIT_INT)
     )
@@ -1091,6 +1127,7 @@ def _create_fgsea_table_for_pair(
                 max_size,
                 seed,
                 debug_prefix,
+                score_type,
             )
             table = ro.conversion.get_conversion().rpy2py(table)
 
