@@ -14,6 +14,7 @@ dependencies:
   - r-scatterpie
   - r-biocmanager
   - r-splines2
+  - bioconductor-clusterprofiler
   - bioconductor-ggtree
   - bioconductor-enrichplot
   - altair
